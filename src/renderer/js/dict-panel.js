@@ -174,12 +174,191 @@ const DictPanel = (() => {
     if (entry.definition) {
       const defEl = document.createElement('div');
       defEl.className = 'dict-entry-definition';
-      defEl.innerHTML = entry.definition;
+      defEl.innerHTML = formatDefinition(entry.definition);
       bindCrossRefs(defEl);
       frag.appendChild(defEl);
     }
 
     contentEl.appendChild(frag);
+  }
+
+  /**
+   * Parses a raw definition string into structured HTML.
+   * Strips leading <b>lexeme</b><p/>, extracts etymology/grammar preamble,
+   * and converts numbered items (1, 1a, 1a1, 2, etc.) into nested lists.
+   */
+  function formatDefinition(html) {
+    // Strip leading <b>...</b> and <p/> (redundant with lexeme field)
+    let text = html.replace(/^\s*<b>[^<]*<\/b>\s*<p\s*\/?>\s*/i, '');
+
+    // Preserve <a> tags by replacing them with placeholders
+    const anchors = [];
+    text = text.replace(/<a\b[^>]*>.*?<\/a>/gi, (match) => {
+      anchors.push(match);
+      return `\x00LINK${anchors.length - 1}\x00`;
+    });
+
+    // Restore anchor placeholders
+    function restoreAnchors(s) {
+      return s.replace(/\x00LINK(\d+)\x00/g, (_, idx) => anchors[parseInt(idx)]);
+    }
+
+    // Find the definition items: labels like "1 ", "1a ", "2b1 "
+    // These are definition numbers: a digit optionally followed by a lowercase letter
+    // and optionally another digit, surrounded by spaces.
+    // We need to distinguish definition labels from numbers in grammar codes
+    // (e.g. "tdnt - 1 682 117 n f"). Strategy: find the first "1 " that starts
+    // actual definitions — definition "1" always comes first.
+    const defStartRegex = /(?:^|\s)(1)\s+([a-z])/;
+    const defStartMatch = defStartRegex.exec(text);
+
+    if (!defStartMatch) {
+      // No numbered definitions found — render as plain text
+      return '<div class="dict-def-preamble">' + restoreAnchors(text.trim()) + '</div>';
+    }
+
+    const preamble = text.substring(0, defStartMatch.index).trim();
+    const defText = text.substring(defStartMatch.index).trim();
+
+    // Now split the definition text into numbered items
+    // Match: space-boundary, then a label (digit(s) + optional letter + optional digit), then space + lowercase
+    const itemRegex = /(?:^|\s)(\d+[a-z]?\d?)\s+(?=[a-z\x00])/g;
+    const rawIndices = [];
+    let match;
+
+    while ((match = itemRegex.exec(defText)) !== null) {
+      rawIndices.push({
+        label: match[1],
+        start: match.index,
+        contentStart: match.index + match[0].length - 1,
+      });
+    }
+
+    // Filter out false positives by validating sequential structure.
+    // Valid labels must follow logically: 1, 1a, 1a1, 1b, 2, 2a, etc.
+    // A top-level number N is valid if N <= lastTopLevel + 1.
+    // A sub-item like "Na" is valid if N == current top-level number.
+    const indices = [];
+    let lastTopNum = 0;
+
+    for (const idx of rawIndices) {
+      const topNum = parseInt(idx.label);
+      const level = getLevel(idx.label);
+
+      if (level === 0) {
+        // Top-level: must be next in sequence (or same for repeated)
+        if (topNum <= lastTopNum + 1) {
+          indices.push(idx);
+          lastTopNum = topNum;
+        }
+      } else {
+        // Sub-item: its numeric prefix must match the last top-level number
+        if (topNum === lastTopNum) {
+          indices.push(idx);
+        }
+      }
+    }
+
+    // Extract each numbered item's text
+    const items = [];
+    for (let i = 0; i < indices.length; i++) {
+      const end = i + 1 < indices.length ? indices[i + 1].start : defText.length;
+      items.push({
+        label: indices[i].label,
+        text: defText.substring(indices[i].contentStart, end).trim(),
+      });
+    }
+
+    // Build HTML output
+    let out = '';
+
+    if (preamble) {
+      // Clean up grammar codes for display
+      out += '<div class="dict-def-preamble">' + restoreAnchors(preamble) + '</div>';
+    }
+
+    if (items.length > 0) {
+      out += buildNestedList(items, restoreAnchors);
+    }
+
+    return out;
+  }
+
+  /**
+   * Builds nested <ol> lists from numbered items.
+   * Items like "1", "2" are top-level; "1a", "1b" nest under "1"; "4a1" nests under "4a".
+   */
+  function buildNestedList(items, restoreAnchors) {
+    let html = '<ol class="dict-def-list">';
+    let i = 0;
+
+    while (i < items.length) {
+      const item = items[i];
+      const level = getLevel(item.label);
+
+      if (level === 0) {
+        html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
+
+        // Collect sub-items
+        const subItems = [];
+        let j = i + 1;
+        while (j < items.length && getLevel(items[j].label) > 0) {
+          subItems.push(items[j]);
+          j++;
+        }
+
+        if (subItems.length > 0) {
+          html += buildSubList(subItems, restoreAnchors);
+        }
+
+        html += '</li>';
+        i = j;
+      } else {
+        html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text) + '</li>';
+        i++;
+      }
+    }
+
+    html += '</ol>';
+    return html;
+  }
+
+  function buildSubList(items, restoreAnchors) {
+    let html = '<ol class="dict-def-sublist">';
+    let i = 0;
+
+    while (i < items.length) {
+      const item = items[i];
+      html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
+
+      // Check for deeper nesting (e.g. "4a1" under "4a")
+      const deepItems = [];
+      let j = i + 1;
+      while (j < items.length && getLevel(items[j].label) > getLevel(item.label)) {
+        deepItems.push(items[j]);
+        j++;
+      }
+
+      if (deepItems.length > 0) {
+        html += '<ol class="dict-def-sublist">';
+        for (const di of deepItems) {
+          html += '<li><span class="dict-def-label">' + di.label + '</span> ' + restoreAnchors(di.text) + '</li>';
+        }
+        html += '</ol>';
+      }
+
+      html += '</li>';
+      i = j > i + 1 ? j : i + 1;
+    }
+
+    html += '</ol>';
+    return html;
+  }
+
+  function getLevel(label) {
+    if (/^\d+[a-z]\d+$/.test(label)) return 2;
+    if (/^\d+[a-z]$/.test(label)) return 1;
+    return 0;
   }
 
   function bindCrossRefs(container) {

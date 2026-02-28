@@ -441,3 +441,42 @@
 .dict-crossref:hover {
   text-decoration-color: #3b82f6;
 }
+
+/* Definition structured formatting */
+.dict-def-preamble {
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.dark .dict-def-preamble {
+  color: #9ca3af;
+}
+
+.dict-def-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dict-def-list > li {
+  margin-bottom: 6px;
+  padding-left: 0;
+}
+
+.dict-def-sublist {
+  list-style: none;
+  padding-left: 16px;
+  margin: 4px 0 0;
+}
+
+.dict-def-sublist > li {
+  margin-bottom: 4px;
+}
+
+.dict-def-label {
+  font-weight: 700;
+  color: #3b82f6;
+  font-size: 11px;
+  margin-right: 2px;
+}
