@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
   searchVerses: (moduleId, query) =>
     ipcRenderer.invoke('search-verses', moduleId, query),
+  getDictionaryEntry: (moduleId, topic) =>
+    ipcRenderer.invoke('get-dictionary-entry', moduleId, topic),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),

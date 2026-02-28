@@ -7,9 +7,11 @@ const AppStateStore = (() => {
     settings: {
       theme: null,
       language: 'pt',
+      fontSize: 20,
     },
     paneManager: null,
     searchPanel: null,
+    dictPanel: null,
   };
 
   let saveTimer = null;
@@ -24,6 +26,7 @@ const AppStateStore = (() => {
         ...(loadedState.settings || {}),
       },
       searchPanel: loadedState.searchPanel || null,
+      dictPanel: loadedState.dictPanel || null,
     };
   }
 
@@ -66,7 +69,16 @@ const AppStateStore = (() => {
     return state.searchPanel;
   }
 
-  return { init, setSettings, setPaneManager, getSettings, getPaneManager, setSearchPanel, getSearchPanel };
+  function setDictPanel(nextDictPanel) {
+    state.dictPanel = nextDictPanel;
+    scheduleSave();
+  }
+
+  function getDictPanel() {
+    return state.dictPanel;
+  }
+
+  return { init, setSettings, setPaneManager, getSettings, getPaneManager, setSearchPanel, getSearchPanel, setDictPanel, getDictPanel };
 })();
 
 /** Settings dialog — theme + language controls */
@@ -76,6 +88,7 @@ const Settings = (() => {
   const themeToggle = document.getElementById('settings-theme-toggle');
   const themeLabel = document.getElementById('settings-theme-label');
   const langSelect = document.getElementById('settings-lang-select');
+  const fontSizeSelect = document.getElementById('settings-font-size');
   const closeBtn = document.getElementById('settings-close');
 
   function isDark() {
@@ -96,8 +109,14 @@ const Settings = (() => {
     themeLabel.textContent = I18n.t(isDark() ? 'dark' : 'light');
   }
 
+  function applyFontSize(size) {
+    html.style.setProperty('--font-size', size + 'px');
+    fontSizeSelect.value = size;
+  }
+
   function open() {
     langSelect.value = I18n.getCurrentLang();
+    fontSizeSelect.value = AppStateStore.getSettings().fontSize || 20;
     updateThemeLabel();
     overlay.classList.remove('hidden');
   }
@@ -119,9 +138,13 @@ const Settings = (() => {
       applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
 
+    const initialFontSize = initialSettings.fontSize || 20;
+    applyFontSize(initialFontSize);
+
     AppStateStore.setSettings({
       theme: isDark() ? 'dark' : 'light',
       language: initialLang,
+      fontSize: initialFontSize,
     });
   }
 
@@ -142,6 +165,13 @@ const Settings = (() => {
     AppStateStore.setSettings({ language });
     PaneManager.render();
     updateThemeLabel();
+  });
+
+  // Font size change
+  fontSizeSelect.addEventListener('change', () => {
+    const fontSize = parseInt(fontSizeSelect.value, 10);
+    applyFontSize(fontSize);
+    AppStateStore.setSettings({ fontSize });
   });
 
   closeBtn.addEventListener('click', close);
@@ -165,8 +195,10 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   I18n.updateAll();
 
   const modules = await window.api.getModules();
+  const bibleModules = modules.filter(m => m.type === 'bible');
+  const dictModules = modules.filter(m => m.type === 'dictionary');
 
-  if (modules.length === 0) {
+  if (bibleModules.length === 0) {
     document.getElementById('pane-root').innerHTML =
       '<div class="flex items-center justify-center h-full text-gray-500 text-lg">' +
       I18n.t('noModules') + '</div>';
@@ -179,12 +211,17 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     AppStateStore.setPaneManager(paneState);
   });
 
-  PaneManager.init(modules, AppStateStore.getPaneManager());
+  PaneManager.init(bibleModules, AppStateStore.getPaneManager());
 
   SearchPanel.setStateChangeListener((searchState) => {
     AppStateStore.setSearchPanel(searchState);
   });
-  SearchPanel.init(modules, AppStateStore.getSearchPanel());
+  SearchPanel.init(bibleModules, AppStateStore.getSearchPanel());
+
+  DictPanel.setStateChangeListener((dictState) => {
+    AppStateStore.setDictPanel(dictState);
+  });
+  DictPanel.init(dictModules, AppStateStore.getDictPanel());
 
   function getActivePaneContent() {
     const paneId = PaneManager.getActivePaneId();
@@ -228,11 +265,11 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   window.api.onContextMenuCopy(() => copySelectedVerses());
 
   window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
-    console.log('Strongs search:', strongsNumber, 'paneId:', paneId);
+    SearchPanel.search(`strong:${strongsNumber}`);
   });
 
   window.api.onStrongsLookup((_event, { strongsNumber, paneId }) => {
-    console.log('Strongs lookup:', strongsNumber, 'paneId:', paneId);
+    DictPanel.lookup(strongsNumber);
   });
 
   document.addEventListener('keydown', (e) => {

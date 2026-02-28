@@ -57,8 +57,9 @@ const PaneManager = (() => {
   }
 
   function resolveModuleId(candidate) {
-    if (candidate && modules.some(m => m.id === candidate)) return candidate;
-    return modules.length > 0 ? modules[0].id : null;
+    const bibleModules = modules.filter(m => m.type === 'bible');
+    if (candidate && bibleModules.some(m => m.id === candidate)) return candidate;
+    return bibleModules.length > 0 ? bibleModules[0].id : null;
   }
 
   function restoreState(savedState) {
@@ -242,7 +243,7 @@ const PaneManager = (() => {
 
     const select = document.createElement('select');
     select.className = 'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
-    const sortedModules = [...modules].sort((a, b) =>
+    const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
       a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
     );
     for (const m of sortedModules) {
@@ -291,7 +292,7 @@ const PaneManager = (() => {
     spacer.className = 'flex-1';
 
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -376,7 +377,7 @@ const PaneManager = (() => {
     const content = el.querySelector('.pane-content');
     const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
     if (book) pane.bookShortName = book.shortName;
-    BibleView.renderChapter(content, verses, pane.hasStrongs);
+    BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber);
 
     const wrapper = content.querySelector('.verse-text');
     if (wrapper && book) {

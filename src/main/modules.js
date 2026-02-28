@@ -63,6 +63,15 @@ function getDb(moduleId) {
   return db;
 }
 
+function hasDictionaryTable(db) {
+  try {
+    db.prepare('SELECT 1 FROM dictionary LIMIT 1').get();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function getModules() {
   const result = [];
   for (const [id, db] of dbs) {
@@ -72,8 +81,11 @@ function getModules() {
       for (const row of rows) info[row.name] = row.value;
     } catch (_) {}
 
+    const type = hasDictionaryTable(db) ? 'dictionary' : 'bible';
+
     result.push({
       id,
+      type,
       description: info.description || id,
       hasStrongs: (info.strong_numbers || '').toLowerCase() === 'true',
     });
@@ -81,6 +93,13 @@ function getModules() {
   // Sort alphabetically by description
   result.sort((a, b) => a.description.localeCompare(b.description));
   return result;
+}
+
+function getDictionaryEntry(moduleId, topic) {
+  const db = getDb(moduleId);
+  return db.prepare(
+    'SELECT topic, definition, lexeme, transliteration, pronunciation, short_definition FROM dictionary WHERE topic = ?'
+  ).get(topic) || null;
 }
 
 function getBooks(moduleId) {
@@ -109,16 +128,16 @@ function getChapter(moduleId, bookNumber, chapter) {
 function searchVerses(moduleId, query) {
   if (!query) return [];
 
-  // Extract strong:NUMBER tokens
-  const strongRegex = /strong:(\d+\w*)/gi;
+  // Extract strong:NUMBER tokens (with optional H/G prefix)
+  const strongRegex = /strong:([HhGg]?)(\d+\w*)/gi;
   const strongs = [];
   let match;
   while ((match = strongRegex.exec(query)) !== null) {
-    strongs.push(match[1]);
+    strongs.push({ prefix: match[1].toUpperCase(), number: match[2] });
   }
 
   // Extract remaining text terms
-  const textPart = query.replace(/strong:\d+\w*/gi, '').trim();
+  const textPart = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim();
   const textTerms = textPart ? textPart.split(/\s+/).filter(t => t.length >= 2) : [];
 
   if (strongs.length === 0 && textTerms.length === 0) return [];
@@ -127,9 +146,14 @@ function searchVerses(moduleId, query) {
   const conditions = [];
   const params = [];
 
-  for (const num of strongs) {
+  for (const { prefix, number } of strongs) {
     conditions.push("text LIKE '%<S>' || ? || '</S>%'");
-    params.push(num);
+    params.push(number);
+    if (prefix === 'H') {
+      conditions.push('book_number < 470');
+    } else if (prefix === 'G') {
+      conditions.push('book_number >= 470');
+    }
   }
 
   for (const term of textTerms) {
@@ -142,4 +166,4 @@ function searchVerses(moduleId, query) {
   return db.prepare(sql).bind(...params).all();
 }
 
-module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses };
+module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses, getDictionaryEntry };

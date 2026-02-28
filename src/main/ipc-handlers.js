@@ -19,6 +19,10 @@ function registerIpcHandlers() {
     modules.searchVerses(moduleId, query)
   );
 
+  ipcMain.handle('get-dictionary-entry', (_event, moduleId, topic) =>
+    modules.getDictionaryEntry(moduleId, topic)
+  );
+
   ipcMain.handle('get-app-state', () => stateStore.loadState());
 
   ipcMain.handle('save-app-state', (_event, state) => stateStore.saveState(state));

@@ -8,7 +8,7 @@ const SearchPanel = (() => {
   let onStateChange = null;
 
   // DOM refs
-  let panel, divider, input, select, resultsList, statusEl;
+  let sidebar, panel, divider, input, select, resultsList, statusEl;
 
   const MIN_WIDTH = 200;
   const MAX_WIDTH = 600;
@@ -23,6 +23,10 @@ const SearchPanel = (() => {
     emitStateChange();
   }
 
+  function getSidebar() {
+    return sidebar;
+  }
+
   function buildDOM(width) {
     const paneRoot = document.getElementById('pane-root');
     const body = paneRoot.parentElement;
@@ -32,10 +36,14 @@ const SearchPanel = (() => {
     layout.id = 'app-layout';
     layout.className = 'flex flex-row flex-1 overflow-hidden';
 
+    // Create left sidebar wrapper
+    sidebar = document.createElement('div');
+    sidebar.id = 'left-sidebar';
+    sidebar.style.width = clampWidth(width) + 'px';
+
     // Build search panel
     panel = document.createElement('div');
     panel.id = 'search-panel';
-    panel.style.width = clampWidth(width) + 'px';
 
     // Header
     const header = document.createElement('div');
@@ -57,7 +65,7 @@ const SearchPanel = (() => {
     // Translation select
     select = document.createElement('select');
     select.className = 'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
-    const sortedModules = [...modules].sort((a, b) =>
+    const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
       a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
     );
     for (const m of sortedModules) {
@@ -105,14 +113,17 @@ const SearchPanel = (() => {
     resultsList.className = 'search-panel-results';
     panel.appendChild(resultsList);
 
-    // Divider
+    // Divider (between left sidebar and pane-root)
     divider = document.createElement('div');
     divider.className = 'split-divider split-divider-h';
     setupDividerDrag();
 
+    // Assemble: search panel into sidebar
+    sidebar.appendChild(panel);
+
     // Reparent: remove pane-root from body, put it inside layout
     body.removeChild(paneRoot);
-    layout.appendChild(panel);
+    layout.appendChild(sidebar);
     layout.appendChild(divider);
     layout.appendChild(paneRoot);
     body.appendChild(layout);
@@ -123,11 +134,11 @@ const SearchPanel = (() => {
       e.preventDefault();
       divider.classList.add('dragging');
       const startX = e.clientX;
-      const startWidth = panel.offsetWidth;
+      const startWidth = sidebar.offsetWidth;
 
       const onMove = (e2) => {
         const newWidth = clampWidth(startWidth + (e2.clientX - startX));
-        panel.style.width = newWidth + 'px';
+        sidebar.style.width = newWidth + 'px';
       };
 
       const onUp = () => {
@@ -165,8 +176,8 @@ const SearchPanel = (() => {
     const query = input.value.trim();
     resultsList.innerHTML = '';
 
-    const hasStrong = /strong:\d+\w*/i.test(query);
-    const textTerms = query.replace(/strong:\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
+    const hasStrong = /strong:[HhGg]?\d+\w*/i.test(query);
+    const textTerms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
     if (!hasStrong && textTerms.length === 0) {
       statusEl.textContent = I18n.t('searchMinChars');
       return;
@@ -195,7 +206,7 @@ const SearchPanel = (() => {
 
   function renderResults(results, query) {
     const frag = document.createDocumentFragment();
-    const terms = query.replace(/strong:\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
+    const terms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
 
     for (const row of results) {
       const item = document.createElement('div');
@@ -239,6 +250,13 @@ const SearchPanel = (() => {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  function search(query) {
+    if (input) {
+      input.value = query;
+      runSearch();
+    }
+  }
+
   function focusInput() {
     if (input) input.focus();
   }
@@ -250,17 +268,17 @@ const SearchPanel = (() => {
   function emitStateChange() {
     if (!onStateChange) return;
     onStateChange({
-      width: panel.offsetWidth,
+      width: sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH,
       moduleId: selectedModuleId,
     });
   }
 
   function getState() {
     return {
-      width: panel ? panel.offsetWidth : DEFAULT_WIDTH,
+      width: sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH,
       moduleId: selectedModuleId,
     };
   }
 
-  return { init, focusInput, setStateChangeListener, getState };
+  return { init, focusInput, search, setStateChangeListener, getState, getSidebar };
 })();

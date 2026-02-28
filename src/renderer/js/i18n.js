@@ -18,6 +18,7 @@ const I18n = (() => {
       toggleTheme: 'Alternar tema',
       settings: 'Configurações',
       theme: 'Tema',
+      fontSize: 'Tamanho da fonte',
       language: 'Idioma',
       light: 'Claro',
       dark: 'Escuro',
@@ -31,6 +32,9 @@ const I18n = (() => {
       searching: 'Pesquisando...',
       strongsSearchOccurrences: 'Pesquisar ocorrências',
       strongsDictionaryLookup: 'Ver no dicionário Strong',
+      dictionary: 'Dicionário',
+      dictNoEntry: 'Entrada não encontrada.',
+      dictSelectTopic: 'Selecione um número Strong.',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -47,6 +51,7 @@ const I18n = (() => {
       toggleTheme: 'Toggle theme',
       settings: 'Settings',
       theme: 'Theme',
+      fontSize: 'Font size',
       language: 'Language',
       light: 'Light',
       dark: 'Dark',
@@ -60,6 +65,9 @@ const I18n = (() => {
       searching: 'Searching...',
       strongsSearchOccurrences: 'Search occurrences',
       strongsDictionaryLookup: "Look up in Strong's dictionary",
+      dictionary: 'Dictionary',
+      dictNoEntry: 'Entry not found.',
+      dictSelectTopic: "Select a Strong's number.",
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -76,6 +84,7 @@ const I18n = (() => {
       toggleTheme: 'Cambiar tema',
       settings: 'Ajustes',
       theme: 'Tema',
+      fontSize: 'Tamaño de fuente',
       language: 'Idioma',
       light: 'Claro',
       dark: 'Oscuro',
@@ -89,6 +98,9 @@ const I18n = (() => {
       searching: 'Buscando...',
       strongsSearchOccurrences: 'Buscar ocurrencias',
       strongsDictionaryLookup: 'Ver en el diccionario Strong',
+      dictionary: 'Diccionario',
+      dictNoEntry: 'Entrada no encontrada.',
+      dictSelectTopic: 'Seleccione un número Strong.',
     },
   };
 

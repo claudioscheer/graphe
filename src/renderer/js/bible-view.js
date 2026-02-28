@@ -16,7 +16,7 @@ const BibleView = (() => {
     return { range: null, text };
   }
 
-  function parseVerseText(text, showStrongs) {
+  function parseVerseText(text, showStrongs, strongsPrefix) {
     // Remove <f>...</f> footnotes
     let html = text.replace(/<f>[\s\S]*?<\/f>/gi, '');
 
@@ -34,7 +34,7 @@ const BibleView = (() => {
     // Add space between consecutive Strong's tags so numbers don't merge
     html = html.replace(/<\/S><S>/gi, '</S> <S>');
     if (showStrongs) {
-      html = html.replace(/<S>(\d+\w*)<\/S>/gi, '<span class="strongs">$1</span>');
+      html = html.replace(/<S>(\d+\w*)<\/S>/gi, `<span class="strongs">${strongsPrefix}$1</span>`);
     } else {
       html = html.replace(/<S>[\s\S]*?<\/S>/gi, '');
     }
@@ -51,7 +51,8 @@ const BibleView = (() => {
    * @param {Array} verses - [{verse, text}]
    * @param {boolean} showStrongs
    */
-  function renderChapter(container, verses, showStrongs) {
+  function renderChapter(container, verses, showStrongs, bookNumber) {
+    const strongsPrefix = bookNumber < 470 ? 'H' : 'G';
     container.innerHTML = '';
     const fragment = document.createDocumentFragment();
     const wrapper = document.createElement('div');
@@ -80,7 +81,7 @@ const BibleView = (() => {
       // Verse content
       const textSpan = document.createElement('span');
       textSpan.className = 'verse-content';
-      textSpan.innerHTML = parseVerseText(cleanText, showStrongs);
+      textSpan.innerHTML = parseVerseText(cleanText, showStrongs, strongsPrefix);
 
       line.appendChild(numSpan);
       line.appendChild(textSpan);
