@@ -1,5 +1,6 @@
 const { ipcMain } = require('electron');
 const modules = require('./modules');
+const stateStore = require('./state-store');
 
 function registerIpcHandlers() {
   ipcMain.handle('get-modules', () => modules.getModules());
@@ -13,6 +14,14 @@ function registerIpcHandlers() {
   ipcMain.handle('get-chapter', (_event, moduleId, bookNumber, chapter) =>
     modules.getChapter(moduleId, bookNumber, chapter)
   );
+
+  ipcMain.handle('search-verses', (_event, moduleId, query, limit) =>
+    modules.searchVerses(moduleId, query, limit)
+  );
+
+  ipcMain.handle('get-app-state', () => stateStore.loadState());
+
+  ipcMain.handle('save-app-state', (_event, state) => stateStore.saveState(state));
 }
 
 module.exports = { registerIpcHandlers };

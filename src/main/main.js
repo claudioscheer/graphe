@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const modules = require('./modules');
@@ -72,6 +72,25 @@ function buildMenu() {
         { role: 'togglefullscreen' },
         { type: 'separator' },
         {
+          label: 'Split Horizontal',
+          accelerator: 'CmdOrCtrl+Shift+H',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('split-h');
+            }
+          },
+        },
+        {
+          label: 'Split Vertical',
+          accelerator: 'CmdOrCtrl+Shift+V',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('split-v');
+            }
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Settings',
           accelerator: 'CmdOrCtrl+,',
           click: () => {
@@ -86,6 +105,32 @@ function buildMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+ipcMain.on('show-verse-context-menu', (event, { hasSelection }) => {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Copy',
+      accelerator: 'CmdOrCtrl+C',
+      enabled: hasSelection,
+      click: () => event.sender.send('context-menu-copy'),
+    },
+  ]);
+  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+});
+
+ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels }) => {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: labels.search,
+      click: () => event.sender.send('strongs-search', { strongsNumber, paneId }),
+    },
+    {
+      label: labels.lookup,
+      click: () => event.sender.send('strongs-lookup', { strongsNumber, paneId }),
+    },
+  ]);
+  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+});
 
 app.whenReady().then(() => {
   modules.init();

@@ -7,5 +7,16 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-chapter-count', moduleId, bookNumber),
   getChapter: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
+  searchVerses: (moduleId, query, limit) =>
+    ipcRenderer.invoke('search-verses', moduleId, query, limit),
+  getAppState: () => ipcRenderer.invoke('get-app-state'),
+  saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),
+  onSplitH: (callback) => ipcRenderer.on('split-h', callback),
+  onSplitV: (callback) => ipcRenderer.on('split-v', callback),
+  showVerseContextMenu: (opts) => ipcRenderer.send('show-verse-context-menu', opts),
+  onContextMenuCopy: (callback) => ipcRenderer.on('context-menu-copy', callback),
+  showStrongsContextMenu: (opts) => ipcRenderer.send('show-strongs-context-menu', opts),
+  onStrongsSearch: (callback) => ipcRenderer.on('strongs-search', callback),
+  onStrongsLookup: (callback) => ipcRenderer.on('strongs-lookup', callback),
 });

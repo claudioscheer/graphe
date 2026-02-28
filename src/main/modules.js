@@ -106,4 +106,13 @@ function getChapter(moduleId, bookNumber, chapter) {
     .all();
 }
 
-module.exports = { init, getModules, getBooks, getChapterCount, getChapter };
+function searchVerses(moduleId, query, limit = 200) {
+  if (!query || query.length < 2) return [];
+  const db = getDb(moduleId);
+  return db
+    .prepare('SELECT book_number AS bookNumber, chapter, verse, text FROM verses WHERE text LIKE \'%\' || ? || \'%\' ORDER BY book_number, chapter, verse LIMIT ?')
+    .bind(query, limit)
+    .all();
+}
+
+module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses };

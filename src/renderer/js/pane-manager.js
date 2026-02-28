@@ -3,40 +3,188 @@
  *
  * Tree structure:
  *   Node = { type: 'leaf', paneId } | { type: 'split', direction: 'h'|'v', children: [Node, Node], sizes: [px, px] }
- *
- * Each leaf has a corresponding pane state stored in `panes` map.
  */
 const PaneManager = (() => {
   let tree = null;
   let panes = {};
   let paneCounter = 0;
   let modules = [];
+  let onStateChange = null;
+  let activePaneId = null;
 
   const root = () => document.getElementById('pane-root');
 
-  function init(moduleList) {
+  function init(moduleList, savedState) {
     modules = moduleList;
-    const paneId = createPaneState();
-    tree = { type: 'leaf', paneId };
+
+    if (!restoreState(savedState)) {
+      const paneId = createPaneState();
+      tree = { type: 'leaf', paneId };
+      activePaneId = paneId;
+    } else {
+      // Set first leaf as active
+      activePaneId = getFirstLeafId(tree);
+    }
+
     render();
+    emitStateChange();
   }
 
-  function createPaneState() {
-    const id = 'pane-' + (++paneCounter);
+  function createPaneState(initial = {}) {
+    const id = initial.id || ('pane-' + (++paneCounter));
+    paneCounter = Math.max(paneCounter, parsePaneNumber(id));
+
+    const moduleId = resolveModuleId(initial.moduleId);
+    const mod = modules.find(m => m.id === moduleId) || modules[0] || null;
+
     panes[id] = {
       id,
-      moduleId: modules.length > 0 ? modules[0].id : null,
-      hasStrongs: modules.length > 0 ? modules[0].hasStrongs : false,
-      bookNumber: 10, // Genesis
-      chapter: 1,
+      moduleId,
+      hasStrongs: mod ? mod.hasStrongs : false,
+      bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
+      chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
+      bookShortName: initial.bookShortName || '',
       books: [],
       verses: [],
     };
+
     return id;
+  }
+
+  function parsePaneNumber(id) {
+    const match = String(id || '').match(/^pane-(\d+)$/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  function resolveModuleId(candidate) {
+    if (candidate && modules.some(m => m.id === candidate)) return candidate;
+    return modules.length > 0 ? modules[0].id : null;
+  }
+
+  function restoreState(savedState) {
+    if (!savedState || typeof savedState !== 'object') return false;
+    if (!savedState.tree || !savedState.panes) return false;
+
+    const leafIds = [];
+    const restoredTree = sanitizeTree(savedState.tree, leafIds);
+    if (!restoredTree || leafIds.length === 0) return false;
+
+    const nextPanes = {};
+    let maxCounter = 0;
+
+    for (const paneId of leafIds) {
+      const raw = savedState.panes[paneId] || {};
+      const moduleId = resolveModuleId(raw.moduleId);
+      const mod = modules.find(m => m.id === moduleId) || modules[0] || null;
+
+      nextPanes[paneId] = {
+        id: paneId,
+        moduleId,
+        hasStrongs: mod ? mod.hasStrongs : false,
+        bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
+        chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
+        bookShortName: raw.bookShortName || '',
+        books: [],
+        verses: [],
+      };
+
+      maxCounter = Math.max(maxCounter, parsePaneNumber(paneId));
+    }
+
+    panes = nextPanes;
+    tree = restoredTree;
+    paneCounter = maxCounter;
+    return true;
+  }
+
+  function sanitizeTree(node, leafIds) {
+    if (!node || typeof node !== 'object') return null;
+
+    if (node.type === 'leaf' && typeof node.paneId === 'string') {
+      leafIds.push(node.paneId);
+      return { type: 'leaf', paneId: node.paneId };
+    }
+
+    if (node.type !== 'split' || !Array.isArray(node.children) || node.children.length !== 2) {
+      return null;
+    }
+
+    const left = sanitizeTree(node.children[0], leafIds);
+    const right = sanitizeTree(node.children[1], leafIds);
+    if (!left || !right) return null;
+
+    const direction = node.direction === 'v' ? 'v' : 'h';
+    const size0 = Number.isFinite(node.sizes?.[0]) ? Math.max(100, Math.floor(node.sizes[0])) : 300;
+    const size1 = Number.isFinite(node.sizes?.[1]) ? Math.max(100, Math.floor(node.sizes[1])) : 300;
+
+    return {
+      type: 'split',
+      direction,
+      children: [left, right],
+      sizes: [size0, size1],
+    };
   }
 
   function getPane(paneId) {
     return panes[paneId] || null;
+  }
+
+  function setStateChangeListener(listener) {
+    onStateChange = typeof listener === 'function' ? listener : null;
+  }
+
+  function emitStateChange() {
+    if (!onStateChange) return;
+    onStateChange(getState());
+  }
+
+  function getState() {
+    const serializablePanes = {};
+    for (const pane of Object.values(panes)) {
+      serializablePanes[pane.id] = {
+        moduleId: pane.moduleId,
+        bookNumber: pane.bookNumber,
+        chapter: pane.chapter,
+        bookShortName: pane.bookShortName,
+      };
+    }
+
+    return {
+      tree,
+      panes: serializablePanes,
+    };
+  }
+
+  // ---- Active pane ----
+
+  function getFirstLeafId(node) {
+    if (node.type === 'leaf') return node.paneId;
+    return getFirstLeafId(node.children[0]);
+  }
+
+  function getAllLeafIds(node) {
+    if (node.type === 'leaf') return [node.paneId];
+    return [...getAllLeafIds(node.children[0]), ...getAllLeafIds(node.children[1])];
+  }
+
+  function cycleActivePane() {
+    const ids = getAllLeafIds(tree);
+    if (ids.length <= 1) return;
+    const idx = ids.indexOf(activePaneId);
+    setActivePane(ids[(idx + 1) % ids.length]);
+  }
+
+  function getActivePaneId() {
+    return activePaneId;
+  }
+
+  function setActivePane(paneId) {
+    if (!panes[paneId]) return;
+    const prev = document.querySelector(`[data-pane-id="${activePaneId}"]`);
+    if (prev) prev.classList.remove('pane-active');
+    activePaneId = paneId;
+    const next = document.querySelector(`[data-pane-id="${paneId}"]`);
+    if (next) next.classList.add('pane-active');
   }
 
   // ---- Rendering the tree into DOM ----
@@ -44,33 +192,32 @@ const PaneManager = (() => {
   function render() {
     const r = root();
     r.innerHTML = '';
-    const el = renderNode(tree, r);
+    const el = renderNode(tree);
     r.appendChild(el);
+    setActivePane(activePaneId);
 
     for (const pane of Object.values(panes)) {
       if (pane.books.length === 0 && pane.moduleId) {
-        loadPaneData(pane.id);       // first load
+        loadPaneData(pane.id);
       } else if (pane.books.length > 0) {
-        loadChapter(pane.id);        // re-render existing data
+        loadChapter(pane.id);
       }
     }
   }
 
-  function renderNode(node, parentEl) {
+  function renderNode(node) {
     if (node.type === 'leaf') {
       return createPaneElement(node.paneId);
     }
 
-    // Split container
     const container = document.createElement('div');
     container.className = 'flex h-full w-full';
     container.style.flexDirection = node.direction === 'h' ? 'row' : 'column';
 
-    const child0El = renderNode(node.children[0], container);
+    const child0El = renderNode(node.children[0]);
     const divider = createDivider(node);
-    const child1El = renderNode(node.children[1], container);
+    const child1El = renderNode(node.children[1]);
 
-    // Set sizes
     const dim = node.direction === 'h' ? 'width' : 'height';
     child0El.style.flex = 'none';
     child0El.style[dim] = node.sizes[0] + 'px';
@@ -88,15 +235,17 @@ const PaneManager = (() => {
     const el = document.createElement('div');
     el.className = 'flex flex-col h-full w-full min-w-0 min-h-0';
     el.dataset.paneId = paneId;
+    el.addEventListener('mousedown', () => setActivePane(paneId));
 
-    // Toolbar
     const toolbar = document.createElement('div');
     toolbar.className = 'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0';
 
-    // Module select
     const select = document.createElement('select');
     select.className = 'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
-    for (const m of modules) {
+    const sortedModules = [...modules].sort((a, b) =>
+      a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    for (const m of sortedModules) {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.id;
@@ -104,64 +253,51 @@ const PaneManager = (() => {
       if (m.id === pane.moduleId) opt.selected = true;
       select.appendChild(opt);
     }
-    select.addEventListener('change', () => {
+    select.addEventListener('change', async () => {
       pane.moduleId = select.value;
       const mod = modules.find(m => m.id === select.value);
       pane.hasStrongs = mod ? mod.hasStrongs : false;
-      loadPaneData(paneId);
+      pane.books = [];
+      pane.verses = [];
+      await loadPaneData(paneId);
+      emitStateChange();
     });
 
-    // Prev chapter
     const prevBtn = document.createElement('button');
-    prevBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-lg';
-    prevBtn.textContent = '‹';
+    prevBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    prevBtn.appendChild(Icons.create('chevron-left'));
     prevBtn.title = I18n.t('prevChapter');
     prevBtn.addEventListener('click', () => prevChapter(paneId));
 
-    // Nav button (shows current location)
     const navBtn = document.createElement('button');
-    navBtn.className = 'nav-btn px-3 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] text-center';
-    navBtn.textContent = '...';
+    navBtn.className = 'nav-btn px-3 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
+    navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-gray-500 dark:text-gray-400'));
+    const navBtnLabel = document.createElement('span');
+    navBtnLabel.className = 'nav-btn-label';
+    navBtnLabel.textContent = '...';
+    navBtn.appendChild(navBtnLabel);
     navBtn.addEventListener('click', async () => {
       const books = await window.api.getBooks(pane.moduleId);
       Navigation.open(paneId, books);
     });
 
-    // Next chapter
     const nextBtn = document.createElement('button');
-    nextBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-lg';
-    nextBtn.textContent = '›';
+    nextBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    nextBtn.appendChild(Icons.create('chevron-right'));
     nextBtn.title = I18n.t('nextChapter');
     nextBtn.addEventListener('click', () => nextChapter(paneId));
 
-    // Spacer
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
 
-    // Split H button
-    const splitHBtn = document.createElement('button');
-    splitHBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm';
-    splitHBtn.textContent = '⬓';
-    splitHBtn.title = I18n.t('splitH');
-    splitHBtn.addEventListener('click', () => splitPane(paneId, 'h'));
-
-    // Split V button
-    const splitVBtn = document.createElement('button');
-    splitVBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm';
-    splitVBtn.textContent = '⬒';
-    splitVBtn.title = I18n.t('splitV');
-    splitVBtn.addEventListener('click', () => splitPane(paneId, 'v'));
-
-    // Close button
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 cursor-pointer transition-colors text-sm';
-    closeBtn.textContent = '✕';
+    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, prevBtn, navBtn, nextBtn, spacer, splitHBtn, splitVBtn, closeBtn);
+    toolbar.append(select, prevBtn, navBtn, nextBtn, spacer, closeBtn);
 
-    // Content area
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
 
@@ -185,7 +321,6 @@ const PaneManager = (() => {
         const newSize = Math.max(100, startSize + delta);
         node.sizes[0] = newSize;
 
-        // Update DOM directly without full re-render
         const container = div.parentElement;
         const firstChild = container.children[0];
         const dim = node.direction === 'h' ? 'width' : 'height';
@@ -196,6 +331,7 @@ const PaneManager = (() => {
         div.classList.remove('dragging');
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        emitStateChange();
       };
 
       document.addEventListener('mousemove', onMove);
@@ -234,22 +370,29 @@ const PaneManager = (() => {
       return;
     }
 
-    // Find the pane DOM element and render
     const el = document.querySelector(`[data-pane-id="${paneId}"]`);
     if (!el) return;
 
     const content = el.querySelector('.pane-content');
+    const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
+    if (book) pane.bookShortName = book.shortName;
     BibleView.renderChapter(content, verses, pane.hasStrongs);
 
-    // Update nav button label
-    const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
-    const navBtn = el.querySelector('.nav-btn');
-    if (navBtn && book) {
-      navBtn.textContent = `${book.shortName} ${pane.chapter}`;
+    const wrapper = content.querySelector('.verse-text');
+    if (wrapper && book) {
+      wrapper.dataset.bookShort = book.shortName;
+      wrapper.dataset.chapter = pane.chapter;
+    }
+
+    const navBtnLabel = el.querySelector('.nav-btn-label');
+    if (navBtnLabel && book) {
+      navBtnLabel.textContent = `${book.shortName} ${pane.chapter}`;
     }
 
     if (scrollToVerse) {
       setTimeout(() => BibleView.scrollToVerse(content, scrollToVerse), 100);
+    } else {
+      content.scrollTop = 0;
     }
   }
 
@@ -259,16 +402,17 @@ const PaneManager = (() => {
     pane.bookNumber = bookNumber;
     pane.chapter = chapter;
     await loadChapter(paneId, verse || null);
+    emitStateChange();
   }
 
   async function prevChapter(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
+    if (!pane.books.find(b => b.bookNumber === pane.bookNumber)) return;
 
     if (pane.chapter > 1) {
       pane.chapter--;
     } else {
-      // Go to previous book's last chapter
       const idx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
       if (idx > 0) {
         const prevBook = pane.books[idx - 1];
@@ -278,17 +422,18 @@ const PaneManager = (() => {
       }
     }
     await loadChapter(paneId);
+    emitStateChange();
   }
 
   async function nextChapter(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
+    if (!pane.books.find(b => b.bookNumber === pane.bookNumber)) return;
 
     const count = await window.api.getChapterCount(pane.moduleId, pane.bookNumber);
     if (pane.chapter < count) {
       pane.chapter++;
     } else {
-      // Go to next book's first chapter
       const idx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
       if (idx < pane.books.length - 1) {
         pane.bookNumber = pane.books[idx + 1].bookNumber;
@@ -296,6 +441,7 @@ const PaneManager = (() => {
       }
     }
     await loadChapter(paneId);
+    emitStateChange();
   }
 
   function renderUnavailableMessage(paneId, type) {
@@ -313,21 +459,26 @@ const PaneManager = (() => {
       : I18n.t('chapterUnavailable');
     content.appendChild(msg);
 
-    const navBtn = el.querySelector('.nav-btn');
-    if (navBtn) {
+    const navBtnLabel = el.querySelector('.nav-btn-label');
+    if (navBtnLabel) {
       const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
-      navBtn.textContent = book
-        ? `${book.shortName} ${pane.chapter}`
-        : `#${pane.bookNumber} ${pane.chapter}`;
+      const name = book?.shortName || pane.bookShortName;
+      if (name) {
+        navBtnLabel.textContent = `${name} ${pane.chapter}`;
+      }
     }
   }
 
   // ---- Split / Close ----
 
+  function splitActivePane(direction) {
+    if (!activePaneId || !panes[activePaneId]) return;
+    splitPane(activePaneId, direction);
+  }
+
   function splitPane(paneId, direction) {
     const newPaneId = createPaneState();
 
-    // Copy current pane's location to the new pane
     const orig = panes[paneId];
     const newPane = panes[newPaneId];
     newPane.moduleId = orig.moduleId;
@@ -335,12 +486,10 @@ const PaneManager = (() => {
     newPane.bookNumber = orig.bookNumber;
     newPane.chapter = orig.chapter;
 
-    // Find the leaf in the tree and replace it with a split
     const parent = findParent(tree, paneId);
     const leaf = { type: 'leaf', paneId };
     const newLeaf = { type: 'leaf', paneId: newPaneId };
 
-    // Calculate initial size (half of the pane's current dimension)
     const el = document.querySelector(`[data-pane-id="${paneId}"]`);
     const size = direction === 'h' ? (el ? el.offsetWidth : 400) : (el ? el.offsetHeight : 300);
     const halfSize = Math.floor(size / 2);
@@ -353,7 +502,6 @@ const PaneManager = (() => {
     };
 
     if (!parent) {
-      // Splitting the root
       tree = splitNode;
     } else {
       const idx = parent.children.findIndex(c =>
@@ -362,7 +510,9 @@ const PaneManager = (() => {
       parent.children[idx] = splitNode;
     }
 
+    activePaneId = newPaneId;
     render();
+    emitStateChange();
   }
 
   function findParent(node, paneId) {
@@ -389,18 +539,15 @@ const PaneManager = (() => {
   }
 
   function closePane(paneId) {
-    // Don't close the last pane
     if (tree.type === 'leaf') return;
 
     const parent = findParent(tree, paneId);
     if (!parent) return;
 
-    // Find sibling
     const idx = parent.children.findIndex(c => c.type === 'leaf' && c.paneId === paneId);
     if (idx === -1) return;
     const sibling = parent.children[1 - idx];
 
-    // Replace parent with sibling in grandparent
     const grandparent = findParentOfNode(tree, parent);
     if (!grandparent) {
       tree = sibling;
@@ -410,18 +557,22 @@ const PaneManager = (() => {
     }
 
     delete panes[paneId];
+    if (activePaneId === paneId) {
+      activePaneId = getFirstLeafId(sibling);
+    }
     render();
+    emitStateChange();
   }
 
-  function findParentOfNode(root, target) {
-    if (root.type === 'leaf') return null;
-    for (let i = 0; i < root.children.length; i++) {
-      if (root.children[i] === target) return root;
-      const found = findParentOfNode(root.children[i], target);
+  function findParentOfNode(rootNode, target) {
+    if (rootNode.type === 'leaf') return null;
+    for (let i = 0; i < rootNode.children.length; i++) {
+      if (rootNode.children[i] === target) return rootNode;
+      const found = findParentOfNode(rootNode.children[i], target);
       if (found) return found;
     }
     return null;
   }
 
-  return { init, getPane, navigatePane, render };
+  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane };
 })();
