@@ -165,7 +165,9 @@ const SearchPanel = (() => {
     const query = input.value.trim();
     resultsList.innerHTML = '';
 
-    if (query.length < 2) {
+    const hasStrong = /strong:\d+\w*/i.test(query);
+    const textTerms = query.replace(/strong:\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
+    if (!hasStrong && textTerms.length === 0) {
       statusEl.textContent = I18n.t('searchMinChars');
       return;
     }
@@ -175,7 +177,7 @@ const SearchPanel = (() => {
     // Ensure books are cached before showing results
     await prefetchBooks();
 
-    statusEl.textContent = '...';
+    statusEl.textContent = I18n.t('searching');
 
     try {
       const results = await window.api.searchVerses(selectedModuleId, query);
@@ -193,7 +195,7 @@ const SearchPanel = (() => {
 
   function renderResults(results, query) {
     const frag = document.createDocumentFragment();
-    const lowerQuery = query.toLowerCase();
+    const terms = query.replace(/strong:\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
 
     for (const row of results) {
       const item = document.createElement('div');
@@ -209,7 +211,7 @@ const SearchPanel = (() => {
 
       const preview = document.createElement('div');
       preview.className = 'search-result-text';
-      preview.innerHTML = highlightText(stripTags(row.text), lowerQuery);
+      preview.innerHTML = highlightText(VerseUtils.cleanText(row.text), terms);
 
       item.appendChild(ref);
       item.appendChild(preview);
@@ -219,15 +221,14 @@ const SearchPanel = (() => {
     resultsList.appendChild(frag);
   }
 
-  function stripTags(html) {
-    return html.replace(/<[^>]+>/g, '');
-  }
-
-  function highlightText(text, lowerQuery) {
-    const escaped = escapeHtml(text);
-    const escapedQuery = escapeHtml(lowerQuery);
-    const regex = new RegExp(`(${escapeRegex(escapedQuery)})`, 'gi');
-    return escaped.replace(regex, '<mark>$1</mark>');
+  function highlightText(text, terms) {
+    let result = escapeHtml(text);
+    for (const term of terms) {
+      const escapedTerm = escapeHtml(term.toLowerCase());
+      const regex = new RegExp(`(${escapeRegex(escapedTerm)})`, 'gi');
+      result = result.replace(regex, '<mark>$1</mark>');
+    }
+    return result;
   }
 
   function escapeHtml(str) {

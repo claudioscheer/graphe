@@ -15,8 +15,8 @@ function registerIpcHandlers() {
     modules.getChapter(moduleId, bookNumber, chapter)
   );
 
-  ipcMain.handle('search-verses', (_event, moduleId, query, limit) =>
-    modules.searchVerses(moduleId, query, limit)
+  ipcMain.handle('search-verses', (_event, moduleId, query) =>
+    modules.searchVerses(moduleId, query)
   );
 
   ipcMain.handle('get-app-state', () => stateStore.loadState());

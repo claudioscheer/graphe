@@ -106,13 +106,40 @@ function getChapter(moduleId, bookNumber, chapter) {
     .all();
 }
 
-function searchVerses(moduleId, query, limit = 200) {
-  if (!query || query.length < 2) return [];
+function searchVerses(moduleId, query) {
+  if (!query) return [];
+
+  // Extract strong:NUMBER tokens
+  const strongRegex = /strong:(\d+\w*)/gi;
+  const strongs = [];
+  let match;
+  while ((match = strongRegex.exec(query)) !== null) {
+    strongs.push(match[1]);
+  }
+
+  // Extract remaining text terms
+  const textPart = query.replace(/strong:\d+\w*/gi, '').trim();
+  const textTerms = textPart ? textPart.split(/\s+/).filter(t => t.length >= 2) : [];
+
+  if (strongs.length === 0 && textTerms.length === 0) return [];
+
+  // Build WHERE clause with AND conditions
+  const conditions = [];
+  const params = [];
+
+  for (const num of strongs) {
+    conditions.push("text LIKE '%<S>' || ? || '</S>%'");
+    params.push(num);
+  }
+
+  for (const term of textTerms) {
+    conditions.push("text LIKE '%' || ? || '%'");
+    params.push(term);
+  }
+
+  const sql = `SELECT book_number AS bookNumber, chapter, verse, text FROM verses WHERE ${conditions.join(' AND ')} ORDER BY book_number, chapter, verse`;
   const db = getDb(moduleId);
-  return db
-    .prepare('SELECT book_number AS bookNumber, chapter, verse, text FROM verses WHERE text LIKE \'%\' || ? || \'%\' ORDER BY book_number, chapter, verse LIMIT ?')
-    .bind(query, limit)
-    .all();
+  return db.prepare(sql).bind(...params).all();
 }
 
 module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses };

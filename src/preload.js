@@ -7,8 +7,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-chapter-count', moduleId, bookNumber),
   getChapter: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
-  searchVerses: (moduleId, query, limit) =>
-    ipcRenderer.invoke('search-verses', moduleId, query, limit),
+  searchVerses: (moduleId, query) =>
+    ipcRenderer.invoke('search-verses', moduleId, query),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),
