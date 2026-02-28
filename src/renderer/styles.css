@@ -1,0 +1,188 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Bible text styling */
+.verse-text {
+  font-size: 20px;
+  line-height: 1.75;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.verse-number {
+  font-size: 0.6em;
+  font-weight: 700;
+  vertical-align: super;
+  color: #9b4d3a;
+  margin-right: 2px;
+  user-select: none;
+}
+
+.dark .verse-number {
+  color: #d4a089;
+}
+
+.strongs {
+  font-size: 0.55em;
+  vertical-align: super;
+  color: #9ca3af;
+  cursor: default;
+  user-select: none;
+}
+
+.dark .strongs {
+  color: #6b7280;
+}
+
+.verse-italic {
+  font-style: italic;
+}
+
+/* Pane toolbar */
+.pane-toolbar {
+  min-height: 44px;
+}
+
+.pane-toolbar select,
+.pane-toolbar button {
+  min-height: 36px;
+  min-width: 36px;
+}
+
+/* Shared select styling for clearer arrow spacing */
+.app-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2rem;
+  background-image: url("icons/chevron-down.svg");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 10px 6px;
+}
+
+.dark .app-select {
+  background-image: url("icons/chevron-down-dark.svg");
+}
+
+/* Divider */
+.split-divider {
+  flex-shrink: 0;
+  background: #e5e7eb;
+  transition: background 0.15s;
+}
+
+.split-divider:hover,
+.split-divider.dragging {
+  background: #3b82f6;
+}
+
+.dark .split-divider {
+  background: #374151;
+}
+
+.dark .split-divider:hover,
+.dark .split-divider.dragging {
+  background: #3b82f6;
+}
+
+.split-divider-h {
+  width: 5px;
+  cursor: col-resize;
+}
+
+.split-divider-v {
+  height: 5px;
+  cursor: row-resize;
+}
+
+/* Nav grid buttons */
+.nav-book-btn {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.nav-chapter-btn {
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 16px;
+}
+
+/* Paragraph break in verse text */
+.verse-pb {
+  display: block;
+  height: 0.5em;
+}
+
+/* Footnote marker */
+.verse-footnote {
+  display: none;
+}
+
+/* Scrollbar styling */
+.pane-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pane-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pane-content::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.dark .pane-content::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+/* Verse-per-line layout */
+.verse-line {
+  display: block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+  cursor: pointer;
+}
+
+.verse-line:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.dark .verse-line:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.verse-selected {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+.dark .verse-selected {
+  background-color: rgba(59, 130, 246, 0.15);
+}
+
+/* Verse highlight animation */
+@keyframes verse-highlight {
+  0% { background-color: rgba(59, 130, 246, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.verse-highlight {
+  animation: verse-highlight 2s ease-out;
+}
+
+/* Unavailable book/chapter message */
+.unavailable-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: #6b7280;
+  text-align: center;
+  padding: 2rem;
+}
+
+.dark .unavailable-message {
+  color: #9ca3af;
+}

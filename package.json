@@ -1,0 +1,25 @@
+{
+  "name": "graphe-bible",
+  "version": "1.0.0",
+  "description": "A modern Bible study app with split panes and Strong's numbers",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "npm run build:css && electron-forge start",
+    "dev": "npm run build:css && sh -c 'npm run watch:css & CSS_PID=$!; electron-forge start; kill $CSS_PID 2>/dev/null || true'",
+    "build:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css",
+    "watch:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css --watch",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.0.0",
+    "@electron-forge/maker-deb": "^7.0.0",
+    "@electron-forge/maker-zip": "^7.0.0",
+    "@tailwindcss/cli": "^4",
+    "electron": "^33.0.0",
+    "tailwindcss": "^4"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}
