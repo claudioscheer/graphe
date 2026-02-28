@@ -6,6 +6,16 @@ const BibleView = (() => {
    * Parse verse text into HTML.
    * Handles: <S>number</S>, <pb/>, <f>...</f>, <i>...</i>
    */
+  /**
+   * Extract <n>X-Y</n> verse-range tag from the beginning of text.
+   * Returns { range: 'X-Y' | null, text: remaining text }
+   */
+  function extractVerseRange(text) {
+    const match = text.match(/^<n>([\d]+-[\d]+)<\/n>\s*/i);
+    if (match) return { range: match[1], text: text.slice(match[0].length) };
+    return { range: null, text };
+  }
+
   function parseVerseText(text, showStrongs) {
     // Remove <f>...</f> footnotes
     let html = text.replace(/<f>[\s\S]*?<\/f>/gi, '');
@@ -50,20 +60,27 @@ const BibleView = (() => {
     let lastClickedVerse = null;
 
     for (const v of verses) {
+      const trimmed = v.text.trim();
+
+      // Skip empty verses (part of a verse range handled by another verse)
+      if (!trimmed) continue;
+
+      const { range, text: cleanText } = extractVerseRange(trimmed);
+
       const line = document.createElement('div');
       line.className = 'verse-line';
       line.dataset.verse = v.verse;
 
-      // Verse number
+      // Verse number (use range like "2-6" if present)
       const numSpan = document.createElement('span');
       numSpan.className = 'verse-number';
-      numSpan.textContent = v.verse;
+      numSpan.textContent = range || v.verse;
       numSpan.id = `v-${v.verse}`;
 
       // Verse content
       const textSpan = document.createElement('span');
       textSpan.className = 'verse-content';
-      textSpan.innerHTML = parseVerseText(v.text.trim(), showStrongs);
+      textSpan.innerHTML = parseVerseText(cleanText, showStrongs);
 
       line.appendChild(numSpan);
       line.appendChild(textSpan);
