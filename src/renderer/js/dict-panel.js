@@ -1,20 +1,20 @@
 /**
- * dict-panel.js — Dictionary panel for Strong's number lookups
+ * dict-panel.js — Dictionary panel for Strong's number and word lookups
  */
 const DictPanel = (() => {
   let dictModules = [];
-  let selectedDictId = null;
+  let wordDictModules = [];
   let onStateChange = null;
+  let autocompleteTimer = null;
+  let activeAutocompleteIdx = -1;
 
   // DOM refs
-  let panel, contentEl, select;
+  let panel, contentEl, searchInput, autocompleteEl;
 
   function init(modules, savedState) {
     dictModules = modules;
+    wordDictModules = modules.filter(m => !m.isStrongDict);
     if (dictModules.length === 0) return;
-    selectedDictId = savedState?.dictModuleId
-      || (dictModules[0] && dictModules[0].id)
-      || null;
     buildDOM(savedState?.dictHeight);
   }
 
@@ -53,25 +53,25 @@ const DictPanel = (() => {
     titleRow.appendChild(title);
     header.appendChild(titleRow);
 
-    // Dictionary select
-    select = document.createElement('select');
-    select.className = 'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
-    const sorted = [...dictModules].sort((a, b) =>
-      a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
-    );
-    for (const m of sorted) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.id;
-      opt.title = m.description;
-      if (m.id === selectedDictId) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.addEventListener('change', () => {
-      selectedDictId = select.value;
-      emitStateChange();
-    });
-    header.appendChild(select);
+    // Search input with autocomplete wrapper
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'dict-search-wrapper mt-2';
+
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'w-full pl-2 pr-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100';
+    searchInput.setAttribute('data-i18n-placeholder', 'dictSearchPlaceholder');
+    searchInput.placeholder = I18n.t('dictSearchPlaceholder');
+    searchInput.addEventListener('input', onSearchInput);
+    searchInput.addEventListener('keydown', onSearchKeydown);
+
+    autocompleteEl = document.createElement('div');
+    autocompleteEl.className = 'dict-autocomplete';
+    autocompleteEl.style.display = 'none';
+
+    searchWrapper.appendChild(searchInput);
+    searchWrapper.appendChild(autocompleteEl);
+    header.appendChild(searchWrapper);
     panel.appendChild(header);
 
     // Content area
@@ -82,6 +82,11 @@ const DictPanel = (() => {
 
     sidebar.appendChild(divider);
     sidebar.appendChild(panel);
+
+    // Close autocomplete when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!searchWrapper.contains(e.target)) hideAutocomplete();
+    });
   }
 
   function setupVerticalDivider(divider) {
@@ -89,7 +94,6 @@ const DictPanel = (() => {
       e.preventDefault();
       divider.classList.add('dragging');
       const startY = e.clientY;
-      const sidebar = SearchPanel.getSidebar();
       const searchPanel = document.getElementById('search-panel');
       const startSearchH = searchPanel.offsetHeight;
       const startDictH = panel.offsetHeight;
@@ -116,39 +120,182 @@ const DictPanel = (() => {
     });
   }
 
+  // --- Autocomplete for word-keyed dictionaries ---
+
+  function onSearchInput() {
+    const val = searchInput.value.trim();
+    clearTimeout(autocompleteTimer);
+
+    if (val.length < 2 || wordDictModules.length === 0) {
+      hideAutocomplete();
+      return;
+    }
+
+    autocompleteTimer = setTimeout(async () => {
+      try {
+        const moduleId = wordDictModules[0].id;
+        const topics = await window.api.searchDictionaryTopics(moduleId, val, 15);
+        if (topics.length === 0) {
+          hideAutocomplete();
+          return;
+        }
+        showAutocomplete(topics, moduleId);
+      } catch (_) {
+        hideAutocomplete();
+      }
+    }, 200);
+  }
+
+  function onSearchKeydown(e) {
+    if (autocompleteEl.style.display === 'none') {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = searchInput.value.trim();
+        if (val && wordDictModules.length > 0) {
+          lookupWord(val);
+        }
+      }
+      return;
+    }
+
+    const items = autocompleteEl.querySelectorAll('.dict-autocomplete-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeAutocompleteIdx = Math.min(activeAutocompleteIdx + 1, items.length - 1);
+      updateAutocompleteActive(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeAutocompleteIdx = Math.max(activeAutocompleteIdx - 1, 0);
+      updateAutocompleteActive(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeAutocompleteIdx >= 0 && items[activeAutocompleteIdx]) {
+        items[activeAutocompleteIdx].click();
+      }
+    } else if (e.key === 'Escape') {
+      hideAutocomplete();
+    }
+  }
+
+  function showAutocomplete(topics, moduleId) {
+    autocompleteEl.innerHTML = '';
+    activeAutocompleteIdx = -1;
+    for (const topic of topics) {
+      const item = document.createElement('div');
+      item.className = 'dict-autocomplete-item';
+      item.textContent = topic;
+      item.addEventListener('click', () => {
+        searchInput.value = topic;
+        hideAutocomplete();
+        lookupWord(topic, moduleId);
+      });
+      autocompleteEl.appendChild(item);
+    }
+    autocompleteEl.style.display = 'block';
+  }
+
+  function hideAutocomplete() {
+    autocompleteEl.style.display = 'none';
+    activeAutocompleteIdx = -1;
+  }
+
+  function updateAutocompleteActive(items) {
+    for (let i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', i === activeAutocompleteIdx);
+    }
+  }
+
+  // --- Strong's lookup (multi-dictionary) ---
+
   async function lookup(strongsNumber) {
     if (!panel || dictModules.length === 0) return;
-    if (!selectedDictId) return;
 
+    searchInput.value = strongsNumber;
+    hideAutocomplete();
     contentEl.innerHTML = '';
 
     try {
-      const entry = await window.api.getDictionaryEntry(selectedDictId, strongsNumber);
-      if (!entry) {
+      const results = await window.api.lookupAllStrongDicts(strongsNumber);
+      if (results.length === 0) {
         contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
       }
-      renderEntry(entry);
+
+      for (const { moduleId, entry } of results) {
+        const section = document.createElement('div');
+        section.className = 'dict-module-section';
+
+        // Module name header
+        const modHeader = document.createElement('div');
+        modHeader.className = 'dict-module-header';
+        modHeader.textContent = moduleId;
+        section.appendChild(modHeader);
+
+        // Render entry based on module type
+        renderModuleEntry(section, moduleId, entry);
+        contentEl.appendChild(section);
+      }
     } catch (err) {
       contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(err.message) + '</div>';
     }
   }
 
-  function renderEntry(entry) {
-    const frag = document.createDocumentFragment();
+  // --- Word lookup (Almeida-style dictionaries) ---
+
+  async function lookupWord(topic, moduleId) {
+    if (!panel) return;
+    moduleId = moduleId || (wordDictModules[0] && wordDictModules[0].id);
+    if (!moduleId) return;
+
+    hideAutocomplete();
+    contentEl.innerHTML = '';
+
+    try {
+      const entry = await window.api.getDictionaryEntry(moduleId, topic);
+      if (!entry) {
+        contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+        return;
+      }
+
+      const section = document.createElement('div');
+      section.className = 'dict-module-section';
+      const modHeader = document.createElement('div');
+      modHeader.className = 'dict-module-header';
+      modHeader.textContent = moduleId;
+      section.appendChild(modHeader);
+      renderModuleEntry(section, moduleId, entry);
+      contentEl.appendChild(section);
+    } catch (err) {
+      contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  // --- Per-module rendering dispatch ---
+
+  function renderModuleEntry(container, moduleId, entry) {
+    const mod = dictModules.find(m => m.id === moduleId);
+    const isStrongDict = mod ? mod.isStrongDict : false;
 
     // Topic heading
     const topicEl = document.createElement('div');
     topicEl.className = 'dict-entry-topic';
     topicEl.textContent = entry.topic;
-    frag.appendChild(topicEl);
+    container.appendChild(topicEl);
 
-    // Lexeme (original language word)
+    if (isStrongDict) {
+      renderStrongEntry(container, moduleId, entry);
+    } else {
+      renderWordEntry(container, entry);
+    }
+  }
+
+  function renderStrongEntry(container, moduleId, entry) {
+    // Lexeme
     if (entry.lexeme) {
       const lexEl = document.createElement('div');
       lexEl.className = 'dict-entry-lexeme';
       lexEl.textContent = entry.lexeme;
-      frag.appendChild(lexEl);
+      container.appendChild(lexEl);
     }
 
     // Transliteration + pronunciation
@@ -159,7 +306,7 @@ const DictPanel = (() => {
       if (entry.transliteration) parts.push(entry.transliteration);
       if (entry.pronunciation) parts.push(entry.pronunciation);
       metaEl.textContent = parts.join(' — ');
-      frag.appendChild(metaEl);
+      container.appendChild(metaEl);
     }
 
     // Short definition
@@ -167,20 +314,166 @@ const DictPanel = (() => {
       const shortEl = document.createElement('div');
       shortEl.className = 'dict-entry-short';
       shortEl.textContent = entry.short_definition;
-      frag.appendChild(shortEl);
+      container.appendChild(shortEl);
     }
 
-    // Full definition (HTML)
+    // Full definition
     if (entry.definition) {
       const defEl = document.createElement('div');
       defEl.className = 'dict-entry-definition';
-      defEl.innerHTML = formatDefinition(entry.definition);
-      bindCrossRefs(defEl);
-      frag.appendChild(defEl);
+
+      // BDB-T has proper HTML (<ol>, <p class=...>) — render directly
+      // Strong-PT has flat text — use formatDefinition parser
+      if (hasStructuredHtml(entry.definition)) {
+        // Strip redundant prefix (Original/Transliteration/Phonetic) already shown in fields above
+        let html = entry.definition;
+        const contentStart = html.search(/<(?:p\s+class|ol[\s>])/i);
+        if (contentStart > 0) html = html.substring(contentStart);
+        defEl.innerHTML = html;
+      } else {
+        defEl.innerHTML = formatDefinition(entry.definition);
+      }
+
+      bindStrongsCrossRefs(defEl);
+      container.appendChild(defEl);
     }
 
-    contentEl.appendChild(frag);
+    // Cognates (async, appended after load)
+    loadCognates(container, moduleId, entry.topic);
   }
+
+  function renderWordEntry(container, entry) {
+    // Word dictionaries (Almeida): just topic + definition
+    if (entry.definition) {
+      const defEl = document.createElement('div');
+      defEl.className = 'dict-entry-definition';
+      defEl.innerHTML = entry.definition;
+      bindBibleRefs(defEl);
+      bindVCrossRefs(defEl);
+      bindStrongsCrossRefs(defEl);
+      container.appendChild(defEl);
+    }
+  }
+
+  /** Detect whether a definition string contains structured HTML (BDB-T style) */
+  function hasStructuredHtml(html) {
+    return /<ol[\s>]|<p\s+class\s*=\s*"/i.test(html);
+  }
+
+  // --- Cognates ---
+
+  async function loadCognates(container, moduleId, topic) {
+    try {
+      const cognates = await window.api.getDictionaryCognates(moduleId, topic);
+      if (cognates.length === 0) return;
+
+      const section = document.createElement('div');
+      section.className = 'dict-cognates-section';
+
+      const label = document.createElement('div');
+      label.className = 'dict-cognates-label';
+      label.textContent = I18n.t('dictCognates');
+      section.appendChild(label);
+
+      for (const cog of cognates) {
+        const tag = document.createElement('span');
+        tag.className = 'dict-cognate-tag';
+        tag.textContent = cog;
+        tag.addEventListener('click', () => SearchPanel.search('strong:' + cog));
+        section.appendChild(tag);
+      }
+
+      container.appendChild(section);
+    } catch (_) {}
+  }
+
+  // --- Link binding ---
+
+  function bindStrongsCrossRefs(container) {
+    const links = container.querySelectorAll('a[href^="S:"]');
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      const topic = href.replace(/^S:/, '');
+      link.removeAttribute('href');
+      link.classList.add('dict-crossref');
+      link.dataset.topic = topic;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        lookup(topic);
+      });
+    }
+
+    // Mark TWOT refs as non-navigable
+    const twotLinks = container.querySelectorAll('a.T, a[class="T"]');
+    for (const link of twotLinks) {
+      link.removeAttribute('href');
+      link.classList.add('dict-twot-ref');
+    }
+  }
+
+  function bindBibleRefs(container) {
+    const links = container.querySelectorAll('a[href^="B:"]');
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      // Format: B:BOOKNUM chapter:verse
+      const match = href.match(/^B:(\d+)\s+(\d+):(\d+)$/);
+      if (!match) continue;
+      const bookNumber = parseInt(match[1]);
+      const chapter = parseInt(match[2]);
+      const verse = parseInt(match[3]);
+
+      link.removeAttribute('href');
+      link.classList.add('dict-bible-ref');
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const paneId = PaneManager.getActivePaneId();
+        PaneManager.navigatePane(paneId, bookNumber, chapter, verse);
+      });
+    }
+  }
+
+  function bindVCrossRefs(container) {
+    // Find "V. TOPIC" patterns in text nodes and make them clickable
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const replacements = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (/V\.\s+[A-ZÀ-Ú]/.test(node.textContent)) {
+        replacements.push(node);
+      }
+    }
+
+    for (const textNode of replacements) {
+      const frag = document.createDocumentFragment();
+      const text = textNode.textContent;
+      // Match "V. WORD" or "V. WORD WORD" (uppercase words after V.)
+      const regex = /V\.\s+([A-ZÀ-Ú][A-ZÀ-Ú\s,]*[A-ZÀ-Ú])/g;
+      let lastIdx = 0;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        // Text before the match
+        if (m.index > lastIdx) {
+          frag.appendChild(document.createTextNode(text.substring(lastIdx, m.index)));
+        }
+        // Create clickable cross-ref
+        const span = document.createElement('span');
+        span.className = 'dict-vcrossref';
+        span.textContent = m[0];
+        const topic = m[1].trim();
+        span.addEventListener('click', () => lookupWord(topic));
+        frag.appendChild(span);
+        lastIdx = m.index + m[0].length;
+      }
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+      }
+      if (lastIdx > 0) {
+        textNode.parentNode.replaceChild(frag, textNode);
+      }
+    }
+  }
+
+  // --- Strong-PT definition formatter (unchanged logic) ---
 
   /**
    * Parses a raw definition string into structured HTML.
@@ -203,25 +496,16 @@ const DictPanel = (() => {
       return s.replace(/\x00LINK(\d+)\x00/g, (_, idx) => anchors[parseInt(idx)]);
     }
 
-    // Find the definition items: labels like "1 ", "1a ", "2b1 "
-    // These are definition numbers: a digit optionally followed by a lowercase letter
-    // and optionally another digit, surrounded by spaces.
-    // We need to distinguish definition labels from numbers in grammar codes
-    // (e.g. "tdnt - 1 682 117 n f"). Strategy: find the first "1 " that starts
-    // actual definitions — definition "1" always comes first.
     const defStartRegex = /(?:^|\s)(1)\s+([a-z])/;
     const defStartMatch = defStartRegex.exec(text);
 
     if (!defStartMatch) {
-      // No numbered definitions found — render as plain text
       return '<div class="dict-def-preamble">' + restoreAnchors(text.trim()) + '</div>';
     }
 
     const preamble = text.substring(0, defStartMatch.index).trim();
     const defText = text.substring(defStartMatch.index).trim();
 
-    // Now split the definition text into numbered items
-    // Match: space-boundary, then a label (digit(s) + optional letter + optional digit), then space + lowercase
     const itemRegex = /(?:^|\s)(\d+[a-z]?\d?)\s+(?=[a-z\x00])/g;
     const rawIndices = [];
     let match;
@@ -234,10 +518,6 @@ const DictPanel = (() => {
       });
     }
 
-    // Filter out false positives by validating sequential structure.
-    // Valid labels must follow logically: 1, 1a, 1a1, 1b, 2, 2a, etc.
-    // A top-level number N is valid if N <= lastTopLevel + 1.
-    // A sub-item like "Na" is valid if N == current top-level number.
     const indices = [];
     let lastTopNum = 0;
 
@@ -246,20 +526,17 @@ const DictPanel = (() => {
       const level = getLevel(idx.label);
 
       if (level === 0) {
-        // Top-level: must be next in sequence (or same for repeated)
         if (topNum <= lastTopNum + 1) {
           indices.push(idx);
           lastTopNum = topNum;
         }
       } else {
-        // Sub-item: its numeric prefix must match the last top-level number
         if (topNum === lastTopNum) {
           indices.push(idx);
         }
       }
     }
 
-    // Extract each numbered item's text
     const items = [];
     for (let i = 0; i < indices.length; i++) {
       const end = i + 1 < indices.length ? indices[i + 1].start : defText.length;
@@ -269,11 +546,9 @@ const DictPanel = (() => {
       });
     }
 
-    // Build HTML output
     let out = '';
 
     if (preamble) {
-      // Clean up grammar codes for display
       out += '<div class="dict-def-preamble">' + restoreAnchors(preamble) + '</div>';
     }
 
@@ -284,10 +559,6 @@ const DictPanel = (() => {
     return out;
   }
 
-  /**
-   * Builds nested <ol> lists from numbered items.
-   * Items like "1", "2" are top-level; "1a", "1b" nest under "1"; "4a1" nests under "4a".
-   */
   function buildNestedList(items, restoreAnchors) {
     let html = '<ol class="dict-def-list">';
     let i = 0;
@@ -299,7 +570,6 @@ const DictPanel = (() => {
       if (level === 0) {
         html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
 
-        // Collect sub-items
         const subItems = [];
         let j = i + 1;
         while (j < items.length && getLevel(items[j].label) > 0) {
@@ -331,7 +601,6 @@ const DictPanel = (() => {
       const item = items[i];
       html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
 
-      // Check for deeper nesting (e.g. "4a1" under "4a")
       const deepItems = [];
       let j = i + 1;
       while (j < items.length && getLevel(items[j].label) > getLevel(item.label)) {
@@ -361,20 +630,7 @@ const DictPanel = (() => {
     return 0;
   }
 
-  function bindCrossRefs(container) {
-    const links = container.querySelectorAll('a[href^="S:"]');
-    for (const link of links) {
-      const href = link.getAttribute('href');
-      const topic = href.replace(/^S:/, '');
-      link.removeAttribute('href');
-      link.classList.add('dict-crossref');
-      link.dataset.topic = topic;
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        lookup(topic);
-      });
-    }
-  }
+  // --- Utilities ---
 
   function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -391,10 +647,9 @@ const DictPanel = (() => {
 
   function getState() {
     return {
-      dictModuleId: selectedDictId,
       dictHeight: panel ? panel.offsetHeight : null,
     };
   }
 
-  return { init, lookup, setStateChangeListener, getState };
+  return { init, lookup, lookupWord, setStateChangeListener, getState };
 })();

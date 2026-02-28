@@ -237,6 +237,16 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     return true;
   }
 
+  // Left-click on a Strong's number → dictionary lookup
+  document.addEventListener('click', (e) => {
+    const strongsEl = e.target.closest('.strongs');
+    if (strongsEl) {
+      e.preventDefault();
+      const strongsNumber = strongsEl.textContent.trim();
+      DictPanel.lookup(strongsNumber);
+    }
+  });
+
   document.addEventListener('contextmenu', (e) => {
     const paneContent = e.target.closest('.pane-content');
     if (!paneContent) return;

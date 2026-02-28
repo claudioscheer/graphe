@@ -23,6 +23,18 @@ function registerIpcHandlers() {
     modules.getDictionaryEntry(moduleId, topic)
   );
 
+  ipcMain.handle('lookup-all-strong-dicts', (_event, topic) =>
+    modules.lookupAllStrongDicts(topic)
+  );
+
+  ipcMain.handle('search-dictionary-topics', (_event, moduleId, prefix, limit) =>
+    modules.searchDictionaryTopics(moduleId, prefix, limit)
+  );
+
+  ipcMain.handle('get-dictionary-cognates', (_event, moduleId, strongsNumber) =>
+    modules.getDictionaryCognates(moduleId, strongsNumber)
+  );
+
   ipcMain.handle('get-app-state', () => stateStore.loadState());
 
   ipcMain.handle('save-app-state', (_event, state) => stateStore.saveState(state));

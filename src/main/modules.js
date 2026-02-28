@@ -5,6 +5,7 @@ const Database = require('better-sqlite3');
 
 const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
 const dbs = new Map();
+const dictColumnCache = new Map();
 
 function getBundledDataDir() {
   // In packaged app, extraResource puts 'data' alongside the asar
@@ -83,23 +84,79 @@ function getModules() {
 
     const type = hasDictionaryTable(db) ? 'dictionary' : 'bible';
 
-    result.push({
+    const mod = {
       id,
       type,
       description: info.description || id,
       hasStrongs: (info.strong_numbers || '').toLowerCase() === 'true',
-    });
+    };
+
+    if (type === 'dictionary') {
+      mod.isStrongDict = (info.is_strong || '').toLowerCase() === 'true';
+      mod.language = info.language || null;
+    }
+
+    result.push(mod);
   }
   // Sort alphabetically by description
   result.sort((a, b) => a.description.localeCompare(b.description));
   return result;
 }
 
+function getDictColumns(moduleId) {
+  if (dictColumnCache.has(moduleId)) return dictColumnCache.get(moduleId);
+  const db = getDb(moduleId);
+  const rows = db.prepare('PRAGMA table_info(dictionary)').all();
+  const cols = rows.map(r => r.name);
+  dictColumnCache.set(moduleId, cols);
+  return cols;
+}
+
 function getDictionaryEntry(moduleId, topic) {
   const db = getDb(moduleId);
+  const cols = getDictColumns(moduleId);
+  const select = cols.join(', ');
+  return db.prepare(`SELECT ${select} FROM dictionary WHERE topic = ?`).get(topic) || null;
+}
+
+function lookupAllStrongDicts(topic) {
+  const results = [];
+  for (const [id, db] of dbs) {
+    if (!hasDictionaryTable(db)) continue;
+    let isStrong = false;
+    try {
+      const row = db.prepare("SELECT value FROM info WHERE name = 'is_strong'").get();
+      isStrong = row && row.value.toLowerCase() === 'true';
+    } catch (_) {}
+    if (!isStrong) continue;
+    try {
+      const entry = getDictionaryEntry(id, topic);
+      if (entry) results.push({ moduleId: id, entry });
+    } catch (_) {}
+  }
+  return results;
+}
+
+function searchDictionaryTopics(moduleId, prefix, limit) {
+  const db = getDb(moduleId);
   return db.prepare(
-    'SELECT topic, definition, lexeme, transliteration, pronunciation, short_definition FROM dictionary WHERE topic = ?'
-  ).get(topic) || null;
+    'SELECT topic FROM dictionary WHERE topic LIKE ? ORDER BY topic LIMIT ?'
+  ).all(prefix + '%', limit || 20).map(r => r.topic);
+}
+
+function getDictionaryCognates(moduleId, strongsNumber) {
+  const db = getDb(moduleId);
+  try {
+    const row = db.prepare(
+      'SELECT group_id FROM cognate_strong_numbers WHERE strong_number = ? LIMIT 1'
+    ).get(strongsNumber);
+    if (!row) return [];
+    return db.prepare(
+      'SELECT strong_number FROM cognate_strong_numbers WHERE group_id = ? AND strong_number != ?'
+    ).all(row.group_id, strongsNumber).map(r => r.strong_number);
+  } catch (_) {
+    return [];
+  }
 }
 
 function getBooks(moduleId) {
@@ -166,4 +223,4 @@ function searchVerses(moduleId, query) {
   return db.prepare(sql).bind(...params).all();
 }
 
-module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses, getDictionaryEntry };
+module.exports = { init, getModules, getBooks, getChapterCount, getChapter, searchVerses, getDictionaryEntry, lookupAllStrongDicts, searchDictionaryTopics, getDictionaryCognates };

@@ -34,7 +34,9 @@ const I18n = (() => {
       strongsDictionaryLookup: 'Ver no dicionário Strong',
       dictionary: 'Dicionário',
       dictNoEntry: 'Entrada não encontrada.',
-      dictSelectTopic: 'Selecione um número Strong.',
+      dictSelectTopic: 'Digite um tema ou clique em um número Strong.',
+      dictSearchPlaceholder: 'Buscar tema...',
+      dictCognates: 'Palavras relacionadas',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -67,7 +69,9 @@ const I18n = (() => {
       strongsDictionaryLookup: "Look up in Strong's dictionary",
       dictionary: 'Dictionary',
       dictNoEntry: 'Entry not found.',
-      dictSelectTopic: "Select a Strong's number.",
+      dictSelectTopic: "Type a topic or click a Strong's number.",
+      dictSearchPlaceholder: 'Search topic...',
+      dictCognates: 'Related words',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -100,7 +104,9 @@ const I18n = (() => {
       strongsDictionaryLookup: 'Ver en el diccionario Strong',
       dictionary: 'Diccionario',
       dictNoEntry: 'Entrada no encontrada.',
-      dictSelectTopic: 'Seleccione un número Strong.',
+      dictSelectTopic: 'Escriba un tema o haga clic en un número Strong.',
+      dictSearchPlaceholder: 'Buscar tema...',
+      dictCognates: 'Palabras relacionadas',
     },
   };
 

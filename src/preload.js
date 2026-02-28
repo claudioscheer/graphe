@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('search-verses', moduleId, query),
   getDictionaryEntry: (moduleId, topic) =>
     ipcRenderer.invoke('get-dictionary-entry', moduleId, topic),
+  lookupAllStrongDicts: (topic) =>
+    ipcRenderer.invoke('lookup-all-strong-dicts', topic),
+  searchDictionaryTopics: (moduleId, prefix, limit) =>
+    ipcRenderer.invoke('search-dictionary-topics', moduleId, prefix, limit),
+  getDictionaryCognates: (moduleId, strongsNumber) =>
+    ipcRenderer.invoke('get-dictionary-cognates', moduleId, strongsNumber),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),

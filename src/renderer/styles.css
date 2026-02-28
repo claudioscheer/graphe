@@ -480,3 +480,173 @@
   font-size: 11px;
   margin-right: 2px;
 }
+
+/* BDB-T custom tags */
+he { color: #3b82f6; font-size: 105%; }
+el { color: #3b82f6; }
+
+.dict-entry-definition p.li260 { padding-left: 26px; }
+.dict-entry-definition p.li520 { padding-left: 39px; }
+.dict-entry-definition p.li780 { padding-left: 52px; }
+.dict-entry-definition p.bdb_def { padding: 6px 0; font-weight: 600; }
+.dict-entry-definition ol { padding-left: 25px; margin-top: 4px; }
+.dict-entry-definition li { margin-top: 4px; }
+
+/* Module section separation (stacked dict results) */
+.dict-module-section {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dict-module-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.dark .dict-module-section {
+  border-bottom-color: #374151;
+}
+
+.dict-module-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.dark .dict-module-header {
+  color: #6b7280;
+}
+
+/* Autocomplete dropdown */
+.dict-search-wrapper {
+  position: relative;
+}
+
+.dict-autocomplete {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.dark .dict-autocomplete {
+  background: #1f2937;
+  border-color: #4b5563;
+}
+
+.dict-autocomplete-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer !important;
+  color: #374151;
+}
+
+.dict-autocomplete-item:hover,
+.dict-autocomplete-item.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.dark .dict-autocomplete-item {
+  color: #d1d5db;
+}
+
+.dark .dict-autocomplete-item:hover,
+.dark .dict-autocomplete-item.active {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+/* Bible reference links */
+.dict-bible-ref {
+  color: #3b82f6;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+
+.dict-bible-ref:hover {
+  text-decoration-color: #3b82f6;
+}
+
+/* Cognate tags */
+.dict-cognates-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.dark .dict-cognates-section {
+  border-top-color: #374151;
+}
+
+.dict-cognates-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.dark .dict-cognates-label {
+  color: #6b7280;
+}
+
+.dict-cognate-tag {
+  display: inline-block !important;
+  padding: 2px 8px;
+  margin: 2px 4px 2px 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dict-cognate-tag:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.dark .dict-cognate-tag {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.15);
+}
+
+.dark .dict-cognate-tag:hover {
+  background: rgba(96, 165, 250, 0.25);
+}
+
+/* TWOT refs */
+.dict-twot-ref {
+  color: #8b5cf6;
+  cursor: default;
+}
+
+/* V. cross-ref links */
+.dict-vcrossref {
+  color: #3b82f6;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+
+.dict-vcrossref:hover {
+  text-decoration-color: #3b82f6;
+}
