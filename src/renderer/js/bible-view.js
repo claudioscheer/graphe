@@ -217,8 +217,8 @@ const BibleView = (() => {
     const target = line || el;
     requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      target.classList.add('verse-highlight');
-      setTimeout(() => target.classList.remove('verse-highlight'), 2000);
+      container.querySelectorAll('.verse-selected').forEach(v => v.classList.remove('verse-selected'));
+      target.classList.add('verse-selected');
     });
   }
 

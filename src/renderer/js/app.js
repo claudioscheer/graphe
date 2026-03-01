@@ -551,8 +551,6 @@ const LoadingScreen = (() => {
     }
   });
 
-  let lastContextMenuVerseLine = null;
-
   document.addEventListener('contextmenu', (e) => {
     const paneContent = e.target.closest('.pane-content');
     if (!paneContent) return;
@@ -574,28 +572,11 @@ const LoadingScreen = (() => {
       return;
     }
 
-    const verseLine = e.target.closest('.verse-line');
-    const wrapper = verseLine ? verseLine.closest('.verse-text') : null;
-    const verse = verseLine ? parseInt(verseLine.dataset.verse, 10) : null;
-    const hasCrossRefs = wrapper && wrapper._crossRefsByVerse && verse != null && wrapper._crossRefsByVerse.has(verse);
-    lastContextMenuVerseLine = hasCrossRefs ? verseLine : null;
-
     const hasSelection = paneContent.querySelectorAll('.verse-selected').length > 0;
-    window.api.showVerseContextMenu({
-      hasSelection,
-      hasCrossRefs: !!hasCrossRefs,
-      crossRefsLabel: I18n.t('crossReferences'),
-    });
+    window.api.showVerseContextMenu({ hasSelection });
   });
 
   window.api.onContextMenuCopy(() => copySelectedVerses());
-
-  window.api.onContextMenuCrossRefs(() => {
-    if (lastContextMenuVerseLine) {
-      BibleView.toggleVerseRefs(lastContextMenuVerseLine);
-      lastContextMenuVerseLine = null;
-    }
-  });
 
   window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
     SearchPanel.search(`strong:${strongsNumber}`);
