@@ -480,7 +480,11 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, navGroup, spacer, backBtn, pinBtn, closeBtn);
+    const idBadge = document.createElement('span');
+    idBadge.className = 'pane-id-badge';
+    idBadge.textContent = paneId.replace('pane-', '');
+
+    toolbar.append(idBadge, select, navGroup, spacer, backBtn, pinBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -545,14 +549,18 @@ const PaneManager = (() => {
         syncBtn.replaceChildren(Icons.create('unlink'));
         syncBtn.classList.remove('pane-link-target');
         syncBtn.title = I18n.t('syncCommentary');
+        syncLabel.textContent = '';
       } else {
-        // Find the first bible pane to sync to
-        const biblePaneId = findFirstBiblePaneId();
+        // Prefer active Bible pane, fall back to first
+        const biblePaneId = (panes[activePaneId]?.paneType === 'bible')
+          ? activePaneId
+          : findFirstBiblePaneId();
         if (biblePaneId) {
           pane.syncedToPaneId = biblePaneId;
           syncBtn.replaceChildren(Icons.create('link'));
           syncBtn.classList.add('pane-link-target');
           syncBtn.title = I18n.t('unsyncCommentary');
+          syncLabel.textContent = '\u2194 ' + biblePaneId.replace('pane-', '');
           // Sync immediately
           syncCommentaryToPane(paneId);
         }
@@ -568,7 +576,30 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, navLabel, spacer, syncBtn, closeBtn);
+    const idBadge = document.createElement('span');
+    idBadge.className = 'pane-id-badge';
+    idBadge.textContent = paneId.replace('pane-', '');
+
+    // Sync label showing linked Bible pane number (clickable to cycle)
+    const syncLabel = document.createElement('span');
+    syncLabel.className = 'commentary-sync-label';
+    if (pane.syncedToPaneId) {
+      syncLabel.textContent = '\u2194 ' + pane.syncedToPaneId.replace('pane-', '');
+    }
+    syncLabel.addEventListener('mousedown', (e) => e.stopPropagation());
+    syncLabel.addEventListener('click', () => {
+      if (!pane.syncedToPaneId) return;
+      const biblePaneIds = getAllLeafIds(tree).filter(id => panes[id]?.paneType === 'bible');
+      if (biblePaneIds.length < 2) return;
+      const curIdx = biblePaneIds.indexOf(pane.syncedToPaneId);
+      const nextIdx = (curIdx + 1) % biblePaneIds.length;
+      pane.syncedToPaneId = biblePaneIds[nextIdx];
+      syncLabel.textContent = '\u2194 ' + pane.syncedToPaneId.replace('pane-', '');
+      syncCommentaryToPane(paneId);
+      emitStateChange();
+    });
+
+    toolbar.append(idBadge, select, navLabel, spacer, syncBtn, syncLabel, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -664,13 +695,8 @@ const PaneManager = (() => {
       pane.commentaryBooks = await window.api.getCommentaryBooks(pane.moduleId);
 
       if (!pane.commentaryBooks.includes(pane.bookNumber)) {
-        if (pane.commentaryBooks.length > 0) {
-          pane.bookNumber = pane.commentaryBooks[0];
-          pane.chapter = 1;
-        } else {
-          renderCommentaryUnavailable(paneId);
-          return;
-        }
+        renderCommentaryUnavailable(paneId);
+        return;
       }
 
       await loadCommentaryChapter(paneId);
@@ -736,6 +762,17 @@ const PaneManager = (() => {
     msg.className = 'unavailable-message';
     msg.textContent = I18n.t('commentaryUnavailable');
     content.appendChild(msg);
+
+    // Update nav label to show current book/chapter even when unavailable
+    const pane = panes[paneId];
+    const navLabel = el.querySelector('.commentary-nav-label');
+    if (navLabel && pane && allBooksCache) {
+      const book = allBooksCache.find((b) => b.bookNumber === pane.bookNumber);
+      if (book) {
+        navLabel.textContent = `${book.shortName} ${pane.chapter}`;
+        pane.bookShortName = book.shortName;
+      }
+    }
   }
 
   function syncCommentaryToPane(commentaryPaneId, scrollToVerse) {
@@ -1091,10 +1128,13 @@ const PaneManager = (() => {
 
   function splitPane(paneId, direction, forcePaneType) {
     const orig = panes[paneId];
-    const newPaneType = forcePaneType || orig.paneType || 'bible';
+    const newPaneType = forcePaneType || 'bible';
 
     // For commentary splits, find a bible pane to sync to
-    const syncTarget = newPaneType === 'commentary' ? (orig.paneType === 'bible' ? paneId : findFirstBiblePaneId()) : null;
+    const syncTarget = newPaneType === 'commentary'
+      ? (orig.paneType === 'bible' ? paneId
+        : (panes[activePaneId]?.paneType === 'bible' ? activePaneId : findFirstBiblePaneId()))
+      : null;
 
     const newPaneId = createPaneState({
       paneType: newPaneType,

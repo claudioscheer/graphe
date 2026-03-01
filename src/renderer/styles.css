@@ -1463,6 +1463,55 @@ el {
   white-space: nowrap;
 }
 
+/* Panel ID badge */
+.pane-id-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ui-text-subtle);
+  background: rgb(var(--ui-shadow-rgb) / 0.06);
+}
+
+.dark .pane-id-badge {
+  color: var(--ui-text-muted);
+  background: rgb(var(--ui-surface-rgb) / 0.1);
+}
+
+/* Commentary sync label */
+.commentary-sync-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ui-text-subtle);
+  white-space: nowrap;
+  margin-right: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.commentary-sync-label:not(:empty):hover {
+  color: var(--ui-link);
+  background-color: rgb(var(--ui-link-rgb) / 0.1);
+}
+
+.dark .commentary-sync-label {
+  color: var(--ui-text-muted);
+}
+
+.dark .commentary-sync-label:not(:empty):hover {
+  color: var(--ui-link-soft);
+  background-color: rgb(var(--ui-link-soft-rgb) / 0.15);
+}
+
 .commentary-sync-btn.pane-link-target {
   color: var(--ui-link);
   background-color: rgb(var(--ui-link-rgb) / 0.12);
