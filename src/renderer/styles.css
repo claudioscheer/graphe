@@ -208,11 +208,6 @@
   background: var(--ui-link-strong);
 }
 
-.pane-active.pane-has-selection > .pane-toolbar {
-  background: var(--ui-accent-bg);
-  box-shadow: inset 0 -1px 0 rgb(var(--ui-link-strong-rgb) / 0.22);
-}
-
 .pane-active > .pane-toolbar .app-select,
 .pane-active > .pane-toolbar .nav-group,
 .pane-active > .pane-toolbar button {
@@ -238,7 +233,6 @@
 .pane-active > .pane-toolbar .nav-prev-btn,
 .pane-active > .pane-toolbar .nav-next-btn,
 .pane-active > .pane-toolbar .pane-back-btn,
-.pane-active > .pane-toolbar .pane-copy-btn,
 .pane-active > .pane-toolbar button {
   background-color: rgb(var(--ui-surface-rgb) / 0.58);
 }
@@ -247,14 +241,8 @@
 .pane-active > .pane-toolbar .nav-prev-btn:hover,
 .pane-active > .pane-toolbar .nav-next-btn:hover,
 .pane-active > .pane-toolbar .pane-back-btn:hover,
-.pane-active > .pane-toolbar .pane-copy-btn:hover,
 .pane-active > .pane-toolbar button:hover {
   background-color: rgb(var(--ui-surface-rgb) / 0.9);
-}
-
-.pane-active.pane-has-selection .pane-copy-btn {
-  background-color: rgb(var(--ui-link-strong-rgb) / 0.16);
-  color: var(--ui-link-strong);
 }
 
 .dark .pane-active > .pane-toolbar {
@@ -266,16 +254,6 @@
 
 .dark .pane-active > .pane-toolbar::before {
   background: var(--ui-link-soft);
-}
-
-.dark .pane-active.pane-has-selection > .pane-toolbar {
-  background: var(--ui-accent-ink);
-  box-shadow: inset 0 -1px 0 rgb(var(--ui-link-soft-rgb) / 0.25);
-}
-
-.dark .pane-active.pane-has-selection .pane-copy-btn {
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.24);
-  color: var(--ui-accent-bg);
 }
 
 .dark .pane-active > .pane-toolbar .app-select,
@@ -303,7 +281,6 @@
 .dark .pane-active > .pane-toolbar .nav-prev-btn,
 .dark .pane-active > .pane-toolbar .nav-next-btn,
 .dark .pane-active > .pane-toolbar .pane-back-btn,
-.dark .pane-active > .pane-toolbar .pane-copy-btn,
 .dark .pane-active > .pane-toolbar button {
   background-color: rgb(var(--ui-overlay-rgb) / 0.28);
 }
@@ -312,7 +289,6 @@
 .dark .pane-active > .pane-toolbar .nav-prev-btn:hover,
 .dark .pane-active > .pane-toolbar .nav-next-btn:hover,
 .dark .pane-active > .pane-toolbar .pane-back-btn:hover,
-.dark .pane-active > .pane-toolbar .pane-copy-btn:hover,
 .dark .pane-active > .pane-toolbar button:hover {
   background-color: rgb(var(--ui-overlay-rgb) / 0.45);
 }

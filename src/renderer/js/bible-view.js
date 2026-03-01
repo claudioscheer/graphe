@@ -255,7 +255,12 @@ const BibleView = (() => {
     for (const el of selected) {
       const verse = el.dataset.verse;
       const content = el.querySelector('.verse-content');
-      const text = content ? content.textContent.trim() : '';
+      let text = '';
+      if (content) {
+        const clone = content.cloneNode(true);
+        clone.querySelectorAll('.strongs').forEach(s => s.remove());
+        text = clone.textContent.trim();
+      }
       lines.push(`[${bookShort} ${chapter}:${verse}] ${text}`);
     }
     return lines.join('\n');

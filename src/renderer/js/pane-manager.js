@@ -359,12 +359,6 @@ const PaneManager = (() => {
       }
     });
 
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'pane-copy-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
-    copyBtn.appendChild(Icons.create('copy'));
-    copyBtn.setAttribute('data-i18n-title', 'copySelection');
-    copyBtn.title = I18n.t('copySelection');
-
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
 
@@ -374,7 +368,7 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, navGroup, spacer, backBtn, pinBtn, copyBtn, closeBtn);
+    toolbar.append(select, navGroup, spacer, backBtn, pinBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';

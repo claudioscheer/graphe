@@ -525,17 +525,6 @@ const LoadingScreen = (() => {
     return true;
   }
 
-  function updateCopyButtonsVisibility() {
-    document.querySelectorAll('[data-pane-id]').forEach((paneEl) => {
-      const contentEl = paneEl.querySelector('.pane-content');
-      const copyBtn = paneEl.querySelector('.pane-copy-btn');
-      if (!contentEl || !copyBtn) return;
-      const hasSelection = contentEl.querySelectorAll('.verse-selected').length > 0;
-      copyBtn.classList.toggle('hidden', !hasSelection);
-      paneEl.classList.toggle('pane-has-selection', hasSelection);
-    });
-  }
-
   // Left-click on a Strong's number → dictionary lookup
   document.addEventListener('click', (e) => {
     // Cross-reference link click → navigate pane
@@ -608,15 +597,6 @@ const LoadingScreen = (() => {
     }
   });
 
-  document.addEventListener('click', (e) => {
-    const copyBtn = e.target.closest('.pane-copy-btn');
-    if (!copyBtn) return;
-    const paneEl = copyBtn.closest('[data-pane-id]');
-    const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
-    if (!paneId) return;
-    copySelectedVerses(paneId);
-  });
-
   window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
     SearchPanel.search(`strong:${strongsNumber}`);
   });
@@ -661,30 +641,10 @@ const LoadingScreen = (() => {
       const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
       if (el) {
         BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
-        updateCopyButtonsVisibility();
       }
     }
   });
 
-  document.addEventListener('mousedown', () => {
-    setTimeout(updateCopyButtonsVisibility, 0);
-  });
-
-  document.addEventListener('keyup', () => {
-    setTimeout(updateCopyButtonsVisibility, 0);
-  });
-
-    updateCopyButtonsVisibility();
-    const paneRootEl = document.getElementById('pane-root');
-    if (paneRootEl) {
-      const observer = new MutationObserver(() => updateCopyButtonsVisibility());
-      observer.observe(paneRootEl, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['class'],
-      });
-    }
   } finally {
     LoadingScreen.hide();
   }
