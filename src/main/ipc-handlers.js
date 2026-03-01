@@ -7,6 +7,8 @@ function registerIpcHandlers() {
 
   ipcMain.handle('get-books', (_event, moduleId) => modules.getBooks(moduleId));
 
+  ipcMain.handle('get-all-books', () => modules.getAllBooks());
+
   ipcMain.handle('get-chapter-count', (_event, moduleId, bookNumber) =>
     modules.getChapterCount(moduleId, bookNumber)
   );

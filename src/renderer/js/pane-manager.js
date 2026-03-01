@@ -12,6 +12,7 @@ const PaneManager = (() => {
   let onStateChange = null;
   let activePaneId = null;
   let linkTargetPaneId = null;
+  let allBooksCache = null;
 
   const root = () => document.getElementById('pane-root');
 
@@ -402,6 +403,10 @@ const PaneManager = (() => {
     const pane = panes[paneId];
     if (!pane || !pane.moduleId) return;
 
+    if (!allBooksCache) {
+      allBooksCache = await window.api.getAllBooks();
+    }
+
     pane.books = await window.api.getBooks(pane.moduleId);
 
     const bookExists = pane.books.find(b => b.bookNumber === pane.bookNumber);
@@ -421,7 +426,12 @@ const PaneManager = (() => {
   function bookNameResolver(pane) {
     return (bookNumber) => {
       const b = pane.books.find(bk => bk.bookNumber === bookNumber);
-      return b ? b.shortName : String(bookNumber);
+      if (b) return b.shortName;
+      if (allBooksCache) {
+        const fb = allBooksCache.find(bk => bk.bookNumber === bookNumber);
+        if (fb) return fb.shortName;
+      }
+      return String(bookNumber);
     };
   }
 

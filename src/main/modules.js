@@ -272,6 +272,21 @@ function getBooks(moduleId) {
     .all();
 }
 
+function getAllBooks() {
+  const merged = new Map();
+  for (const db of dbs.values()) {
+    try {
+      const rows = db
+        .prepare('SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number')
+        .all();
+      for (const row of rows) {
+        if (!merged.has(row.bookNumber)) merged.set(row.bookNumber, row);
+      }
+    } catch (_) {}
+  }
+  return Array.from(merged.values()).sort((a, b) => a.bookNumber - b.bookNumber);
+}
+
 function getChapterCount(moduleId, bookNumber) {
   const db = getDb(moduleId);
   const row = db.prepare('SELECT MAX(chapter) AS count FROM verses WHERE book_number = ?').get(bookNumber);
@@ -473,6 +488,7 @@ module.exports = {
   init,
   getModules,
   getBooks,
+  getAllBooks,
   getChapterCount,
   getChapter,
   searchVerses,
