@@ -3,7 +3,10 @@
  */
 const Icons = (() => {
   function toPascalCase(name) {
-    return name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+    return name
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
   }
 
   function create(name, className = 'w-4 h-4') {

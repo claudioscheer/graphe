@@ -8,6 +8,10 @@
     "dev": "npm run build:css && sh -c 'npm run watch:css & CSS_PID=$!; electron-forge start; kill $CSS_PID 2>/dev/null || true'",
     "build:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css",
     "watch:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
     "package": "electron-forge package",
     "package:linux": "electron-forge package --platform=linux --arch=x64",
     "package:win": "electron-forge package --platform=win32 --arch=x64",
@@ -29,6 +33,9 @@
     "@electron-forge/maker-zip": "^7.0.0",
     "@tailwindcss/cli": "^4",
     "electron": "^33.0.0",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
     "tailwindcss": "^4"
   },
   "dependencies": {

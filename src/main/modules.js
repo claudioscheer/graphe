@@ -125,7 +125,10 @@ function parseSearchQuery(query) {
     });
   }
 
-  const textPart = input.replace(/strong:[HhGg]?\d+\w*/g, ' ').replace(/\s+/g, ' ').trim();
+  const textPart = input
+    .replace(/strong:[HhGg]?\d+\w*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const textTerms = textPart ? textPart.split(/\s+/).filter((term) => term.length >= 2) : [];
 
   return { strongs, textTerms, textPart };
@@ -160,7 +163,10 @@ function lexicalSearch(moduleId, query, opts = {}) {
   if (limit && limit > 0) sql += ` LIMIT ${Math.floor(limit)}`;
 
   const db = getDb(moduleId);
-  return db.prepare(sql).bind(...params).all();
+  return db
+    .prepare(sql)
+    .bind(...params)
+    .all();
 }
 
 function scoreLexical(row, parsed) {
@@ -192,7 +198,11 @@ function getModules() {
       for (const row of rows) info[row.name] = row.value;
     } catch (_) {}
 
-    const type = hasDictionaryTable(db) ? 'dictionary' : hasCrossRefTable(db) ? 'crossreference' : 'bible';
+    const type = hasDictionaryTable(db)
+      ? 'dictionary'
+      : hasCrossRefTable(db)
+        ? 'crossreference'
+        : 'bible';
 
     const mod = {
       id,
@@ -254,10 +264,14 @@ function searchDictionaryTopics(moduleId, prefix, limit) {
 function getDictionaryCognates(moduleId, strongsNumber) {
   const db = getDb(moduleId);
   try {
-    const row = db.prepare('SELECT group_id FROM cognate_strong_numbers WHERE strong_number = ? LIMIT 1').get(strongsNumber);
+    const row = db
+      .prepare('SELECT group_id FROM cognate_strong_numbers WHERE strong_number = ? LIMIT 1')
+      .get(strongsNumber);
     if (!row) return [];
     return db
-      .prepare('SELECT strong_number FROM cognate_strong_numbers WHERE group_id = ? AND strong_number != ?')
+      .prepare(
+        'SELECT strong_number FROM cognate_strong_numbers WHERE group_id = ? AND strong_number != ?'
+      )
       .all(row.group_id, strongsNumber)
       .map((r) => r.strong_number);
   } catch (_) {
@@ -268,7 +282,9 @@ function getDictionaryCognates(moduleId, strongsNumber) {
 function getBooks(moduleId) {
   const db = getDb(moduleId);
   return db
-    .prepare('SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number')
+    .prepare(
+      'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number'
+    )
     .all();
 }
 
@@ -277,7 +293,9 @@ function getAllBooks() {
   for (const db of dbs.values()) {
     try {
       const rows = db
-        .prepare('SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number')
+        .prepare(
+          'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number'
+        )
         .all();
       for (const row of rows) {
         if (!merged.has(row.bookNumber)) merged.set(row.bookNumber, row);
@@ -289,7 +307,9 @@ function getAllBooks() {
 
 function getChapterCount(moduleId, bookNumber) {
   const db = getDb(moduleId);
-  const row = db.prepare('SELECT MAX(chapter) AS count FROM verses WHERE book_number = ?').get(bookNumber);
+  const row = db
+    .prepare('SELECT MAX(chapter) AS count FROM verses WHERE book_number = ?')
+    .get(bookNumber);
   return row ? row.count : 0;
 }
 
@@ -405,7 +425,7 @@ async function searchVersesHybrid(moduleId, query, opts = {}) {
 
   const ranked = Array.from(map.values())
     .map((row) => {
-      const finalScore = (0.55 * row.lexicalScore) + (0.45 * row.semanticScore);
+      const finalScore = 0.55 * row.lexicalScore + 0.45 * row.semanticScore;
       let source = 'hybrid';
       if (row.lexicalScore > 0 && row.semanticScore === 0) source = 'lexical';
       if (row.lexicalScore === 0 && row.semanticScore > 0) source = 'semantic';

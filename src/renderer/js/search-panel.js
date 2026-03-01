@@ -66,10 +66,9 @@ const SearchPanel = (() => {
 
     // Translation select
     select = document.createElement('select');
-    select.className = 'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
-      a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
-    );
+    select.className =
+      'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+    const sortedModules = Utils.sortBibleModules(modules);
     for (const m of sortedModules) {
       const opt = document.createElement('option');
       opt.value = m.id;
@@ -92,7 +91,8 @@ const SearchPanel = (() => {
 
     input = document.createElement('input');
     input.type = 'text';
-    input.className = 'w-full px-3 py-1.5 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
+    input.className =
+      'w-full px-3 py-1.5 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
     input.setAttribute('data-i18n-placeholder', 'searchPlaceholder');
     input.placeholder = I18n.t('searchPlaceholder');
     input.addEventListener('keydown', (e) => {
@@ -198,13 +198,15 @@ const SearchPanel = (() => {
     if (booksCache[selectedModuleId]) return;
     try {
       booksCache[selectedModuleId] = await window.api.getBooks(selectedModuleId);
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to prefetch books:', err);
+    }
   }
 
   function getBookShortName(bookNumber) {
     const books = booksCache[selectedModuleId];
     if (!books) return `#${bookNumber}`;
-    const book = books.find(b => b.bookNumber === bookNumber);
+    const book = books.find((b) => b.bookNumber === bookNumber);
     return book ? book.shortName : `#${bookNumber}`;
   }
 
@@ -218,7 +220,11 @@ const SearchPanel = (() => {
     }
 
     const hasStrong = /strong:[HhGg]?\d+\w*/i.test(query);
-    const textTerms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
+    const textTerms = query
+      .replace(/strong:[HhGg]?\d+\w*/gi, '')
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
     if (!hasStrong && textTerms.length === 0) {
       statusEl.textContent = I18n.t('searchMinChars');
       return;
@@ -233,15 +239,23 @@ const SearchPanel = (() => {
 
     try {
       const textPart = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim();
-      const semanticResponse = semanticEnabled && textTerms.length > 0
-        ? await window.api.searchVersesSemantic(selectedModuleId, textPart, { limit: semanticResultCount })
-        : { ready: false, mode: 'disabled', results: [] };
+      const semanticResponse =
+        semanticEnabled && textTerms.length > 0
+          ? await window.api.searchVersesSemantic(selectedModuleId, textPart, {
+              limit: semanticResultCount,
+            })
+          : { ready: false, mode: 'disabled', results: [] };
 
       const lexicalResults = await window.api.searchVerses(selectedModuleId, query);
-      const semanticResults = semanticResponse && semanticResponse.ready ? (semanticResponse.results || []) : [];
+      const semanticResults =
+        semanticResponse && semanticResponse.ready ? semanticResponse.results || [] : [];
 
-      const semanticKeys = new Set(semanticResults.map(r => `${r.bookNumber}:${r.chapter}:${r.verse}`));
-      const normalResults = lexicalResults.filter(r => !semanticKeys.has(`${r.bookNumber}:${r.chapter}:${r.verse}`));
+      const semanticKeys = new Set(
+        semanticResults.map((r) => `${r.bookNumber}:${r.chapter}:${r.verse}`)
+      );
+      const normalResults = lexicalResults.filter(
+        (r) => !semanticKeys.has(`${r.bookNumber}:${r.chapter}:${r.verse}`)
+      );
       const useSemanticLabels = semanticEnabled && textTerms.length > 0;
 
       if (semanticResults.length === 0 && normalResults.length === 0) {
@@ -277,7 +291,11 @@ const SearchPanel = (() => {
 
   function renderResults(semanticResults, normalResults, query, useSemanticLabels = false) {
     const frag = document.createDocumentFragment();
-    const terms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
+    const terms = query
+      .replace(/strong:[HhGg]?\d+\w*/gi, '')
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
 
     if (semanticResults.length > 0) {
       if (useSemanticLabels) {
@@ -315,7 +333,12 @@ const SearchPanel = (() => {
     item.className = 'search-result-item';
     item.addEventListener('click', () => {
       const paneId = PaneManager.getActivePaneId();
-      PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), row.bookNumber, row.chapter, row.verse);
+      PaneManager.navigatePane(
+        PaneManager.getNavigationTarget(paneId),
+        row.bookNumber,
+        row.chapter,
+        row.verse
+      );
     });
 
     const top = document.createElement('div');
@@ -343,17 +366,13 @@ const SearchPanel = (() => {
   }
 
   function highlightText(text, terms) {
-    let result = escapeHtml(text);
+    let result = Utils.escapeHtml(text);
     for (const term of terms) {
-      const escapedTerm = escapeHtml(term.toLowerCase());
+      const escapedTerm = Utils.escapeHtml(term.toLowerCase());
       const regex = new RegExp(`(${escapeRegex(escapedTerm)})`, 'gi');
       result = result.replace(regex, '<mark>$1</mark>');
     }
     return result;
-  }
-
-  function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function escapeRegex(str) {
@@ -397,5 +416,13 @@ const SearchPanel = (() => {
     };
   }
 
-  return { init, focusInput, search, setStateChangeListener, getState, getSidebar, setSemanticOptions };
+  return {
+    init,
+    focusInput,
+    search,
+    setStateChangeListener,
+    getState,
+    getSidebar,
+    setSemanticOptions,
+  };
 })();

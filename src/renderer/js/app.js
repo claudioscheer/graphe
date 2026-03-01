@@ -83,7 +83,17 @@ const AppStateStore = (() => {
     return state.dictPanel;
   }
 
-  return { init, setSettings, setPaneManager, getSettings, getPaneManager, setSearchPanel, getSearchPanel, setDictPanel, getDictPanel };
+  return {
+    init,
+    setSettings,
+    setPaneManager,
+    getSettings,
+    getPaneManager,
+    setSearchPanel,
+    getSearchPanel,
+    setDictPanel,
+    getDictPanel,
+  };
 })();
 
 /** Settings dialog — theme + language controls */
@@ -134,8 +144,10 @@ const Settings = (() => {
   function open() {
     langSelect.value = I18n.getCurrentLang();
     fontSizeSelect.value = AppStateStore.getSettings().fontSize || 20;
-    if (semanticEnableToggle) semanticEnableToggle.checked = AppStateStore.getSettings().semanticSearchEnabled === true;
-    if (semanticCountInput) semanticCountInput.value = AppStateStore.getSettings().semanticResultCount || 5;
+    if (semanticEnableToggle)
+      semanticEnableToggle.checked = AppStateStore.getSettings().semanticSearchEnabled === true;
+    if (semanticCountInput)
+      semanticCountInput.value = AppStateStore.getSettings().semanticResultCount || 5;
     updateThemeLabel();
     overlay.classList.remove('hidden');
     refreshSemanticStatus();
@@ -167,12 +179,18 @@ const Settings = (() => {
       language: initialLang,
       fontSize: initialFontSize,
       semanticSearchEnabled: initialSettings.semanticSearchEnabled === true,
-      semanticModelId: initialSettings.semanticModelId || 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
+      semanticModelId:
+        initialSettings.semanticModelId || 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
       semanticResultCount: Math.max(1, parseInt(initialSettings.semanticResultCount || 5, 10) || 5),
     });
 
-    if (semanticEnableToggle) semanticEnableToggle.checked = initialSettings.semanticSearchEnabled === true;
-    if (semanticCountInput) semanticCountInput.value = Math.max(1, parseInt(initialSettings.semanticResultCount || 5, 10) || 5);
+    if (semanticEnableToggle)
+      semanticEnableToggle.checked = initialSettings.semanticSearchEnabled === true;
+    if (semanticCountInput)
+      semanticCountInput.value = Math.max(
+        1,
+        parseInt(initialSettings.semanticResultCount || 5, 10) || 5
+      );
   }
 
   function syncSearchPanelSemanticSettings() {
@@ -210,9 +228,8 @@ const Settings = (() => {
   function updateSemanticStatusLine(row) {
     if (!semanticStatus) return;
     const label = getSemanticStatusLabel((row && row.status) || 'missing');
-    const withDate = row && row.builtAt
-      ? `${label} (${new Date(row.builtAt).toLocaleString()})`
-      : label;
+    const withDate =
+      row && row.builtAt ? `${label} (${new Date(row.builtAt).toLocaleString()})` : label;
     const withErr = row && row.error ? `${withDate} - ${row.error}` : withDate;
     semanticStatus.textContent = withErr;
   }
@@ -253,7 +270,11 @@ const Settings = (() => {
       semanticProgress.textContent = I18n.t('semanticPreparing');
     }
 
-    if (progress.status === 'done' || progress.status === 'error' || progress.status === 'cancelled') {
+    if (
+      progress.status === 'done' ||
+      progress.status === 'error' ||
+      progress.status === 'cancelled'
+    ) {
       semanticJobId = null;
       clearSemanticPoll();
       semanticCancelBtn.classList.add('hidden');
@@ -307,7 +328,9 @@ const Settings = (() => {
           semanticProgress.textContent = err && err.message ? err.message : String(err);
         });
       }, 500);
-      pollSemanticProgress();
+      pollSemanticProgress().catch((err) => {
+        semanticProgress.textContent = err && err.message ? err.message : String(err);
+      });
     });
   }
 
@@ -357,7 +380,9 @@ const Settings = (() => {
       cb.value = mod.id;
       cb.checked = Array.isArray(current) && current.includes(mod.id);
       cb.addEventListener('change', () => {
-        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.value);
+        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(
+          (b) => b.value
+        );
         AppStateStore.setSettings({ strongsDicts: checked.length > 0 ? checked : null });
       });
       const text = document.createElement('span');
@@ -387,7 +412,9 @@ const Settings = (() => {
       cb.value = mod.id;
       cb.checked = Array.isArray(current) && current.includes(mod.id);
       cb.addEventListener('change', () => {
-        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.value);
+        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(
+          (b) => b.value
+        );
         AppStateStore.setSettings({ crossRefModules: checked.length > 0 ? checked : null });
         PaneManager.reloadAllChapters();
       });
@@ -421,12 +448,20 @@ const Settings = (() => {
     refreshSemanticStatus();
   }
 
-  return { open, close, init, initStrongsDicts, initCrossRefModules, initSemanticIndex, syncSearchPanelSemanticSettings };
+  return {
+    open,
+    close,
+    init,
+    initStrongsDicts,
+    initCrossRefModules,
+    initSemanticIndex,
+    syncSearchPanelSemanticSettings,
+  };
 })();
 
 window.Settings = Settings;
 
-window.showTooltip = function(paneId, message) {
+window.showTooltip = function (paneId, message) {
   const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
   if (!paneEl) return;
   const content = paneEl.querySelector('.pane-content');
@@ -471,6 +506,137 @@ const LoadingScreen = (() => {
   return { hide };
 })();
 
+function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
+  const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
+  if (!el) return false;
+  const text = BibleView.getSelectedText(el);
+  if (!text) return false;
+  navigator.clipboard.writeText(text).catch((err) => console.warn('Clipboard write failed:', err));
+  return true;
+}
+
+// Left-click on a Strong's number → dictionary lookup
+document.addEventListener('click', (e) => {
+  // Cross-reference link click → navigate pane
+  const refEl = e.target.closest('.crossref-link');
+  if (refEl) {
+    e.preventDefault();
+    const paneEl = refEl.closest('[data-pane-id]');
+    if (!paneEl) return;
+    const paneId = paneEl.getAttribute('data-pane-id');
+    const bookTo = parseInt(refEl.dataset.bookTo, 10);
+    const chapterTo = parseInt(refEl.dataset.chapterTo, 10);
+    if (isNaN(bookTo) || isNaN(chapterTo)) return;
+    const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
+    if (verseTo !== null && isNaN(verseTo)) return;
+    const target = PaneManager.getNavigationTarget(paneId);
+    PaneManager.navigatePane(target, bookTo, chapterTo, verseTo)
+      .then((ok) => {
+        if (!ok) showTooltip(target, I18n.t('refUnavailable'));
+      })
+      .catch((err) => console.warn('Cross-ref navigation failed:', err));
+    return;
+  }
+
+  const strongsEl = e.target.closest('.strongs');
+  if (strongsEl) {
+    e.preventDefault();
+    const strongsNumber = strongsEl.textContent.trim();
+    DictPanel.lookup(strongsNumber);
+  }
+});
+
+document.addEventListener('contextmenu', (e) => {
+  const paneContent = e.target.closest('.pane-content');
+  if (!paneContent) return;
+  e.preventDefault();
+
+  const strongsEl = e.target.closest('.strongs');
+  if (strongsEl) {
+    const strongsNumber = strongsEl.textContent.trim();
+    const paneEl = paneContent.closest('[data-pane-id]');
+    const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
+    window.api.showStrongsContextMenu({
+      strongsNumber,
+      paneId,
+      labels: {
+        search: I18n.t('strongsSearchOccurrences'),
+        lookup: I18n.t('strongsDictionaryLookup'),
+      },
+    });
+    return;
+  }
+
+  const hasSelection = paneContent.querySelectorAll('.verse-selected').length > 0;
+  window.api.showVerseContextMenu({ hasSelection });
+});
+
+window.api.onContextMenuCopy(() => copySelectedVerses());
+
+window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
+  SearchPanel.search(`strong:${strongsNumber}`);
+});
+
+window.api.onStrongsLookup((_event, { strongsNumber, paneId }) => {
+  DictPanel.lookup(strongsNumber);
+});
+
+document.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement || {}).tagName;
+  const inputFocused = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+  const overlayOpen =
+    !document.getElementById('settings-overlay').classList.contains('hidden') ||
+    !document.getElementById('nav-overlay').classList.contains('hidden');
+
+  if (e.key === 'F' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+    e.preventDefault();
+    SearchPanel.focusInput();
+    return;
+  }
+
+  if (e.key === 'F3') {
+    e.preventDefault();
+    const paneId = PaneManager.getActivePaneId();
+    const pane = PaneManager.getPane(paneId);
+    if (pane) {
+      window.api
+        .getBooks(pane.moduleId)
+        .then((books) => Navigation.open(paneId, books))
+        .catch((err) => console.warn('Failed to open navigation:', err));
+    }
+    return;
+  }
+
+  if (inputFocused || overlayOpen) return;
+
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    PaneManager.cycleActivePane();
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+    if (window.getSelection().toString()) return;
+    const paneId = PaneManager.getActivePaneId();
+    const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
+    if (el && el.querySelectorAll('.verse-selected').length) {
+      e.preventDefault();
+      copySelectedVerses(paneId);
+      el.querySelectorAll('.verse-selected').forEach((v) => v.classList.remove('verse-selected'));
+    }
+    return;
+  }
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const paneId = PaneManager.getActivePaneId();
+    const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
+    if (el) {
+      BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+    }
+  }
+});
+
 (async function () {
   try {
     const loadedState = await window.api.getAppState().catch(() => null);
@@ -480,14 +646,15 @@ const LoadingScreen = (() => {
     I18n.updateAll();
 
     const modules = await window.api.getModules();
-    const bibleModules = modules.filter(m => m.type === 'bible');
-    const dictModules = modules.filter(m => m.type === 'dictionary');
-    const crossRefModules = modules.filter(m => m.type === 'crossreference');
+    const bibleModules = modules.filter((m) => m.type === 'bible');
+    const dictModules = modules.filter((m) => m.type === 'dictionary');
+    const crossRefModules = modules.filter((m) => m.type === 'crossreference');
 
     if (bibleModules.length === 0) {
       document.getElementById('pane-root').innerHTML =
         '<div class="flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg">' +
-        I18n.t('noModules') + '</div>';
+        I18n.t('noModules') +
+        '</div>';
       return;
     }
 
@@ -515,129 +682,6 @@ const LoadingScreen = (() => {
     Settings.initSemanticIndex(bibleModules);
 
     await PaneManager.waitForInitialLoad();
-
-  function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
-    const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
-    if (!el) return false;
-    const text = BibleView.getSelectedText(el);
-    if (!text) return false;
-    navigator.clipboard.writeText(text);
-    return true;
-  }
-
-  // Left-click on a Strong's number → dictionary lookup
-  document.addEventListener('click', (e) => {
-    // Cross-reference link click → navigate pane
-    const refEl = e.target.closest('.crossref-link');
-    if (refEl) {
-      e.preventDefault();
-      const paneEl = refEl.closest('[data-pane-id]');
-      if (!paneEl) return;
-      const paneId = paneEl.getAttribute('data-pane-id');
-      const bookTo = parseInt(refEl.dataset.bookTo, 10);
-      const chapterTo = parseInt(refEl.dataset.chapterTo, 10);
-      const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
-      const target = PaneManager.getNavigationTarget(paneId);
-      PaneManager.navigatePane(target, bookTo, chapterTo, verseTo)
-        .then(ok => { if (!ok) showTooltip(target, I18n.t('refUnavailable')); });
-      return;
-    }
-
-    const strongsEl = e.target.closest('.strongs');
-    if (strongsEl) {
-      e.preventDefault();
-      const strongsNumber = strongsEl.textContent.trim();
-      DictPanel.lookup(strongsNumber);
-    }
-  });
-
-  document.addEventListener('contextmenu', (e) => {
-    const paneContent = e.target.closest('.pane-content');
-    if (!paneContent) return;
-    e.preventDefault();
-
-    const strongsEl = e.target.closest('.strongs');
-    if (strongsEl) {
-      const strongsNumber = strongsEl.textContent.trim();
-      const paneEl = paneContent.closest('[data-pane-id]');
-      const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
-      window.api.showStrongsContextMenu({
-        strongsNumber,
-        paneId,
-        labels: {
-          search: I18n.t('strongsSearchOccurrences'),
-          lookup: I18n.t('strongsDictionaryLookup'),
-        },
-      });
-      return;
-    }
-
-    const hasSelection = paneContent.querySelectorAll('.verse-selected').length > 0;
-    window.api.showVerseContextMenu({ hasSelection });
-  });
-
-  window.api.onContextMenuCopy(() => copySelectedVerses());
-
-  window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
-    SearchPanel.search(`strong:${strongsNumber}`);
-  });
-
-  window.api.onStrongsLookup((_event, { strongsNumber, paneId }) => {
-    DictPanel.lookup(strongsNumber);
-  });
-
-  document.addEventListener('keydown', (e) => {
-    const tag = (document.activeElement || {}).tagName;
-    const inputFocused = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
-    const overlayOpen = !document.getElementById('settings-overlay').classList.contains('hidden')
-      || !document.getElementById('nav-overlay').classList.contains('hidden');
-
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      PaneManager.cycleActivePane();
-      return;
-    }
-
-    if (e.key === 'F' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
-      e.preventDefault();
-      SearchPanel.focusInput();
-      return;
-    }
-
-    if (e.key === 'F3') {
-      e.preventDefault();
-      const paneId = PaneManager.getActivePaneId();
-      const pane = PaneManager.getPane(paneId);
-      if (pane) {
-        window.api.getBooks(pane.moduleId).then((books) => Navigation.open(paneId, books));
-      }
-      return;
-    }
-
-    if (inputFocused || overlayOpen) return;
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-      if (window.getSelection().toString()) return;
-      const paneId = PaneManager.getActivePaneId();
-      const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
-      if (el && el.querySelectorAll('.verse-selected').length) {
-        e.preventDefault();
-        copySelectedVerses(paneId);
-        el.querySelectorAll('.verse-selected').forEach(v => v.classList.remove('verse-selected'));
-      }
-      return;
-    }
-
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      const paneId = PaneManager.getActivePaneId();
-      const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
-      if (el) {
-        BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
-      }
-    }
-  });
-
   } finally {
     LoadingScreen.hide();
   }

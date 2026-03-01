@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const listenerRegistry = new Map();
+
+function setSingleListener(channel, callback) {
+  const prev = listenerRegistry.get(channel);
+  if (prev) {
+    ipcRenderer.removeListener(channel, prev);
+    listenerRegistry.delete(channel);
+  }
+  if (typeof callback !== 'function') return;
+  ipcRenderer.on(channel, callback);
+  listenerRegistry.set(channel, callback);
+}
+
 contextBridge.exposeInMainWorld('api', {
   getModules: () => ipcRenderer.invoke('get-modules'),
   getBooks: (moduleId) => ipcRenderer.invoke('get-books', moduleId),
@@ -8,8 +21,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-chapter-count', moduleId, bookNumber),
   getChapter: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
-  searchVerses: (moduleId, query) =>
-    ipcRenderer.invoke('search-verses', moduleId, query),
+  searchVerses: (moduleId, query) => ipcRenderer.invoke('search-verses', moduleId, query),
   searchVersesSemantic: (moduleId, query, opts) =>
     ipcRenderer.invoke('search-verses-semantic', moduleId, query, opts),
   getDictionaryEntry: (moduleId, topic) =>
@@ -22,25 +34,21 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-dictionary-cognates', moduleId, strongsNumber),
   searchVersesHybrid: (moduleId, query, opts) =>
     ipcRenderer.invoke('search-verses-hybrid', moduleId, query, opts),
-  getSemanticIndexStatus: (moduleId) =>
-    ipcRenderer.invoke('semantic-index-status', moduleId),
-  buildSemanticIndex: (moduleId) =>
-    ipcRenderer.invoke('semantic-index-build', moduleId),
-  getSemanticIndexProgress: (jobId) =>
-    ipcRenderer.invoke('semantic-index-progress', jobId),
-  cancelSemanticIndexBuild: (jobId) =>
-    ipcRenderer.invoke('semantic-index-cancel', jobId),
+  getSemanticIndexStatus: (moduleId) => ipcRenderer.invoke('semantic-index-status', moduleId),
+  buildSemanticIndex: (moduleId) => ipcRenderer.invoke('semantic-index-build', moduleId),
+  getSemanticIndexProgress: (jobId) => ipcRenderer.invoke('semantic-index-progress', jobId),
+  cancelSemanticIndexBuild: (jobId) => ipcRenderer.invoke('semantic-index-cancel', jobId),
   getCrossReferences: (book, chapter, allowedModuleIds) =>
     ipcRenderer.invoke('get-cross-references', book, chapter, allowedModuleIds),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
-  onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),
-  onSplitH: (callback) => ipcRenderer.on('split-h', callback),
-  onSplitV: (callback) => ipcRenderer.on('split-v', callback),
+  onOpenSettings: (callback) => setSingleListener('open-settings', callback),
+  onSplitH: (callback) => setSingleListener('split-h', callback),
+  onSplitV: (callback) => setSingleListener('split-v', callback),
   showVerseContextMenu: (opts) => ipcRenderer.send('show-verse-context-menu', opts),
-  onContextMenuCopy: (callback) => ipcRenderer.on('context-menu-copy', callback),
-  onContextMenuCrossRefs: (callback) => ipcRenderer.on('context-menu-crossrefs', callback),
+  onContextMenuCopy: (callback) => setSingleListener('context-menu-copy', callback),
+  onContextMenuCrossRefs: (callback) => setSingleListener('context-menu-crossrefs', callback),
   showStrongsContextMenu: (opts) => ipcRenderer.send('show-strongs-context-menu', opts),
-  onStrongsSearch: (callback) => ipcRenderer.on('strongs-search', callback),
-  onStrongsLookup: (callback) => ipcRenderer.on('strongs-lookup', callback),
+  onStrongsSearch: (callback) => setSingleListener('strongs-search', callback),
+  onStrongsLookup: (callback) => setSingleListener('strongs-lookup', callback),
 });

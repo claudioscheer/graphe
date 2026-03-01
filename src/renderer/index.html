@@ -1,175 +1,262 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
-  <title>Graphe</title>
-  <link rel="icon" href="../../assets/graphe.png" sizes="any">
-  <link rel="stylesheet" href="dist.css">
-</head>
-<body class="bg-brand-50 dark:bg-night-900 text-brand-900 dark:text-night-50 overflow-hidden h-screen flex flex-col">
-  <div id="app-loading-screen" class="app-loading-screen" aria-live="polite" aria-busy="true">
-    <img src="../../assets/graphe-full.png" alt="Graphe" class="app-loading-logo">
-  </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <title>Graphe</title>
+    <link rel="icon" href="../../assets/graphe.png" sizes="any" />
+    <link rel="stylesheet" href="dist.css" />
+  </head>
+  <body
+    class="bg-brand-50 dark:bg-night-900 text-brand-900 dark:text-night-50 overflow-hidden h-screen flex flex-col"
+  >
+    <div id="app-loading-screen" class="app-loading-screen" aria-live="polite" aria-busy="true">
+      <img src="../../assets/graphe-full.png" alt="Graphe" class="app-loading-logo" />
+    </div>
 
-  <!-- Pane container -->
-  <div id="pane-root" class="flex-1 overflow-hidden"></div>
+    <!-- Pane container -->
+    <div id="pane-root" class="flex-1 overflow-hidden"></div>
 
-  <!-- Navigation dialog -->
-  <div id="nav-overlay" class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center">
-    <div class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[560px] max-h-[80vh] flex flex-col overflow-hidden">
-      <!-- Quick input -->
-      <div class="p-4 border-b border-brand-300 dark:border-night-600">
-        <input id="nav-input" type="text" data-i18n-placeholder="navPlaceholder" placeholder="Type a reference, e.g. Gn 1:3 or Mt 5"
-          class="w-full px-4 py-3 text-lg rounded-lg border border-brand-400 dark:border-night-500
-                 bg-brand-50 dark:bg-night-700 text-brand-900 dark:text-night-50
-                 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          autocomplete="off">
-      </div>
-      <!-- Grid area -->
-      <div id="nav-grid" class="p-4 overflow-y-auto flex-1">
-        <!-- Populated dynamically: books grid or chapter grid -->
-      </div>
-      <!-- Back / Close -->
-      <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-between">
-        <button id="nav-back" class="hidden px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700
-                hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
-                type="button">
-          <svg xmlns="http://www.w3.org/2000/svg" class="lucide lucide-arrow-left w-4 h-4" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 12H5"></path>
-            <path d="M12 19l-7-7 7-7"></path>
-          </svg>
-          <span data-i18n="back">Back</span>
-        </button>
-        <button id="nav-close" class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700
-                hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
-                data-i18n="close">
-          Close
-        </button>
+    <!-- Navigation dialog -->
+    <div
+      id="nav-overlay"
+      class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+    >
+      <div
+        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[560px] max-h-[80vh] flex flex-col overflow-hidden"
+      >
+        <!-- Quick input -->
+        <div class="p-4 border-b border-brand-300 dark:border-night-600">
+          <input
+            id="nav-input"
+            type="text"
+            data-i18n-placeholder="navPlaceholder"
+            placeholder="Type a reference, e.g. Gn 1:3 or Mt 5"
+            class="w-full px-4 py-3 text-lg rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            autocomplete="off"
+          />
+        </div>
+        <!-- Grid area -->
+        <div id="nav-grid" class="p-4 overflow-y-auto flex-1">
+          <!-- Populated dynamically: books grid or chapter grid -->
+        </div>
+        <!-- Back / Close -->
+        <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-between">
+          <button
+            id="nav-back"
+            class="hidden px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
+            type="button"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="lucide lucide-arrow-left w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M19 12H5"></path>
+              <path d="M12 19l-7-7 7-7"></path>
+            </svg>
+            <span data-i18n="back">Back</span>
+          </button>
+          <button
+            id="nav-close"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
+            data-i18n="close"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Settings dialog -->
-  <div id="settings-overlay" class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center">
-    <div class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden">
-      <div class="p-4 border-b border-brand-300 dark:border-night-600">
-        <h2 class="text-lg font-semibold" data-i18n="settings">Settings</h2>
-      </div>
-      <div class="settings-body p-4 flex flex-col gap-4 overflow-y-auto">
-        <div class="settings-group">
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <span class="settings-row-title" data-i18n="theme">Theme</span>
-              <p class="settings-row-hint" data-i18n="themeHint">Escolha entre tema claro e escuro para leitura confortável.</p>
+    <!-- Settings dialog -->
+    <div
+      id="settings-overlay"
+      class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+    >
+      <div
+        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden"
+      >
+        <div class="p-4 border-b border-brand-300 dark:border-night-600">
+          <h2 class="text-lg font-semibold" data-i18n="settings">Settings</h2>
+        </div>
+        <div class="settings-body p-4 flex flex-col gap-4 overflow-y-auto">
+          <div class="settings-group">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-title" data-i18n="theme">Theme</span>
+                <p class="settings-row-hint" data-i18n="themeHint">
+                  Escolha entre tema claro e escuro para leitura confortável.
+                </p>
+              </div>
+              <button
+                id="settings-theme-toggle"
+                class="px-4 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium"
+              >
+                <span id="settings-theme-label" data-i18n="light">Light</span>
+              </button>
             </div>
-            <button id="settings-theme-toggle"
-              class="px-4 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600
-                     cursor-pointer transition-colors text-sm font-medium">
-              <span id="settings-theme-label" data-i18n="light">Light</span>
-            </button>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-title" data-i18n="fontSize">Font size</span>
+                <p class="settings-row-hint" data-i18n="fontSizeHint">
+                  Ajusta o tamanho do texto da Bíblia e das janelas laterais.
+                </p>
+              </div>
+              <select
+                id="settings-font-size"
+                class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
+              >
+                <option value="14">14px</option>
+                <option value="16">16px</option>
+                <option value="18">18px</option>
+                <option value="20" selected>20px</option>
+                <option value="22">22px</option>
+                <option value="24">24px</option>
+                <option value="28">28px</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-title" data-i18n="language">Language</span>
+                <p class="settings-row-hint" data-i18n="languageHint">
+                  Muda os textos da interface sem alterar a tradução bíblica ativa.
+                </p>
+              </div>
+              <select
+                id="settings-lang-select"
+                class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
+              >
+                <option value="pt">PT</option>
+                <option value="en">EN</option>
+                <option value="es">ES</option>
+              </select>
+            </div>
           </div>
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <span class="settings-row-title" data-i18n="fontSize">Font size</span>
-              <p class="settings-row-hint" data-i18n="fontSizeHint">Ajusta o tamanho do texto da Bíblia e das janelas laterais.</p>
-            </div>
-            <select id="settings-font-size"
-              class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500
-                     bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50
-                     cursor-pointer">
-            <option value="14">14px</option>
-            <option value="16">16px</option>
-            <option value="18">18px</option>
-            <option value="20" selected>20px</option>
-            <option value="22">22px</option>
-            <option value="24">24px</option>
-            <option value="28">28px</option>
-            </select>
+          <div id="settings-strongs-section" class="settings-group hidden">
+            <span class="font-medium settings-section-title" data-i18n="strongsDictionaries"
+              >Strong's Dictionaries</span
+            >
+            <p
+              id="settings-strongs-hint"
+              class="text-xs text-brand-600 dark:text-night-300 mt-1"
+              data-i18n="strongsDictsHint"
+            >
+              Select which dictionaries to use when clicking a Strong's number.
+            </p>
+            <div id="settings-strongs-list"></div>
           </div>
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <span class="settings-row-title" data-i18n="language">Language</span>
-              <p class="settings-row-hint" data-i18n="languageHint">Muda os textos da interface sem alterar a tradução bíblica ativa.</p>
+          <div id="settings-crossref-section" class="settings-group hidden">
+            <span class="font-medium settings-section-title" data-i18n="crossReferences"
+              >Cross References</span
+            >
+            <p
+              class="text-xs text-brand-600 dark:text-night-300 mt-1"
+              data-i18n="crossRefModulesHint"
+            >
+              Choose which modules to use for displaying cross-references.
+            </p>
+            <div id="settings-crossref-list" class="settings-checkbox-list"></div>
+          </div>
+          <div id="settings-semantic-section" class="settings-group">
+            <span class="font-medium settings-section-title" data-i18n="semanticIndexTitle"
+              >Semantic Search Index</span
+            >
+            <p
+              class="text-xs text-brand-600 dark:text-night-300 mt-1"
+              data-i18n="semanticIndexHint"
+            >
+              Usa IA para encontrar versículos relacionados por significado.
+            </p>
+            <p class="settings-warning mt-2" data-i18n="semanticExperimentalWarning">
+              Atenção: recurso em teste. Os resultados podem variar.
+            </p>
+            <label class="settings-checkbox-option mt-2">
+              <input id="settings-semantic-enable" type="checkbox" class="h-4 w-4 cursor-pointer" />
+              <span class="settings-checkbox-text" data-i18n="semanticEnable"
+                >Enable semantic search</span
+              >
+            </label>
+            <div class="mt-2 settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-title text-sm" data-i18n="semanticResultCount"
+                  >Semantic results</span
+                >
+                <p class="settings-row-hint" data-i18n="semanticResultCountHint">
+                  Número máximo de resultados semânticos por busca.
+                </p>
+              </div>
+              <input
+                id="settings-semantic-count"
+                type="number"
+                min="1"
+                max="50"
+                class="w-20 px-2 py-1 rounded border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm"
+              />
             </div>
-            <select id="settings-lang-select"
-              class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500
-                     bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50
-                     cursor-pointer">
-              <option value="pt">PT</option>
-              <option value="en">EN</option>
-              <option value="es">ES</option>
-            </select>
+            <div class="mt-2 flex items-center gap-2">
+              <select
+                id="settings-semantic-module"
+                class="app-select flex-1 pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
+              ></select>
+              <button
+                id="settings-semantic-build"
+                class="px-3 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-brand-50 cursor-pointer transition-colors text-sm"
+                data-i18n="semanticBuild"
+              >
+                Build
+              </button>
+              <button
+                id="settings-semantic-cancel"
+                class="hidden px-3 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm"
+                data-i18n="semanticCancel"
+              >
+                Cancel
+              </button>
+            </div>
+            <p
+              id="settings-semantic-status"
+              class="text-xs text-brand-600 dark:text-night-300 mt-2"
+              data-i18n="semanticStatusMissing"
+            >
+              Not built.
+            </p>
+            <p
+              id="settings-semantic-progress"
+              class="text-xs text-brand-600 dark:text-night-300 mt-1"
+            ></p>
           </div>
         </div>
-        <div id="settings-strongs-section" class="settings-group hidden">
-          <span class="font-medium settings-section-title" data-i18n="strongsDictionaries">Strong's Dictionaries</span>
-          <p id="settings-strongs-hint" class="text-xs text-brand-600 dark:text-night-300 mt-1" data-i18n="strongsDictsHint">Select which dictionaries to use when clicking a Strong's number.</p>
-          <div id="settings-strongs-list"></div>
+        <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-end">
+          <button
+            id="settings-close"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            data-i18n="close"
+          >
+            Close
+          </button>
         </div>
-        <div id="settings-crossref-section" class="settings-group hidden">
-          <span class="font-medium settings-section-title" data-i18n="crossReferences">Cross References</span>
-          <p class="text-xs text-brand-600 dark:text-night-300 mt-1" data-i18n="crossRefModulesHint">Choose which modules to use for displaying cross-references.</p>
-          <div id="settings-crossref-list" class="settings-checkbox-list"></div>
-        </div>
-        <div id="settings-semantic-section" class="settings-group">
-          <span class="font-medium settings-section-title" data-i18n="semanticIndexTitle">Semantic Search Index</span>
-          <p class="text-xs text-brand-600 dark:text-night-300 mt-1" data-i18n="semanticIndexHint">Usa IA para encontrar versículos relacionados por significado.</p>
-          <p class="settings-warning mt-2" data-i18n="semanticExperimentalWarning">Atenção: recurso em teste. Os resultados podem variar.</p>
-          <label class="settings-checkbox-option mt-2">
-            <input id="settings-semantic-enable" type="checkbox" class="h-4 w-4 cursor-pointer">
-            <span class="settings-checkbox-text" data-i18n="semanticEnable">Enable semantic search</span>
-          </label>
-          <div class="mt-2 settings-row">
-            <div class="settings-row-info">
-              <span class="settings-row-title text-sm" data-i18n="semanticResultCount">Semantic results</span>
-              <p class="settings-row-hint" data-i18n="semanticResultCountHint">Número máximo de resultados semânticos por busca.</p>
-            </div>
-            <input id="settings-semantic-count" type="number" min="1" max="50"
-              class="w-20 px-2 py-1 rounded border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm">
-          </div>
-          <div class="mt-2 flex items-center gap-2">
-            <select id="settings-semantic-module"
-              class="app-select flex-1 pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500
-                    bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50
-                    cursor-pointer">
-            </select>
-            <button id="settings-semantic-build"
-              class="px-3 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-brand-50 cursor-pointer transition-colors text-sm"
-              data-i18n="semanticBuild">
-              Build
-            </button>
-            <button id="settings-semantic-cancel"
-              class="hidden px-3 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm"
-              data-i18n="semanticCancel">
-              Cancel
-            </button>
-          </div>
-          <p id="settings-semantic-status" class="text-xs text-brand-600 dark:text-night-300 mt-2" data-i18n="semanticStatusMissing">Not built.</p>
-          <p id="settings-semantic-progress" class="text-xs text-brand-600 dark:text-night-300 mt-1"></p>
-        </div>
-      </div>
-      <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-end">
-        <button id="settings-close" class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700
-                hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
-                data-i18n="close">
-          Close
-        </button>
       </div>
     </div>
-  </div>
 
-  <script src="js/i18n.js"></script>
-  <script src="../../node_modules/lucide/dist/umd/lucide.min.js"></script>
-  <script src="js/icons.js"></script>
-  <script src="js/verse-utils.js"></script>
-  <script src="js/bible-view.js"></script>
-  <script src="js/navigation.js"></script>
-  <script src="js/pane-manager.js"></script>
-  <script src="js/search-panel.js"></script>
-  <script src="js/dict-panel.js"></script>
-  <script src="js/app.js"></script>
-</body>
+    <script src="js/i18n.js"></script>
+    <script src="../../node_modules/lucide/dist/umd/lucide.min.js"></script>
+    <script src="js/icons.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/verse-utils.js"></script>
+    <script src="js/bible-view.js"></script>
+    <script src="js/navigation.js"></script>
+    <script src="js/pane-manager.js"></script>
+    <script src="js/search-panel.js"></script>
+    <script src="js/dict-panel.js"></script>
+    <script src="js/app.js"></script>
+  </body>
 </html>

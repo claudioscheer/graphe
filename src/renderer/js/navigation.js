@@ -50,8 +50,8 @@ const Navigation = (() => {
     g.innerHTML = '';
 
     // Group books into OT and NT
-    const ot = currentBooks.filter(b => b.bookNumber < 470);
-    const nt = currentBooks.filter(b => b.bookNumber >= 470);
+    const ot = currentBooks.filter((b) => b.bookNumber < 470);
+    const nt = currentBooks.filter((b) => b.bookNumber >= 470);
 
     if (ot.length > 0) {
       g.appendChild(createSectionLabel(I18n.t('oldTestament')));
@@ -65,7 +65,8 @@ const Navigation = (() => {
 
   function createSectionLabel(text) {
     const label = document.createElement('div');
-    label.className = 'text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-night-300 mb-2 mt-2';
+    label.className =
+      'text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-night-300 mb-2 mt-2';
     label.textContent = text;
     return label;
   }
@@ -76,7 +77,8 @@ const Navigation = (() => {
 
     for (const book of books) {
       const btn = document.createElement('button');
-      btn.className = 'nav-book-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+      btn.className =
+        'nav-book-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors truncate px-2';
       btn.textContent = book.shortName;
       btn.title = book.longName;
@@ -107,7 +109,8 @@ const Navigation = (() => {
 
     for (let ch = 1; ch <= count; ch++) {
       const btn = document.createElement('button');
-      btn.className = 'nav-chapter-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+      btn.className =
+        'nav-chapter-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
       btn.textContent = ch;
       btn.addEventListener('click', () => {
@@ -136,9 +139,8 @@ const Navigation = (() => {
     const verse = match[3] ? parseInt(match[3], 10) : null;
 
     // Find book by abbreviation (case-insensitive prefix match on shortName)
-    const book = currentBooks.find(b =>
-      b.shortName.toLowerCase() === abbrev ||
-      b.shortName.toLowerCase().startsWith(abbrev)
+    const book = currentBooks.find(
+      (b) => b.shortName.toLowerCase() === abbrev || b.shortName.toLowerCase().startsWith(abbrev)
     );
 
     if (!book) return;

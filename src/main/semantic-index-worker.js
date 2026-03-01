@@ -86,11 +86,15 @@ async function run() {
     `);
 
     indexDb
-      .prepare('INSERT INTO semantic_index_meta (module_id, model_id, status, error) VALUES (?, ?, ?, NULL) ON CONFLICT(module_id) DO UPDATE SET model_id = excluded.model_id, status = excluded.status, error = NULL')
+      .prepare(
+        'INSERT INTO semantic_index_meta (module_id, model_id, status, error) VALUES (?, ?, ?, NULL) ON CONFLICT(module_id) DO UPDATE SET model_id = excluded.model_id, status = excluded.status, error = NULL'
+      )
       .run(moduleId, modelId, 'building');
 
     const verses = sourceDb
-      .prepare('SELECT book_number AS bookNumber, chapter, verse, text FROM verses ORDER BY book_number, chapter, verse')
+      .prepare(
+        'SELECT book_number AS bookNumber, chapter, verse, text FROM verses ORDER BY book_number, chapter, verse'
+      )
       .all();
 
     const total = verses.length;

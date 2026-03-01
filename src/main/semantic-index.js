@@ -105,11 +105,13 @@ function getSourceVerseCount(modulePath) {
 
 function ensureMetaRow(moduleId) {
   indexDb
-    .prepare(`
+    .prepare(
+      `
       INSERT INTO semantic_index_meta (module_id, model_id, status)
       VALUES (?, ?, 'missing')
       ON CONFLICT(module_id) DO NOTHING
-    `)
+    `
+    )
     .run(moduleId, MODEL_ID);
 }
 
@@ -117,7 +119,9 @@ function getStatus(moduleId, modulePath) {
   if (moduleId) {
     ensureMetaRow(moduleId);
     const row = indexDb
-      .prepare('SELECT module_id AS moduleId, model_id AS modelId, verse_count AS verseCount, built_at AS builtAt, status, error FROM semantic_index_meta WHERE module_id = ?')
+      .prepare(
+        'SELECT module_id AS moduleId, model_id AS modelId, verse_count AS verseCount, built_at AS builtAt, status, error FROM semantic_index_meta WHERE module_id = ?'
+      )
       .get(moduleId);
 
     if (!row) {
@@ -148,7 +152,9 @@ function getStatus(moduleId, modulePath) {
   }
 
   return indexDb
-    .prepare('SELECT module_id AS moduleId, model_id AS modelId, verse_count AS verseCount, built_at AS builtAt, status, error FROM semantic_index_meta ORDER BY module_id')
+    .prepare(
+      'SELECT module_id AS moduleId, model_id AS modelId, verse_count AS verseCount, built_at AS builtAt, status, error FROM semantic_index_meta ORDER BY module_id'
+    )
     .all();
 }
 
@@ -190,13 +196,17 @@ function createJob(moduleId) {
 }
 
 function startBuild(moduleId, modulePath) {
-  const running = Array.from(jobs.entries()).find(([, j]) => j.moduleId === moduleId && j.status === 'running');
+  const running = Array.from(jobs.entries()).find(
+    ([, j]) => j.moduleId === moduleId && j.status === 'running'
+  );
   if (running) {
     return { jobId: running[0] };
   }
 
   indexDb
-    .prepare('INSERT INTO semantic_index_meta (module_id, model_id, status, error) VALUES (?, ?, ?, NULL) ON CONFLICT(module_id) DO UPDATE SET model_id = excluded.model_id, status = excluded.status, error = NULL')
+    .prepare(
+      'INSERT INTO semantic_index_meta (module_id, model_id, status, error) VALUES (?, ?, ?, NULL) ON CONFLICT(module_id) DO UPDATE SET model_id = excluded.model_id, status = excluded.status, error = NULL'
+    )
     .run(moduleId, MODEL_ID, 'building');
 
   const jobId = createJob(moduleId);
@@ -271,7 +281,9 @@ function startBuild(moduleId, modulePath) {
 
 function loadModuleCache(moduleId) {
   const rows = indexDb
-    .prepare('SELECT book_number AS bookNumber, chapter, verse, clean_text AS cleanText, embedding_blob AS embeddingBlob FROM semantic_verses WHERE module_id = ?')
+    .prepare(
+      'SELECT book_number AS bookNumber, chapter, verse, clean_text AS cleanText, embedding_blob AS embeddingBlob FROM semantic_verses WHERE module_id = ?'
+    )
     .all(moduleId);
 
   const cached = rows.map((row) => ({

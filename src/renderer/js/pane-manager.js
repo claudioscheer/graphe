@@ -55,11 +55,11 @@ const PaneManager = (() => {
   }
 
   function createPaneState(initial = {}) {
-    const id = initial.id || ('pane-' + (++paneCounter));
+    const id = initial.id || 'pane-' + ++paneCounter;
     paneCounter = Math.max(paneCounter, parsePaneNumber(id));
 
     const moduleId = resolveModuleId(initial.moduleId);
-    const mod = modules.find(m => m.id === moduleId) || modules[0] || null;
+    const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
 
     panes[id] = {
       id,
@@ -83,8 +83,8 @@ const PaneManager = (() => {
   }
 
   function resolveModuleId(candidate) {
-    const bibleModules = modules.filter(m => m.type === 'bible');
-    if (candidate && bibleModules.some(m => m.id === candidate)) return candidate;
+    const bibleModules = modules.filter((m) => m.type === 'bible');
+    if (candidate && bibleModules.some((m) => m.id === candidate)) return candidate;
     return bibleModules.length > 0 ? bibleModules[0].id : null;
   }
 
@@ -102,7 +102,7 @@ const PaneManager = (() => {
     for (const paneId of leafIds) {
       const raw = savedState.panes[paneId] || {};
       const moduleId = resolveModuleId(raw.moduleId);
-      const mod = modules.find(m => m.id === moduleId) || modules[0] || null;
+      const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
 
       nextPanes[paneId] = {
         id: paneId,
@@ -196,11 +196,13 @@ const PaneManager = (() => {
   }
 
   function getAllLeafIds(node) {
+    if (!node) return [];
     if (node.type === 'leaf') return [node.paneId];
     return [...getAllLeafIds(node.children[0]), ...getAllLeafIds(node.children[1])];
   }
 
   function cycleActivePane() {
+    if (!tree) return;
     const ids = getAllLeafIds(tree);
     if (ids.length <= 1) return;
     const idx = ids.indexOf(activePaneId);
@@ -271,13 +273,13 @@ const PaneManager = (() => {
     el.addEventListener('mousedown', () => setActivePane(paneId));
 
     const toolbar = document.createElement('div');
-    toolbar.className = 'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
+    toolbar.className =
+      'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
 
     const select = document.createElement('select');
-    select.className = 'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
-      a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
-    );
+    select.className =
+      'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+    const sortedModules = Utils.sortBibleModules(modules);
     for (const m of sortedModules) {
       const opt = document.createElement('option');
       opt.value = m.id;
@@ -288,7 +290,7 @@ const PaneManager = (() => {
     }
     select.addEventListener('change', async () => {
       pane.moduleId = select.value;
-      const mod = modules.find(m => m.id === select.value);
+      const mod = modules.find((m) => m.id === select.value);
       pane.hasStrongs = mod ? mod.hasStrongs : false;
       pane.books = [];
       pane.verses = [];
@@ -297,7 +299,8 @@ const PaneManager = (() => {
     });
 
     const prevBtn = document.createElement('button');
-    prevBtn.className = 'nav-prev-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    prevBtn.className =
+      'nav-prev-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const prevIcon = Icons.create('chevron-left');
     prevIcon.setAttribute('width', '16');
     prevIcon.setAttribute('height', '16');
@@ -310,19 +313,25 @@ const PaneManager = (() => {
     prevBtn.addEventListener('click', () => prevChapter(paneId));
 
     const navBtn = document.createElement('button');
-    navBtn.className = 'nav-btn px-3 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
+    navBtn.className =
+      'nav-btn px-3 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
     navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-brand-600 dark:text-night-300'));
     const navBtnLabel = document.createElement('span');
     navBtnLabel.className = 'nav-btn-label';
     navBtnLabel.textContent = '...';
     navBtn.appendChild(navBtnLabel);
     navBtn.addEventListener('click', async () => {
-      const books = await window.api.getBooks(pane.moduleId);
-      Navigation.open(paneId, books);
+      try {
+        const books = await window.api.getBooks(pane.moduleId);
+        Navigation.open(paneId, books);
+      } catch (err) {
+        console.warn('Failed to open navigation:', err);
+      }
     });
 
     const nextBtn = document.createElement('button');
-    nextBtn.className = 'nav-next-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    nextBtn.className =
+      'nav-next-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const nextBtnLabel = document.createElement('span');
     nextBtnLabel.className = 'nav-next-label';
     nextBtn.appendChild(nextBtnLabel);
@@ -339,13 +348,15 @@ const PaneManager = (() => {
     navGroup.append(prevBtn, navBtn, nextBtn);
 
     const backBtn = document.createElement('button');
-    backBtn.className = 'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+    backBtn.className =
+      'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
     backBtn.appendChild(Icons.create('arrow-left'));
     backBtn.title = I18n.t('crossRefBackTooltip');
     backBtn.addEventListener('click', () => navBack(paneId));
 
     const pinBtn = document.createElement('button');
-    pinBtn.className = 'pane-pin-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    pinBtn.className =
+      'pane-pin-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
     const isPinned = linkTargetPaneId === paneId;
     pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
     pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
@@ -363,7 +374,8 @@ const PaneManager = (() => {
     spacer.className = 'flex-1';
 
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    closeBtn.className =
+      'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -380,7 +392,8 @@ const PaneManager = (() => {
 
   function createDivider(node) {
     const div = document.createElement('div');
-    div.className = 'split-divider ' + (node.direction === 'h' ? 'split-divider-h' : 'split-divider-v');
+    div.className =
+      'split-divider ' + (node.direction === 'h' ? 'split-divider-h' : 'split-divider-v');
 
     div.addEventListener('mousedown', (e) => {
       e.preventDefault();
@@ -426,7 +439,7 @@ const PaneManager = (() => {
 
       pane.books = await window.api.getBooks(pane.moduleId);
 
-      const bookExists = pane.books.find(b => b.bookNumber === pane.bookNumber);
+      const bookExists = pane.books.find((b) => b.bookNumber === pane.bookNumber);
       if (!bookExists) {
         renderUnavailableMessage(paneId, 'book');
         return;
@@ -448,10 +461,10 @@ const PaneManager = (() => {
 
   function bookNameResolver(pane) {
     return (bookNumber) => {
-      const b = pane.books.find(bk => bk.bookNumber === bookNumber);
+      const b = pane.books.find((bk) => bk.bookNumber === bookNumber);
       if (b) return b.shortName;
       if (allBooksCache) {
-        const fb = allBooksCache.find(bk => bk.bookNumber === bookNumber);
+        const fb = allBooksCache.find((bk) => bk.bookNumber === bookNumber);
         if (fb) return fb.shortName;
       }
       return String(bookNumber);
@@ -505,7 +518,11 @@ const PaneManager = (() => {
         : Promise.resolve([]);
       const fetchChapterCountP = window.api.getChapterCount(pane.moduleId, pane.bookNumber);
 
-      const [verses, crossRefs, chapterCount] = await Promise.all([fetchVersesP, fetchCrossRefsP, fetchChapterCountP]);
+      const [verses, crossRefs, chapterCount] = await Promise.all([
+        fetchVersesP,
+        fetchCrossRefsP,
+        fetchChapterCountP,
+      ]);
       pane.verses = verses;
 
       if (verses.length === 0) {
@@ -517,7 +534,7 @@ const PaneManager = (() => {
       if (!el) return;
 
       const content = el.querySelector('.pane-content');
-      const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
+      const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
       if (book) pane.bookShortName = book.shortName;
       BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
         crossRefs,
@@ -538,7 +555,7 @@ const PaneManager = (() => {
 
       // Update prev/next navigation labels
       if (book) {
-        const bookIdx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
+        const bookIdx = pane.books.findIndex((b) => b.bookNumber === pane.bookNumber);
         const prevLabelEl = el.querySelector('.nav-prev-label');
         const nextLabelEl = el.querySelector('.nav-next-label');
         const prevBtnEl = el.querySelector('.nav-prev-btn');
@@ -593,27 +610,38 @@ const PaneManager = (() => {
   async function navigatePane(paneId, bookNumber, chapter, verse) {
     const pane = panes[paneId];
     if (!pane) return false;
-    if (pane.books.length > 0 && !pane.books.find(b => b.bookNumber === bookNumber)) {
+    if (pane.books.length > 0 && !pane.books.find((b) => b.bookNumber === bookNumber)) {
       return false;
     }
-    pushNavHistory(paneId);
+    const prevBookNumber = pane.bookNumber;
+    const prevChapter = pane.chapter;
     pane.bookNumber = bookNumber;
     pane.chapter = chapter;
-    await loadChapter(paneId, verse || null);
-    updateBackBtn(paneId);
-    emitStateChange();
-    return true;
+    try {
+      await loadChapter(paneId, verse || null);
+      // Push the *old* location so navBack returns there
+      pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
+      pane.navHistory.push({ bookNumber: prevBookNumber, chapter: prevChapter });
+      pane.navHistoryIdx = pane.navHistory.length - 1;
+      updateBackBtn(paneId);
+      emitStateChange();
+      return true;
+    } catch (err) {
+      pane.bookNumber = prevBookNumber;
+      pane.chapter = prevChapter;
+      throw err;
+    }
   }
 
   async function prevChapter(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
-    if (!pane.books.find(b => b.bookNumber === pane.bookNumber)) return;
+    if (!pane.books.find((b) => b.bookNumber === pane.bookNumber)) return;
 
     if (pane.chapter > 1) {
       pane.chapter--;
     } else {
-      const idx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
+      const idx = pane.books.findIndex((b) => b.bookNumber === pane.bookNumber);
       if (idx > 0) {
         const prevBook = pane.books[idx - 1];
         const count = await window.api.getChapterCount(pane.moduleId, prevBook.bookNumber);
@@ -628,13 +656,13 @@ const PaneManager = (() => {
   async function nextChapter(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
-    if (!pane.books.find(b => b.bookNumber === pane.bookNumber)) return;
+    if (!pane.books.find((b) => b.bookNumber === pane.bookNumber)) return;
 
     const count = await window.api.getChapterCount(pane.moduleId, pane.bookNumber);
     if (pane.chapter < count) {
       pane.chapter++;
     } else {
-      const idx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
+      const idx = pane.books.findIndex((b) => b.bookNumber === pane.bookNumber);
       if (idx < pane.books.length - 1) {
         pane.bookNumber = pane.books[idx + 1].bookNumber;
         pane.chapter = 1;
@@ -654,14 +682,12 @@ const PaneManager = (() => {
 
     const msg = document.createElement('div');
     msg.className = 'unavailable-message';
-    msg.textContent = type === 'book'
-      ? I18n.t('bookUnavailable')
-      : I18n.t('chapterUnavailable');
+    msg.textContent = type === 'book' ? I18n.t('bookUnavailable') : I18n.t('chapterUnavailable');
     content.appendChild(msg);
 
     const navBtnLabel = el.querySelector('.nav-btn-label');
     if (navBtnLabel) {
-      const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
+      const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
       const name = book?.shortName || pane.bookShortName;
       if (name) {
         navBtnLabel.textContent = `${name} ${pane.chapter}`;
@@ -704,7 +730,7 @@ const PaneManager = (() => {
   }
 
   function updatePinButtons() {
-    document.querySelectorAll('[data-pane-id]').forEach(el => {
+    document.querySelectorAll('[data-pane-id]').forEach((el) => {
       const id = el.getAttribute('data-pane-id');
       const btn = el.querySelector('.pane-pin-btn');
       if (!btn) return;
@@ -742,7 +768,7 @@ const PaneManager = (() => {
     const newLeaf = { type: 'leaf', paneId: newPaneId };
 
     const el = document.querySelector(`[data-pane-id="${paneId}"]`);
-    const size = direction === 'h' ? (el ? el.offsetWidth : 400) : (el ? el.offsetHeight : 300);
+    const size = direction === 'h' ? (el ? el.offsetWidth : 400) : el ? el.offsetHeight : 300;
     const halfSize = Math.floor(size / 2);
 
     const splitNode = {
@@ -755,9 +781,8 @@ const PaneManager = (() => {
     if (!parent) {
       tree = splitNode;
     } else {
-      const idx = parent.children.findIndex(c =>
-        c.type === 'leaf' ? c.paneId === paneId : false
-      ) ?? findSplitChildIndex(parent, paneId);
+      let idx = parent.children.findIndex((c) => (c.type === 'leaf' ? c.paneId === paneId : false));
+      if (idx === -1) idx = findSplitChildIndex(parent, paneId);
       parent.children[idx] = splitNode;
     }
 
@@ -786,7 +811,7 @@ const PaneManager = (() => {
 
   function containsPane(node, paneId) {
     if (node.type === 'leaf') return node.paneId === paneId;
-    return node.children.some(c => containsPane(c, paneId));
+    return node.children.some((c) => containsPane(c, paneId));
   }
 
   function closePane(paneId) {
@@ -795,7 +820,7 @@ const PaneManager = (() => {
     const parent = findParent(tree, paneId);
     if (!parent) return;
 
-    const idx = parent.children.findIndex(c => c.type === 'leaf' && c.paneId === paneId);
+    const idx = parent.children.findIndex((c) => c.type === 'leaf' && c.paneId === paneId);
     if (idx === -1) return;
     const sibling = parent.children[1 - idx];
 
@@ -828,5 +853,19 @@ const PaneManager = (() => {
     return null;
   }
 
-  return { init, waitForInitialLoad, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters, getNavigationTarget };
+  return {
+    init,
+    waitForInitialLoad,
+    getPane,
+    navigatePane,
+    render,
+    getState,
+    setStateChangeListener,
+    splitActivePane,
+    cycleActivePane,
+    getActivePaneId,
+    setActivePane,
+    reloadAllChapters,
+    getNavigationTarget,
+  };
 })();

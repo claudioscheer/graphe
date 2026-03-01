@@ -50,7 +50,7 @@ function loadState() {
   }
 }
 
-function saveState(nextState) {
+async function saveState(nextState) {
   ensureDir();
 
   const state = {
@@ -62,7 +62,7 @@ function saveState(nextState) {
     },
   };
 
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
   return state;
 }
 

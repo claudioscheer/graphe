@@ -74,7 +74,7 @@ const BibleView = (() => {
     link.textContent = formatRefLabel(ref, bookNameResolver);
     link.dataset.bookTo = ref.bookTo;
     link.dataset.chapterTo = ref.chapterTo;
-    link.dataset.verseTo = ref.verseToStart || '';
+    link.dataset.verseTo = ref.verseToStart != null ? ref.verseToStart : '';
     return link;
   }
 
@@ -113,7 +113,8 @@ const BibleView = (() => {
     const wrapper = document.createElement('div');
     wrapper.className = 'verse-text px-6 py-4';
 
-    const crossRefsByVerse = crossRefs && crossRefs.length > 0 ? buildCrossRefsByVerse(crossRefs) : null;
+    const crossRefsByVerse =
+      crossRefs && crossRefs.length > 0 ? buildCrossRefsByVerse(crossRefs) : null;
 
     // Store cross-ref data on the wrapper for right-click access
     if (crossRefsByVerse) {
@@ -154,19 +155,19 @@ const BibleView = (() => {
         const all = Array.from(wrapper.querySelectorAll('.verse-line'));
 
         if (e.shiftKey && lastClickedVerse !== null) {
-          const lastIdx = all.findIndex(el => el.dataset.verse === String(lastClickedVerse));
+          const lastIdx = all.findIndex((el) => el.dataset.verse === String(lastClickedVerse));
           const curIdx = all.indexOf(line);
           if (lastIdx !== -1 && curIdx !== -1) {
             const from = Math.min(lastIdx, curIdx);
             const to = Math.max(lastIdx, curIdx);
-            all.forEach(el => el.classList.remove('verse-selected'));
+            all.forEach((el) => el.classList.remove('verse-selected'));
             for (let i = from; i <= to; i++) all[i].classList.add('verse-selected');
           }
         } else if (e.ctrlKey || e.metaKey) {
           line.classList.toggle('verse-selected');
           lastClickedVerse = v.verse;
         } else {
-          all.forEach(el => el.classList.remove('verse-selected'));
+          all.forEach((el) => el.classList.remove('verse-selected'));
           line.classList.toggle('verse-selected');
           lastClickedVerse = v.verse;
         }
@@ -217,7 +218,9 @@ const BibleView = (() => {
     const target = line || el;
     requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      container.querySelectorAll('.verse-selected').forEach(v => v.classList.remove('verse-selected'));
+      container
+        .querySelectorAll('.verse-selected')
+        .forEach((v) => v.classList.remove('verse-selected'));
       target.classList.add('verse-selected');
     });
   }
@@ -244,7 +247,7 @@ const BibleView = (() => {
     if (shiftHeld) {
       list[nextIdx].classList.add('verse-selected');
     } else {
-      list.forEach(el => el.classList.remove('verse-selected'));
+      list.forEach((el) => el.classList.remove('verse-selected'));
       list[nextIdx].classList.add('verse-selected');
     }
     list[nextIdx].scrollIntoView({ block: 'nearest' });
@@ -264,7 +267,7 @@ const BibleView = (() => {
       let text = '';
       if (content) {
         const clone = content.cloneNode(true);
-        clone.querySelectorAll('.strongs, .verse-annotation').forEach(s => s.remove());
+        clone.querySelectorAll('.strongs, .verse-annotation').forEach((s) => s.remove());
         text = clone.textContent.trim();
       }
       lines.push(`[${bookShort} ${chapter}:${verse}] ${text}`);

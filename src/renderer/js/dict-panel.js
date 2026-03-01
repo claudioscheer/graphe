@@ -81,7 +81,8 @@ const DictPanel = (() => {
 
     searchInput = document.createElement('input');
     searchInput.type = 'text';
-    searchInput.className = 'w-full px-3 py-1.5 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
+    searchInput.className =
+      'w-full px-3 py-1.5 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
     searchInput.setAttribute('data-i18n-placeholder', 'dictSearchPlaceholder');
     searchInput.placeholder = I18n.t('dictSearchPlaceholder');
     searchInput.addEventListener('input', onSearchInput);
@@ -95,7 +96,8 @@ const DictPanel = (() => {
       searchInput.value = '';
       dictClearBtn.style.display = 'none';
       hideAutocomplete();
-      contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
+      contentEl.innerHTML =
+        '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
       searchInput.focus();
     });
     dictClearBtn.style.display = 'none';
@@ -117,7 +119,8 @@ const DictPanel = (() => {
     // Content area
     contentEl = document.createElement('div');
     contentEl.className = 'dict-panel-content';
-    contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
+    contentEl.innerHTML =
+      '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
     panel.appendChild(contentEl);
 
     sidebar.appendChild(divider);
@@ -173,9 +176,10 @@ const DictPanel = (() => {
 
     autocompleteTimer = setTimeout(async () => {
       try {
-        const promises = dictModules.map(m =>
-          window.api.searchDictionaryTopics(m.id, val, 15)
-            .then(topics => topics.map(t => ({ topic: t, moduleId: m.id })))
+        const promises = dictModules.map((m) =>
+          window.api
+            .searchDictionaryTopics(m.id, val, 15)
+            .then((topics) => topics.map((t) => ({ topic: t, moduleId: m.id })))
             .catch(() => [])
         );
         const allResults = (await Promise.all(promises)).flat();
@@ -269,7 +273,7 @@ const DictPanel = (() => {
   // --- Module header helper ---
 
   function createModuleHeader(moduleId) {
-    const mod = dictModules.find(m => m.id === moduleId);
+    const mod = dictModules.find((m) => m.id === moduleId);
     const header = document.createElement('div');
     header.className = 'dict-module-header';
 
@@ -291,7 +295,13 @@ const DictPanel = (() => {
 
   function pushHistory(entry) {
     const prev = history[historyIdx];
-    if (prev && prev.type === entry.type && prev.topic === entry.topic && prev.moduleId === entry.moduleId) return;
+    if (
+      prev &&
+      prev.type === entry.type &&
+      prev.topic === entry.topic &&
+      prev.moduleId === entry.moduleId
+    )
+      return;
     history.splice(historyIdx + 1);
     history.push(entry);
     historyIdx = history.length - 1;
@@ -354,7 +364,8 @@ const DictPanel = (() => {
       }
       const results = await window.api.lookupAllStrongDicts(strongsNumber, strongsDicts);
       if (results.length === 0) {
-        contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+        contentEl.innerHTML =
+          '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
       }
 
@@ -369,7 +380,8 @@ const DictPanel = (() => {
         contentEl.appendChild(section);
       }
     } catch (err) {
-      contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(err.message) + '</div>';
+      contentEl.innerHTML =
+        '<div class="dict-placeholder">' + Utils.escapeHtml(err.message) + '</div>';
     }
   }
 
@@ -390,7 +402,8 @@ const DictPanel = (() => {
       if (moduleId) {
         const entry = await window.api.getDictionaryEntry(moduleId, topic);
         if (!entry) {
-          contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+          contentEl.innerHTML =
+            '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoEntry')) + '</div>';
           return;
         }
         const section = document.createElement('div');
@@ -404,15 +417,17 @@ const DictPanel = (() => {
       // No specific module — search across all dicts
       if (dictModules.length === 0) return;
 
-      const promises = dictModules.map(m =>
-        window.api.getDictionaryEntry(m.id, topic)
-          .then(entry => entry ? { moduleId: m.id, entry } : null)
+      const promises = dictModules.map((m) =>
+        window.api
+          .getDictionaryEntry(m.id, topic)
+          .then((entry) => (entry ? { moduleId: m.id, entry } : null))
           .catch(() => null)
       );
       const results = (await Promise.all(promises)).filter(Boolean);
 
       if (results.length === 0) {
-        contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+        contentEl.innerHTML =
+          '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
       }
 
@@ -424,14 +439,15 @@ const DictPanel = (() => {
         contentEl.appendChild(section);
       }
     } catch (err) {
-      contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(err.message) + '</div>';
+      contentEl.innerHTML =
+        '<div class="dict-placeholder">' + Utils.escapeHtml(err.message) + '</div>';
     }
   }
 
   // --- Per-module rendering dispatch ---
 
   function renderModuleEntry(container, moduleId, entry) {
-    const mod = dictModules.find(m => m.id === moduleId);
+    const mod = dictModules.find((m) => m.id === moduleId);
     const isStrongDict = mod ? mod.isStrongDict : false;
 
     // Topic heading
@@ -487,9 +503,9 @@ const DictPanel = (() => {
         let html = entry.definition;
         const contentStart = html.search(/<(?:p\s+class|ol[\s>])/i);
         if (contentStart > 0) html = html.substring(contentStart);
-        defEl.innerHTML = html;
+        defEl.innerHTML = sanitizeHtml(html);
       } else {
-        defEl.innerHTML = formatDefinition(entry.definition);
+        defEl.innerHTML = sanitizeHtml(formatDefinition(entry.definition));
       }
 
       bindStrongsCrossRefs(defEl);
@@ -505,7 +521,7 @@ const DictPanel = (() => {
     if (entry.definition) {
       const defEl = document.createElement('div');
       defEl.className = 'dict-entry-definition';
-      defEl.innerHTML = entry.definition;
+      defEl.innerHTML = sanitizeHtml(entry.definition);
       bindBibleRefs(defEl);
       bindVCrossRefs(defEl);
       bindStrongsCrossRefs(defEl);
@@ -542,7 +558,9 @@ const DictPanel = (() => {
       }
 
       container.appendChild(section);
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to load cognates:', err);
+    }
   }
 
   // --- Link binding ---
@@ -590,7 +608,10 @@ const DictPanel = (() => {
         const paneId = PaneManager.getActivePaneId();
         const target = PaneManager.getNavigationTarget(paneId);
         PaneManager.navigatePane(target, bookNumber, chapter, verse)
-          .then(ok => { if (!ok) showTooltip(target, I18n.t('refUnavailable')); });
+          .then((ok) => {
+            if (!ok) showTooltip(target, I18n.t('refUnavailable'));
+          })
+          .catch((err) => console.warn('Bible ref navigation failed:', err));
       });
     }
   }
@@ -746,7 +767,8 @@ const DictPanel = (() => {
       const level = getLevel(item.label);
 
       if (level === 0) {
-        html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
+        html +=
+          '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
 
         const subItems = [];
         let j = i + 1;
@@ -762,7 +784,12 @@ const DictPanel = (() => {
         html += '</li>';
         i = j;
       } else {
-        html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text) + '</li>';
+        html +=
+          '<li><span class="dict-def-label">' +
+          item.label +
+          '</span> ' +
+          restoreAnchors(item.text) +
+          '</li>';
         i++;
       }
     }
@@ -777,7 +804,8 @@ const DictPanel = (() => {
 
     while (i < items.length) {
       const item = items[i];
-      html += '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
+      html +=
+        '<li><span class="dict-def-label">' + item.label + '</span> ' + restoreAnchors(item.text);
 
       const deepItems = [];
       let j = i + 1;
@@ -789,7 +817,12 @@ const DictPanel = (() => {
       if (deepItems.length > 0) {
         html += '<ol class="dict-def-sublist">';
         for (const di of deepItems) {
-          html += '<li><span class="dict-def-label">' + di.label + '</span> ' + restoreAnchors(di.text) + '</li>';
+          html +=
+            '<li><span class="dict-def-label">' +
+            di.label +
+            '</span> ' +
+            restoreAnchors(di.text) +
+            '</li>';
         }
         html += '</ol>';
       }
@@ -810,8 +843,50 @@ const DictPanel = (() => {
 
   // --- Utilities ---
 
-  function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function sanitizeHtml(html) {
+    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    const dangerous = doc.querySelectorAll('script, iframe, object, embed, form, link, meta');
+    for (const el of dangerous) el.remove();
+
+    const urlAttrs = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster']);
+    const all = doc.body.querySelectorAll('*');
+    for (const el of all) {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        const value = (attr.value || '').trim();
+        if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+        if (urlAttrs.has(name) && !isSafeUrl(value)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
+    return doc.body.innerHTML;
+  }
+
+  function isSafeUrl(value) {
+    if (!value) return true;
+    if (
+      value.startsWith('#') ||
+      value.startsWith('/') ||
+      value.startsWith('./') ||
+      value.startsWith('../')
+    ) {
+      return true;
+    }
+    const normalized = value.replace(/[\u0000-\u001F\u007F\s]+/g, '').toLowerCase();
+    if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')) return false;
+    if (normalized.startsWith('data:')) {
+      return normalized.startsWith('data:image/');
+    }
+    return (
+      normalized.startsWith('http:') ||
+      normalized.startsWith('https:') ||
+      normalized.startsWith('mailto:') ||
+      normalized.startsWith('tel:')
+    );
   }
 
   function setStateChangeListener(listener) {

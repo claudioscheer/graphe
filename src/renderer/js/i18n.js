@@ -9,7 +9,8 @@ const I18n = (() => {
       navPlaceholder: 'Digite uma referência, ex: Gn 1:3 ou Mt 5',
       back: 'Voltar',
       close: 'Fechar',
-      noModules: 'Nenhum módulo bíblico encontrado. Coloque arquivos .SQLite3 em ~/.graphe/modules/',
+      noModules:
+        'Nenhum módulo bíblico encontrado. Coloque arquivos .SQLite3 em ~/.graphe/modules/',
       splitH: 'Dividir horizontalmente',
       splitV: 'Dividir verticalmente',
       closePane: 'Fechar painel',
@@ -147,7 +148,8 @@ const I18n = (() => {
       navPlaceholder: 'Escriba una referencia, ej: Gn 1:3 o Mt 5',
       back: 'Volver',
       close: 'Cerrar',
-      noModules: 'No se encontraron módulos bíblicos. Coloque archivos .SQLite3 en ~/.graphe/modules/',
+      noModules:
+        'No se encontraron módulos bíblicos. Coloque archivos .SQLite3 en ~/.graphe/modules/',
       splitH: 'Dividir horizontalmente',
       splitV: 'Dividir verticalmente',
       closePane: 'Cerrar panel',
@@ -227,15 +229,15 @@ const I18n = (() => {
   }
 
   function updateAll() {
-    document.querySelectorAll('[data-i18n]').forEach(el => {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
       const key = el.getAttribute('data-i18n');
       el.textContent = t(key);
     });
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
       const key = el.getAttribute('data-i18n-placeholder');
       el.placeholder = t(key);
     });
-    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
       const key = el.getAttribute('data-i18n-title');
       el.title = t(key);
     });
