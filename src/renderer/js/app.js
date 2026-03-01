@@ -490,6 +490,8 @@ window.showTooltip = function (paneId, message) {
 window.api.onOpenSettings(() => Settings.open());
 window.api.onSplitH(() => PaneManager.splitActivePane('h'));
 window.api.onSplitV(() => PaneManager.splitActivePane('v'));
+window.api.onSplitHCommentary(() => PaneManager.splitActivePaneWithType('h', 'commentary'));
+window.api.onSplitVCommentary(() => PaneManager.splitActivePaneWithType('v', 'commentary'));
 
 const LoadingScreen = (() => {
   const el = document.getElementById('app-loading-screen');
@@ -517,6 +519,18 @@ function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
 
 // Left-click on a Strong's number → dictionary lookup
 document.addEventListener('click', (e) => {
+  // Verse click → scroll synced commentary panes
+  const verseLine = e.target.closest('.verse-line');
+  if (verseLine) {
+    const paneEl = verseLine.closest('[data-pane-id]');
+    if (paneEl) {
+      const verseNum = parseInt(verseLine.dataset.verse, 10);
+      if (!isNaN(verseNum)) {
+        PaneManager.notifyVerseClick(paneEl.getAttribute('data-pane-id'), verseNum);
+      }
+    }
+  }
+
   // Cross-reference link click → navigate pane
   const refEl = e.target.closest('.crossref-link');
   if (refEl) {
@@ -649,6 +663,7 @@ document.addEventListener('keydown', (e) => {
     const bibleModules = modules.filter((m) => m.type === 'bible');
     const dictModules = modules.filter((m) => m.type === 'dictionary');
     const crossRefModules = modules.filter((m) => m.type === 'crossreference');
+    const commentaryModulesList = modules.filter((m) => m.type === 'commentary');
 
     if (bibleModules.length === 0) {
       document.getElementById('pane-root').innerHTML =
@@ -664,7 +679,7 @@ document.addEventListener('keydown', (e) => {
       AppStateStore.setPaneManager(paneState);
     });
 
-    PaneManager.init(bibleModules, AppStateStore.getPaneManager());
+    PaneManager.init(bibleModules, AppStateStore.getPaneManager(), commentaryModulesList);
 
     SearchPanel.setStateChangeListener((searchState) => {
       AppStateStore.setSearchPanel(searchState);

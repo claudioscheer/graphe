@@ -9,6 +9,7 @@ const PaneManager = (() => {
   let panes = {};
   let paneCounter = 0;
   let modules = [];
+  let commentaryModules = [];
   let onStateChange = null;
   let activePaneId = null;
   let linkTargetPaneId = null;
@@ -19,13 +20,34 @@ const PaneManager = (() => {
 
   const root = () => document.getElementById('pane-root');
 
-  function init(moduleList, savedState) {
+  function init(moduleList, savedState, commentaryModuleList) {
     modules = moduleList;
+    commentaryModules = commentaryModuleList || [];
 
     if (!restoreState(savedState)) {
-      const paneId = createPaneState();
-      tree = { type: 'leaf', paneId };
-      activePaneId = paneId;
+      if (commentaryModules.length > 0) {
+        // Default layout: Bible (65%) + Commentary (35%) side by side
+        const biblePaneId = createPaneState({ paneType: 'bible' });
+        const commentaryPaneId = createPaneState({
+          paneType: 'commentary',
+          moduleId: commentaryModules[0].id,
+          syncedToPaneId: biblePaneId,
+        });
+        tree = {
+          type: 'split',
+          direction: 'h',
+          children: [
+            { type: 'leaf', paneId: biblePaneId },
+            { type: 'leaf', paneId: commentaryPaneId },
+          ],
+          sizes: [650, 350],
+        };
+        activePaneId = biblePaneId;
+      } else {
+        const paneId = createPaneState();
+        tree = { type: 'leaf', paneId };
+        activePaneId = paneId;
+      }
     } else {
       // Set first leaf as active
       activePaneId = getFirstLeafId(tree);
@@ -58,21 +80,39 @@ const PaneManager = (() => {
     const id = initial.id || 'pane-' + ++paneCounter;
     paneCounter = Math.max(paneCounter, parsePaneNumber(id));
 
-    const moduleId = resolveModuleId(initial.moduleId);
-    const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
+    const paneType = initial.paneType || 'bible';
 
-    panes[id] = {
-      id,
-      moduleId,
-      hasStrongs: mod ? mod.hasStrongs : false,
-      bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
-      chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
-      bookShortName: initial.bookShortName || '',
-      books: [],
-      verses: [],
-      navHistory: [],
-      navHistoryIdx: -1,
-    };
+    if (paneType === 'commentary') {
+      const moduleId = resolveCommentaryModuleId(initial.moduleId);
+      panes[id] = {
+        id,
+        paneType: 'commentary',
+        moduleId,
+        bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
+        chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
+        bookShortName: initial.bookShortName || '',
+        commentaryBooks: [],
+        entries: [],
+        syncedToPaneId: initial.syncedToPaneId || null,
+      };
+    } else {
+      const moduleId = resolveModuleId(initial.moduleId);
+      const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
+
+      panes[id] = {
+        id,
+        paneType: 'bible',
+        moduleId,
+        hasStrongs: mod ? mod.hasStrongs : false,
+        bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
+        chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
+        bookShortName: initial.bookShortName || '',
+        books: [],
+        verses: [],
+        navHistory: [],
+        navHistoryIdx: -1,
+      };
+    }
 
     return id;
   }
@@ -88,6 +128,11 @@ const PaneManager = (() => {
     return bibleModules.length > 0 ? bibleModules[0].id : null;
   }
 
+  function resolveCommentaryModuleId(candidate) {
+    if (candidate && commentaryModules.some((m) => m.id === candidate)) return candidate;
+    return commentaryModules.length > 0 ? commentaryModules[0].id : null;
+  }
+
   function restoreState(savedState) {
     if (!savedState || typeof savedState !== 'object') return false;
     if (!savedState.tree || !savedState.panes) return false;
@@ -101,21 +146,58 @@ const PaneManager = (() => {
 
     for (const paneId of leafIds) {
       const raw = savedState.panes[paneId] || {};
-      const moduleId = resolveModuleId(raw.moduleId);
-      const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
+      const paneType = raw.paneType || 'bible';
 
-      nextPanes[paneId] = {
-        id: paneId,
-        moduleId,
-        hasStrongs: mod ? mod.hasStrongs : false,
-        bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
-        chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
-        bookShortName: raw.bookShortName || '',
-        books: [],
-        verses: [],
-        navHistory: [],
-        navHistoryIdx: -1,
-      };
+      if (paneType === 'commentary') {
+        const moduleId = resolveCommentaryModuleId(raw.moduleId);
+        if (!moduleId) {
+          // No commentary modules available — fall back to a bible pane
+          const fallbackModuleId = resolveModuleId(null);
+          const mod = modules.find((m) => m.id === fallbackModuleId) || modules[0] || null;
+          nextPanes[paneId] = {
+            id: paneId,
+            paneType: 'bible',
+            moduleId: fallbackModuleId,
+            hasStrongs: mod ? mod.hasStrongs : false,
+            bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
+            chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
+            bookShortName: raw.bookShortName || '',
+            books: [],
+            verses: [],
+            navHistory: [],
+            navHistoryIdx: -1,
+          };
+        } else {
+          nextPanes[paneId] = {
+            id: paneId,
+            paneType: 'commentary',
+            moduleId,
+            bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
+            chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
+            bookShortName: raw.bookShortName || '',
+            commentaryBooks: [],
+            entries: [],
+            syncedToPaneId: raw.syncedToPaneId || null,
+          };
+        }
+      } else {
+        const moduleId = resolveModuleId(raw.moduleId);
+        const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
+
+        nextPanes[paneId] = {
+          id: paneId,
+          paneType: 'bible',
+          moduleId,
+          hasStrongs: mod ? mod.hasStrongs : false,
+          bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
+          chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
+          bookShortName: raw.bookShortName || '',
+          books: [],
+          verses: [],
+          navHistory: [],
+          navHistoryIdx: -1,
+        };
+      }
 
       maxCounter = Math.max(maxCounter, parsePaneNumber(paneId));
     }
@@ -173,12 +255,17 @@ const PaneManager = (() => {
   function getState() {
     const serializablePanes = {};
     for (const pane of Object.values(panes)) {
-      serializablePanes[pane.id] = {
+      const base = {
+        paneType: pane.paneType || 'bible',
         moduleId: pane.moduleId,
         bookNumber: pane.bookNumber,
         chapter: pane.chapter,
         bookShortName: pane.bookShortName,
       };
+      if (pane.paneType === 'commentary') {
+        base.syncedToPaneId = pane.syncedToPaneId || null;
+      }
+      serializablePanes[pane.id] = base;
     }
 
     return {
@@ -232,17 +319,29 @@ const PaneManager = (() => {
     setActivePane(activePaneId);
 
     for (const pane of Object.values(panes)) {
-      if (pane.books.length === 0 && pane.moduleId) {
-        loadPaneData(pane.id);
-      } else if (pane.books.length > 0) {
-        loadChapter(pane.id);
+      if (pane.paneType === 'commentary') {
+        if (pane.commentaryBooks.length === 0 && pane.moduleId) {
+          loadCommentaryData(pane.id);
+        } else if (pane.commentaryBooks.length > 0) {
+          loadCommentaryChapter(pane.id);
+        }
+      } else {
+        if (pane.books.length === 0 && pane.moduleId) {
+          loadPaneData(pane.id);
+        } else if (pane.books.length > 0) {
+          loadChapter(pane.id);
+        }
       }
     }
   }
 
   function renderNode(node) {
     if (node.type === 'leaf') {
-      return createPaneElement(node.paneId);
+      const pane = panes[node.paneId];
+      if (pane && pane.paneType === 'commentary') {
+        return createCommentaryPaneElement(node.paneId);
+      }
+      return createBiblePaneElement(node.paneId);
     }
 
     const container = document.createElement('div');
@@ -265,7 +364,7 @@ const PaneManager = (() => {
     return container;
   }
 
-  function createPaneElement(paneId) {
+  function createBiblePaneElement(paneId) {
     const pane = panes[paneId];
     const el = document.createElement('div');
     el.className = 'pane-shell flex flex-col h-full w-full min-w-0 min-h-0';
@@ -391,6 +490,102 @@ const PaneManager = (() => {
     return el;
   }
 
+  function createCommentaryPaneElement(paneId) {
+    const pane = panes[paneId];
+    const el = document.createElement('div');
+    el.className = 'pane-shell flex flex-col h-full w-full min-w-0 min-h-0';
+    el.dataset.paneId = paneId;
+    el.addEventListener('mousedown', () => setActivePane(paneId));
+
+    const toolbar = document.createElement('div');
+    toolbar.className =
+      'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
+
+    // Commentary module selector
+    const select = document.createElement('select');
+    select.className =
+      'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+    const sorted = Utils.sortCommentaryModules(commentaryModules);
+    for (const m of sorted) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.id;
+      opt.title = m.description;
+      if (m.id === pane.moduleId) opt.selected = true;
+      select.appendChild(opt);
+    }
+    select.addEventListener('change', async () => {
+      pane.moduleId = select.value;
+      pane.commentaryBooks = [];
+      pane.entries = [];
+      await loadCommentaryData(paneId);
+      emitStateChange();
+    });
+
+    // Navigation label
+    const navLabel = document.createElement('span');
+    navLabel.className = 'commentary-nav-label px-2 py-1 text-sm font-medium text-brand-700 dark:text-night-200';
+    navLabel.textContent = '';
+
+    const spacer = document.createElement('div');
+    spacer.className = 'flex-1';
+
+    // Sync toggle button
+    const syncBtn = document.createElement('button');
+    syncBtn.className =
+      'commentary-sync-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    const isSynced = !!pane.syncedToPaneId;
+    syncBtn.appendChild(Icons.create(isSynced ? 'link' : 'unlink'));
+    syncBtn.title = isSynced ? I18n.t('unsyncCommentary') : I18n.t('syncCommentary');
+    if (isSynced) syncBtn.classList.add('pane-link-target');
+    syncBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    syncBtn.addEventListener('click', () => {
+      if (pane.syncedToPaneId) {
+        pane.syncedToPaneId = null;
+        syncBtn.replaceChildren(Icons.create('unlink'));
+        syncBtn.classList.remove('pane-link-target');
+        syncBtn.title = I18n.t('syncCommentary');
+      } else {
+        // Find the first bible pane to sync to
+        const biblePaneId = findFirstBiblePaneId();
+        if (biblePaneId) {
+          pane.syncedToPaneId = biblePaneId;
+          syncBtn.replaceChildren(Icons.create('link'));
+          syncBtn.classList.add('pane-link-target');
+          syncBtn.title = I18n.t('unsyncCommentary');
+          // Sync immediately
+          syncCommentaryToPane(paneId);
+        }
+      }
+      emitStateChange();
+    });
+
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className =
+      'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    closeBtn.appendChild(Icons.create('x'));
+    closeBtn.title = I18n.t('closePane');
+    closeBtn.addEventListener('click', () => closePane(paneId));
+
+    toolbar.append(select, navLabel, spacer, syncBtn, closeBtn);
+
+    const content = document.createElement('div');
+    content.className = 'pane-content flex-1 overflow-y-auto';
+
+    el.appendChild(toolbar);
+    el.appendChild(content);
+    return el;
+  }
+
+  function findFirstBiblePaneId() {
+    const leafIds = getAllLeafIds(tree);
+    for (const id of leafIds) {
+      if (panes[id] && panes[id].paneType === 'bible') return id;
+    }
+    return null;
+  }
+
   function createDivider(node) {
     const div = document.createElement('div');
     div.className =
@@ -452,6 +647,126 @@ const PaneManager = (() => {
       renderUnavailableMessage(paneId, 'book');
     } finally {
       markInitialLoaded(paneId);
+    }
+  }
+
+  // ---- Commentary data loading ----
+
+  async function loadCommentaryData(paneId) {
+    const pane = panes[paneId];
+    try {
+      if (!pane || !pane.moduleId) return;
+
+      if (!allBooksCache) {
+        allBooksCache = await window.api.getAllBooks();
+      }
+
+      pane.commentaryBooks = await window.api.getCommentaryBooks(pane.moduleId);
+
+      if (!pane.commentaryBooks.includes(pane.bookNumber)) {
+        if (pane.commentaryBooks.length > 0) {
+          pane.bookNumber = pane.commentaryBooks[0];
+          pane.chapter = 1;
+        } else {
+          renderCommentaryUnavailable(paneId);
+          return;
+        }
+      }
+
+      await loadCommentaryChapter(paneId);
+    } catch (err) {
+      console.error('Failed to load commentary data:', err);
+      renderCommentaryUnavailable(paneId);
+    } finally {
+      markInitialLoaded(paneId);
+    }
+  }
+
+  async function loadCommentaryChapter(paneId, scrollToVerse) {
+    const pane = panes[paneId];
+    try {
+      if (!pane || !pane.moduleId) return;
+
+      const entries = await window.api.getCommentary(pane.moduleId, pane.bookNumber, pane.chapter);
+      pane.entries = entries;
+
+      const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+      if (!el) return;
+
+      const content = el.querySelector('.pane-content');
+
+      if (entries.length === 0) {
+        renderCommentaryUnavailable(paneId);
+        return;
+      }
+
+      CommentaryView.renderChapter(content, entries, pane.bookNumber);
+
+      // Update nav label
+      const navLabel = el.querySelector('.commentary-nav-label');
+      if (navLabel && allBooksCache) {
+        const book = allBooksCache.find((b) => b.bookNumber === pane.bookNumber);
+        if (book) {
+          navLabel.textContent = `${book.shortName} ${pane.chapter}`;
+          pane.bookShortName = book.shortName;
+        }
+      }
+
+      if (scrollToVerse) {
+        CommentaryView.scrollToVerse(content, scrollToVerse);
+      } else {
+        content.scrollTop = 0;
+      }
+    } catch (err) {
+      console.error('Failed to load commentary chapter:', err);
+      renderCommentaryUnavailable(paneId);
+    } finally {
+      markInitialLoaded(paneId);
+    }
+  }
+
+  function renderCommentaryUnavailable(paneId) {
+    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+    if (!el) return;
+
+    const content = el.querySelector('.pane-content');
+    content.innerHTML = '';
+
+    const msg = document.createElement('div');
+    msg.className = 'unavailable-message';
+    msg.textContent = I18n.t('commentaryUnavailable');
+    content.appendChild(msg);
+  }
+
+  function syncCommentaryToPane(commentaryPaneId, scrollToVerse) {
+    const pane = panes[commentaryPaneId];
+    if (!pane || pane.paneType !== 'commentary' || !pane.syncedToPaneId) return;
+
+    const sourcePane = panes[pane.syncedToPaneId];
+    if (!sourcePane || sourcePane.paneType !== 'bible') return;
+
+    if (pane.bookNumber !== sourcePane.bookNumber || pane.chapter !== sourcePane.chapter) {
+      pane.bookNumber = sourcePane.bookNumber;
+      pane.chapter = sourcePane.chapter;
+      loadCommentaryChapter(commentaryPaneId, scrollToVerse);
+    }
+  }
+
+  function notifyChapterChange(paneId, scrollToVerse) {
+    // When a bible pane changes chapter, notify all synced commentary panes
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType === 'commentary' && pane.syncedToPaneId === paneId) {
+        syncCommentaryToPane(pane.id, scrollToVerse);
+      }
+    }
+  }
+
+  function notifyVerseClick(paneId, verseNum) {
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType === 'commentary' && pane.syncedToPaneId === paneId) {
+        const el = document.querySelector(`[data-pane-id="${pane.id}"] .pane-content`);
+        if (el) CommentaryView.scrollToVerse(el, verseNum);
+      }
     }
   }
 
@@ -569,26 +884,26 @@ const PaneManager = (() => {
         if (prevBtnEl && prevLabelEl) {
           if (pane.chapter > 1) {
             prevLabelEl.textContent = `${book.shortName} ${pane.chapter - 1}`;
-            prevBtnEl.classList.remove('hidden');
+            prevBtnEl.style.display = '';
           } else if (bookIdx > 0) {
             prevLabelEl.textContent = pane.books[bookIdx - 1].shortName;
-            prevBtnEl.classList.remove('hidden');
+            prevBtnEl.style.display = '';
           } else {
             prevLabelEl.textContent = '';
-            prevBtnEl.classList.add('hidden');
+            prevBtnEl.style.display = 'none';
           }
         }
 
         if (nextBtnEl && nextLabelEl) {
           if (pane.chapter < chapterCount) {
             nextLabelEl.textContent = `${book.shortName} ${pane.chapter + 1}`;
-            nextBtnEl.classList.remove('hidden');
+            nextBtnEl.style.display = '';
           } else if (bookIdx < pane.books.length - 1) {
             nextLabelEl.textContent = `${pane.books[bookIdx + 1].shortName} 1`;
-            nextBtnEl.classList.remove('hidden');
+            nextBtnEl.style.display = '';
           } else {
             nextLabelEl.textContent = '';
-            nextBtnEl.classList.add('hidden');
+            nextBtnEl.style.display = 'none';
           }
         }
       }
@@ -598,6 +913,7 @@ const PaneManager = (() => {
       } else {
         content.scrollTop = 0;
       }
+      notifyChapterChange(paneId, scrollToVerse);
     } catch (err) {
       console.error('Failed to load chapter:', err);
       renderUnavailableMessage(paneId, 'chapter');
@@ -609,7 +925,11 @@ const PaneManager = (() => {
 
   function reloadAllChapters() {
     for (const pane of Object.values(panes)) {
-      if (pane.books.length > 0) loadChapter(pane.id);
+      if (pane.paneType === 'commentary') {
+        if (pane.commentaryBooks.length > 0) loadCommentaryChapter(pane.id);
+      } else {
+        if (pane.books.length > 0) loadChapter(pane.id);
+      }
     }
   }
 
@@ -731,8 +1051,13 @@ const PaneManager = (() => {
   }
 
   function getNavigationTarget(fallbackPaneId) {
-    if (linkTargetPaneId && panes[linkTargetPaneId]) return linkTargetPaneId;
-    return fallbackPaneId;
+    if (linkTargetPaneId && panes[linkTargetPaneId] && panes[linkTargetPaneId].paneType === 'bible') {
+      return linkTargetPaneId;
+    }
+    if (fallbackPaneId && panes[fallbackPaneId] && panes[fallbackPaneId].paneType === 'bible') {
+      return fallbackPaneId;
+    }
+    return findFirstBiblePaneId() || fallbackPaneId;
   }
 
   function updatePinButtons() {
@@ -759,15 +1084,30 @@ const PaneManager = (() => {
     splitPane(activePaneId, direction);
   }
 
-  function splitPane(paneId, direction) {
-    const newPaneId = createPaneState();
+  function splitActivePaneWithType(direction, paneType) {
+    if (!activePaneId || !panes[activePaneId]) return;
+    splitPane(activePaneId, direction, paneType);
+  }
 
+  function splitPane(paneId, direction, forcePaneType) {
     const orig = panes[paneId];
+    const newPaneType = forcePaneType || orig.paneType || 'bible';
+
+    // For commentary splits, find a bible pane to sync to
+    const syncTarget = newPaneType === 'commentary' ? (orig.paneType === 'bible' ? paneId : findFirstBiblePaneId()) : null;
+
+    const newPaneId = createPaneState({
+      paneType: newPaneType,
+      moduleId: newPaneType === 'commentary' ? (commentaryModules.length > 0 ? commentaryModules[0].id : null) : orig.moduleId,
+      bookNumber: orig.bookNumber,
+      chapter: orig.chapter,
+      syncedToPaneId: syncTarget,
+    });
+
     const newPane = panes[newPaneId];
-    newPane.moduleId = orig.moduleId;
-    newPane.hasStrongs = orig.hasStrongs;
-    newPane.bookNumber = orig.bookNumber;
-    newPane.chapter = orig.chapter;
+    if (newPaneType === 'bible') {
+      newPane.hasStrongs = orig.hasStrongs || false;
+    }
 
     const parent = findParent(tree, paneId);
     const leaf = { type: 'leaf', paneId };
@@ -842,6 +1182,12 @@ const PaneManager = (() => {
     if (linkTargetPaneId === paneId) {
       linkTargetPaneId = null;
     }
+    // Clear sync references pointing to the closed pane
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType === 'commentary' && pane.syncedToPaneId === paneId) {
+        pane.syncedToPaneId = null;
+      }
+    }
     if (activePaneId === paneId) {
       activePaneId = getFirstLeafId(sibling);
     }
@@ -868,10 +1214,12 @@ const PaneManager = (() => {
     getState,
     setStateChangeListener,
     splitActivePane,
+    splitActivePaneWithType,
     cycleActivePane,
     getActivePaneId,
     setActivePane,
     reloadAllChapters,
     getNavigationTarget,
+    notifyVerseClick,
   };
 })();

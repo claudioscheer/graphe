@@ -1401,3 +1401,74 @@ el {
   background: var(--ui-surface-muted);
   border-color: var(--ui-border-strong);
 }
+
+/* ---- Commentary view ---- */
+
+.commentary-text {
+  font-size: var(--font-size, 20px);
+  line-height: 1.7;
+}
+
+.commentary-entry {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.commentary-entry:last-child {
+  border-bottom: none;
+}
+
+.commentary-verse-header {
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--ui-link);
+  margin-bottom: 0.35rem;
+}
+
+.dark .commentary-verse-header {
+  color: var(--ui-link-soft);
+}
+
+.commentary-body {
+  font-size: 1em;
+  line-height: 1.7;
+  color: var(--ui-text);
+}
+
+.commentary-body p {
+  margin: 0.4em 0;
+}
+
+.commentary-body b,
+.commentary-body strong {
+  font-weight: 600;
+}
+
+.commentary-body i,
+.commentary-body em {
+  font-style: italic;
+}
+
+.commentary-ref {
+  color: var(--ui-link);
+  cursor: default;
+}
+
+.dark .commentary-ref {
+  color: var(--ui-link-soft);
+}
+
+.commentary-nav-label {
+  white-space: nowrap;
+}
+
+.commentary-sync-btn.pane-link-target {
+  color: var(--ui-link);
+  background-color: rgb(var(--ui-link-rgb) / 0.12);
+}
+
+.dark .commentary-sync-btn.pane-link-target {
+  color: var(--ui-link-soft);
+  background-color: rgb(var(--ui-link-soft-rgb) / 0.18);
+}

@@ -78,21 +78,47 @@ function buildMenu() {
         { type: 'separator' },
         {
           label: 'Split Horizontal',
-          accelerator: 'CmdOrCtrl+Shift+H',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('split-h');
-            }
-          },
+          submenu: [
+            {
+              label: 'Bible View',
+              accelerator: 'CmdOrCtrl+Shift+H',
+              click: () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('split-h');
+                }
+              },
+            },
+            {
+              label: 'Commentary View',
+              click: () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('split-h-commentary');
+                }
+              },
+            },
+          ],
         },
         {
           label: 'Split Vertical',
-          accelerator: 'CmdOrCtrl+Shift+V',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('split-v');
-            }
-          },
+          submenu: [
+            {
+              label: 'Bible View',
+              accelerator: 'CmdOrCtrl+Shift+V',
+              click: () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('split-v');
+                }
+              },
+            },
+            {
+              label: 'Commentary View',
+              click: () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('split-v-commentary');
+                }
+              },
+            },
+          ],
         },
         { type: 'separator' },
         {

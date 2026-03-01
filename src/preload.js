@@ -40,11 +40,16 @@ contextBridge.exposeInMainWorld('api', {
   cancelSemanticIndexBuild: (jobId) => ipcRenderer.invoke('semantic-index-cancel', jobId),
   getCrossReferences: (book, chapter, allowedModuleIds) =>
     ipcRenderer.invoke('get-cross-references', book, chapter, allowedModuleIds),
+  getCommentary: (moduleId, bookNumber, chapter) =>
+    ipcRenderer.invoke('get-commentary', moduleId, bookNumber, chapter),
+  getCommentaryBooks: (moduleId) => ipcRenderer.invoke('get-commentary-books', moduleId),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => setSingleListener('open-settings', callback),
   onSplitH: (callback) => setSingleListener('split-h', callback),
   onSplitV: (callback) => setSingleListener('split-v', callback),
+  onSplitHCommentary: (callback) => setSingleListener('split-h-commentary', callback),
+  onSplitVCommentary: (callback) => setSingleListener('split-v-commentary', callback),
   showVerseContextMenu: (opts) => ipcRenderer.send('show-verse-context-menu', opts),
   onContextMenuCopy: (callback) => setSingleListener('context-menu-copy', callback),
   onContextMenuCrossRefs: (callback) => setSingleListener('context-menu-crossrefs', callback),

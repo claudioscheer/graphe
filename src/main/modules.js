@@ -74,6 +74,15 @@ function hasCrossRefTable(db) {
   }
 }
 
+function hasCommentaryTable(db) {
+  try {
+    db.prepare('SELECT 1 FROM commentaries LIMIT 1').get();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function cleanVerseText(text) {
   if (!text) return '';
   return String(text)
@@ -175,11 +184,13 @@ function getModules() {
       for (const row of rows) info[row.name] = row.value;
     } catch (_) {}
 
-    const type = hasDictionaryTable(db)
-      ? 'dictionary'
-      : hasCrossRefTable(db)
-        ? 'crossreference'
-        : 'bible';
+    const type = hasCommentaryTable(db)
+      ? 'commentary'
+      : hasDictionaryTable(db)
+        ? 'dictionary'
+        : hasCrossRefTable(db)
+          ? 'crossreference'
+          : 'bible';
 
     const mod = {
       id,
@@ -481,6 +492,24 @@ function lookupAllCrossRefModules(book, chapter, allowedModuleIds) {
   return results;
 }
 
+function getCommentary(moduleId, bookNumber, chapter) {
+  const db = getDb(moduleId);
+  return db
+    .prepare(
+      'SELECT verse_number_from AS verseFrom, verse_number_to AS verseTo, chapter_number_to AS chapterTo, text FROM commentaries WHERE book_number = ? AND chapter_number_from = ? ORDER BY verse_number_from'
+    )
+    .bind(bookNumber, chapter)
+    .all();
+}
+
+function getCommentaryBooks(moduleId) {
+  const db = getDb(moduleId);
+  return db
+    .prepare('SELECT DISTINCT book_number AS bookNumber FROM commentaries ORDER BY book_number')
+    .all()
+    .map((r) => r.bookNumber);
+}
+
 module.exports = {
   init,
   getModules,
@@ -501,4 +530,6 @@ module.exports = {
   cancelSemanticIndexBuild,
   getCrossReferences,
   lookupAllCrossRefModules,
+  getCommentary,
+  getCommentaryBooks,
 };

@@ -65,6 +65,14 @@ function registerIpcHandlers() {
     modules.lookupAllCrossRefModules(book, chapter, allowedModuleIds)
   );
 
+  ipcMain.handle('get-commentary', (_event, moduleId, bookNumber, chapter) =>
+    modules.getCommentary(moduleId, bookNumber, chapter)
+  );
+
+  ipcMain.handle('get-commentary-books', (_event, moduleId) =>
+    modules.getCommentaryBooks(moduleId)
+  );
+
   ipcMain.handle('get-app-state', () => stateStore.loadState());
 
   ipcMain.handle('save-app-state', (_event, state) => stateStore.saveState(state));

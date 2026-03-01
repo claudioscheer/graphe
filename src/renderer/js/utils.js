@@ -16,5 +16,10 @@ const Utils = (() => {
       .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
   }
 
-  return { escapeHtml, sortBibleModules };
+  function sortCommentaryModules(modules) {
+    return [...modules]
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+  }
+
+  return { escapeHtml, sortBibleModules, sortCommentaryModules };
 })();
