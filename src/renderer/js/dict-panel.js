@@ -179,20 +179,11 @@ const DictPanel = (() => {
             .catch(() => [])
         );
         const allResults = (await Promise.all(promises)).flat();
-        // Deduplicate by topic (keep first occurrence)
-        const seen = new Set();
-        const unique = [];
-        for (const r of allResults) {
-          if (!seen.has(r.topic)) {
-            seen.add(r.topic);
-            unique.push(r);
-          }
-        }
-        if (unique.length === 0) {
+        if (allResults.length === 0) {
           hideAutocomplete();
           return;
         }
-        showAutocomplete(unique);
+        showAutocomplete(allResults);
       } catch (_) {
         hideAutocomplete();
       }
@@ -257,7 +248,7 @@ const DictPanel = (() => {
       item.addEventListener('click', () => {
         searchInput.value = topic;
         hideAutocomplete();
-        lookupWord(topic, moduleId);
+        lookupWord(topic);
       });
       autocompleteEl.appendChild(item);
     }
