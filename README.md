@@ -4,6 +4,8 @@ Uma alternativa moderna ao [theWord](https://www.theword.net/) para estudo bíbl
 
 O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.
 
+Disponível para **Windows**, **Linux** e **macOS**.
+
 ## Funcionalidades
 
 ### Traduções Bíblicas
