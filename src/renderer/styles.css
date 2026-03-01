@@ -32,6 +32,7 @@
   user-select: none;
   border-radius: 2px;
   transition: color 0.15s, background-color 0.15s;
+  margin-left: 2px;
 }
 
 .strongs:hover {
@@ -52,9 +53,138 @@
   font-style: italic;
 }
 
-/* Active pane highlight */
+/* Active toolbar only */
+.pane-toolbar {
+  position: relative;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
 .pane-active > .pane-toolbar {
-  border-bottom: 2px solid #3b82f6;
+  border-bottom-width: 1px;
+  border-bottom-color: #bfdbfe;
+  background: #eff6ff;
+  box-shadow: inset 0 -1px 0 rgba(37, 99, 235, 0.16);
+}
+
+.pane-active > .pane-toolbar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 26px;
+  border-radius: 0 2px 2px 0;
+  transform: translateY(-50%);
+  background: #2563eb;
+}
+
+.pane-active.pane-has-selection > .pane-toolbar {
+  background: #dbeafe;
+  box-shadow: inset 0 -1px 0 rgba(29, 78, 216, 0.22);
+}
+
+.pane-active > .pane-toolbar .app-select,
+.pane-active > .pane-toolbar .nav-group,
+.pane-active > .pane-toolbar button {
+  color: #1e3a8a;
+}
+
+.pane-active > .pane-toolbar .app-select {
+  background-color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.pane-active > .pane-toolbar .nav-group {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.pane-active > .pane-toolbar .nav-prev-label,
+.pane-active > .pane-toolbar .nav-next-label,
+.pane-active > .pane-toolbar .nav-chevron {
+  color: #1e40af;
+}
+
+.pane-active > .pane-toolbar .nav-btn,
+.pane-active > .pane-toolbar .nav-prev-btn,
+.pane-active > .pane-toolbar .nav-next-btn,
+.pane-active > .pane-toolbar .pane-back-btn,
+.pane-active > .pane-toolbar .pane-copy-btn,
+.pane-active > .pane-toolbar button {
+  background-color: rgba(255, 255, 255, 0.58);
+}
+
+.pane-active > .pane-toolbar .nav-btn:hover,
+.pane-active > .pane-toolbar .nav-prev-btn:hover,
+.pane-active > .pane-toolbar .nav-next-btn:hover,
+.pane-active > .pane-toolbar .pane-back-btn:hover,
+.pane-active > .pane-toolbar .pane-copy-btn:hover,
+.pane-active > .pane-toolbar button:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+.pane-active.pane-has-selection .pane-copy-btn {
+  background-color: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+}
+
+.dark .pane-active > .pane-toolbar {
+  border-bottom-width: 1px;
+  border-bottom-color: #1d4ed8;
+  background: #1e293b;
+  box-shadow: inset 0 -1px 0 rgba(96, 165, 250, 0.25);
+}
+
+.dark .pane-active > .pane-toolbar::before {
+  background: #60a5fa;
+}
+
+.dark .pane-active.pane-has-selection > .pane-toolbar {
+  background: #1e3a8a;
+  box-shadow: inset 0 -1px 0 rgba(147, 197, 253, 0.25);
+}
+
+.dark .pane-active.pane-has-selection .pane-copy-btn {
+  background-color: rgba(96, 165, 250, 0.24);
+  color: #dbeafe;
+}
+
+.dark .pane-active > .pane-toolbar .app-select,
+.dark .pane-active > .pane-toolbar .nav-group,
+.dark .pane-active > .pane-toolbar button {
+  color: #e2e8f0;
+}
+
+.dark .pane-active > .pane-toolbar .app-select {
+  background-color: rgba(15, 23, 42, 0.45);
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.dark .pane-active > .pane-toolbar .nav-group {
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.dark .pane-active > .pane-toolbar .nav-prev-label,
+.dark .pane-active > .pane-toolbar .nav-next-label,
+.dark .pane-active > .pane-toolbar .nav-chevron {
+  color: #bfdbfe;
+}
+
+.dark .pane-active > .pane-toolbar .nav-btn,
+.dark .pane-active > .pane-toolbar .nav-prev-btn,
+.dark .pane-active > .pane-toolbar .nav-next-btn,
+.dark .pane-active > .pane-toolbar .pane-back-btn,
+.dark .pane-active > .pane-toolbar .pane-copy-btn,
+.dark .pane-active > .pane-toolbar button {
+  background-color: rgba(15, 23, 42, 0.28);
+}
+
+.dark .pane-active > .pane-toolbar .nav-btn:hover,
+.dark .pane-active > .pane-toolbar .nav-prev-btn:hover,
+.dark .pane-active > .pane-toolbar .nav-next-btn:hover,
+.dark .pane-active > .pane-toolbar .pane-back-btn:hover,
+.dark .pane-active > .pane-toolbar .pane-copy-btn:hover,
+.dark .pane-active > .pane-toolbar button:hover {
+  background-color: rgba(15, 23, 42, 0.45);
 }
 
 /* Pane toolbar */
@@ -77,6 +207,47 @@
 .nav-btn-label {
   white-space: nowrap;
   line-height: 1;
+}
+
+/* Nav group: visually groups prev + current + next */
+.nav-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 2px;
+}
+
+.dark .nav-group {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Prev/next buttons: compact sizing */
+.nav-prev-btn,
+.nav-next-btn {
+  min-width: auto;
+  min-height: 28px;
+  padding: 2px 6px;
+  color: #6b7280;
+}
+
+.dark .nav-prev-btn,
+.dark .nav-next-btn {
+  color: #9ca3af;
+}
+
+/* Prev/next labels: smaller, subdued */
+.nav-prev-label,
+.nav-next-label {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.dark .nav-prev-label,
+.dark .nav-next-label {
+  color: #9ca3af;
 }
 
 /* Shared select styling for clearer arrow spacing */
@@ -172,24 +343,29 @@
   display: block;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: background-color 0.15s;
+  border-left: 3px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s;
   cursor: pointer;
 }
 
 .verse-line:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(37, 99, 235, 0.12);
+  border-left-color: rgba(37, 99, 235, 0.45);
 }
 
 .dark .verse-line:hover {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: rgba(96, 165, 250, 0.2);
+  border-left-color: rgba(96, 165, 250, 0.6);
 }
 
 .verse-selected {
-  background-color: rgba(59, 130, 246, 0.1);
+  background-color: rgba(37, 99, 235, 0.24);
+  border-left-color: #2563eb;
 }
 
 .dark .verse-selected {
-  background-color: rgba(59, 130, 246, 0.15);
+  background-color: rgba(96, 165, 250, 0.32);
+  border-left-color: #60a5fa;
 }
 
 /* Verse highlight animation */
@@ -844,6 +1020,37 @@ el { color: #3b82f6; }
 
 .dark .crossref-link:hover {
   color: #93c5fd;
+}
+
+/* Pin button (link target) */
+.pane-pin-btn {
+  color: #9ca3af;
+}
+
+.pane-pin-btn.pane-link-target {
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.pane-pin-btn.pane-link-target svg {
+  fill: currentColor;
+}
+
+.pane-pin-btn.pane-link-target:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.dark .pane-pin-btn {
+  color: #6b7280;
+}
+
+.dark .pane-pin-btn.pane-link-target {
+  color: #60a5fa;
+  background-color: rgba(96, 165, 250, 0.18);
+}
+
+.dark .pane-pin-btn.pane-link-target:hover {
+  background-color: rgba(96, 165, 250, 0.28);
 }
 
 /* Pane back button */

@@ -471,18 +471,24 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   Settings.initCrossRefModules(crossRefModules);
   Settings.initSemanticIndex(bibleModules);
 
-  function getActivePaneContent() {
-    const paneId = PaneManager.getActivePaneId();
-    return document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
-  }
-
-  function copySelectedVerses() {
-    const el = getActivePaneContent();
+  function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
+    const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
     if (!el) return false;
     const text = BibleView.getSelectedText(el);
     if (!text) return false;
     navigator.clipboard.writeText(text);
     return true;
+  }
+
+  function updateCopyButtonsVisibility() {
+    document.querySelectorAll('[data-pane-id]').forEach((paneEl) => {
+      const contentEl = paneEl.querySelector('.pane-content');
+      const copyBtn = paneEl.querySelector('.pane-copy-btn');
+      if (!contentEl || !copyBtn) return;
+      const hasSelection = contentEl.querySelectorAll('.verse-selected').length > 0;
+      copyBtn.classList.toggle('hidden', !hasSelection);
+      paneEl.classList.toggle('pane-has-selection', hasSelection);
+    });
   }
 
   // Left-click on a Strong's number → dictionary lookup
@@ -497,7 +503,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
       const bookTo = parseInt(refEl.dataset.bookTo, 10);
       const chapterTo = parseInt(refEl.dataset.chapterTo, 10);
       const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
-      PaneManager.navigatePane(paneId, bookTo, chapterTo, verseTo);
+      PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), bookTo, chapterTo, verseTo);
       return;
     }
 
@@ -555,6 +561,15 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     }
   });
 
+  document.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.pane-copy-btn');
+    if (!copyBtn) return;
+    const paneEl = copyBtn.closest('[data-pane-id]');
+    const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
+    if (!paneId) return;
+    copySelectedVerses(paneId);
+  });
+
   window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
     SearchPanel.search(`strong:${strongsNumber}`);
   });
@@ -597,11 +612,30 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
       e.preventDefault();
       const paneId = PaneManager.getActivePaneId();
       const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
-      if (el) BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
-    }
-
-    if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
-      if (copySelectedVerses()) e.preventDefault();
+      if (el) {
+        BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+        updateCopyButtonsVisibility();
+      }
     }
   });
+
+  document.addEventListener('mousedown', () => {
+    setTimeout(updateCopyButtonsVisibility, 0);
+  });
+
+  document.addEventListener('keyup', () => {
+    setTimeout(updateCopyButtonsVisibility, 0);
+  });
+
+  updateCopyButtonsVisibility();
+  const paneRootEl = document.getElementById('pane-root');
+  if (paneRootEl) {
+    const observer = new MutationObserver(() => updateCopyButtonsVisibility());
+    observer.observe(paneRootEl, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+  }
 })();

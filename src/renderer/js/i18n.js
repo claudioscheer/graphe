@@ -33,6 +33,7 @@ const I18n = (() => {
       searchMinChars: 'Digite pelo menos 2 caracteres.',
       searchResultCount: '{count} resultados',
       searching: 'Pesquisando...',
+      copySelection: 'Copiar versículos selecionados',
       strongsSearchOccurrences: 'Pesquisar ocorrências',
       strongsDictionaryLookup: 'Ver no dicionário Strong',
       dictionary: 'Dicionário',
@@ -67,6 +68,8 @@ const I18n = (() => {
       crossReferences: 'Referências cruzadas',
       crossRefModulesHint: 'Escolha quais módulos usar para exibir referências cruzadas.',
       crossRefBackTooltip: 'Voltar à referência anterior',
+      pinLinkTarget: 'Fixar como destino de links',
+      unpinLinkTarget: 'Desafixar destino de links',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -98,6 +101,7 @@ const I18n = (() => {
       searchMinChars: 'Type at least 2 characters.',
       searchResultCount: '{count} results',
       searching: 'Searching...',
+      copySelection: 'Copy selected verses',
       strongsSearchOccurrences: 'Search occurrences',
       strongsDictionaryLookup: "Look up in Strong's dictionary",
       dictionary: 'Dictionary',
@@ -132,6 +136,8 @@ const I18n = (() => {
       crossReferences: 'Cross-references',
       crossRefModulesHint: 'Choose which modules to use for displaying cross-references.',
       crossRefBackTooltip: 'Go back to previous reference',
+      pinLinkTarget: 'Pin as link target',
+      unpinLinkTarget: 'Unpin link target',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -163,6 +169,7 @@ const I18n = (() => {
       searchMinChars: 'Escriba al menos 2 caracteres.',
       searchResultCount: '{count} resultados',
       searching: 'Buscando...',
+      copySelection: 'Copiar versículos seleccionados',
       strongsSearchOccurrences: 'Buscar ocurrencias',
       strongsDictionaryLookup: 'Ver en el diccionario Strong',
       dictionary: 'Diccionario',
@@ -197,6 +204,8 @@ const I18n = (() => {
       crossReferences: 'Referencias cruzadas',
       crossRefModulesHint: 'Elija qué módulos usar para mostrar referencias cruzadas.',
       crossRefBackTooltip: 'Volver a la referencia anterior',
+      pinLinkTarget: 'Fijar como destino de enlaces',
+      unpinLinkTarget: 'Desfijar destino de enlaces',
     },
   };
 

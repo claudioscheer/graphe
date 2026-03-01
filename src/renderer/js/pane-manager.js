@@ -11,6 +11,7 @@ const PaneManager = (() => {
   let modules = [];
   let onStateChange = null;
   let activePaneId = null;
+  let linkTargetPaneId = null;
 
   const root = () => document.getElementById('pane-root');
 
@@ -99,6 +100,9 @@ const PaneManager = (() => {
     panes = nextPanes;
     tree = restoredTree;
     paneCounter = maxCounter;
+    if (savedState.linkTargetPaneId && nextPanes[savedState.linkTargetPaneId]) {
+      linkTargetPaneId = savedState.linkTargetPaneId;
+    }
     return true;
   }
 
@@ -157,6 +161,7 @@ const PaneManager = (() => {
     return {
       tree,
       panes: serializablePanes,
+      linkTargetPaneId,
     };
   }
 
@@ -238,7 +243,7 @@ const PaneManager = (() => {
   function createPaneElement(paneId) {
     const pane = panes[paneId];
     const el = document.createElement('div');
-    el.className = 'flex flex-col h-full w-full min-w-0 min-h-0';
+    el.className = 'pane-shell flex flex-col h-full w-full min-w-0 min-h-0';
     el.dataset.paneId = paneId;
     el.addEventListener('mousedown', () => setActivePane(paneId));
 
@@ -269,8 +274,15 @@ const PaneManager = (() => {
     });
 
     const prevBtn = document.createElement('button');
-    prevBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
-    prevBtn.appendChild(Icons.create('chevron-left'));
+    prevBtn.className = 'nav-prev-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    const prevIcon = Icons.create('chevron-left');
+    prevIcon.setAttribute('width', '16');
+    prevIcon.setAttribute('height', '16');
+    prevIcon.style.flexShrink = '0';
+    prevBtn.appendChild(prevIcon);
+    const prevBtnLabel = document.createElement('span');
+    prevBtnLabel.className = 'nav-prev-label';
+    prevBtn.appendChild(prevBtnLabel);
     prevBtn.title = I18n.t('prevChapter');
     prevBtn.addEventListener('click', () => prevChapter(paneId));
 
@@ -287,16 +299,48 @@ const PaneManager = (() => {
     });
 
     const nextBtn = document.createElement('button');
-    nextBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
-    nextBtn.appendChild(Icons.create('chevron-right'));
+    nextBtn.className = 'nav-next-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    const nextBtnLabel = document.createElement('span');
+    nextBtnLabel.className = 'nav-next-label';
+    nextBtn.appendChild(nextBtnLabel);
+    const nextIcon = Icons.create('chevron-right');
+    nextIcon.setAttribute('width', '16');
+    nextIcon.setAttribute('height', '16');
+    nextIcon.style.flexShrink = '0';
+    nextBtn.appendChild(nextIcon);
     nextBtn.title = I18n.t('nextChapter');
     nextBtn.addEventListener('click', () => nextChapter(paneId));
+
+    const navGroup = document.createElement('div');
+    navGroup.className = 'nav-group';
+    navGroup.append(prevBtn, navBtn, nextBtn);
 
     const backBtn = document.createElement('button');
     backBtn.className = 'pane-back-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
     backBtn.appendChild(Icons.create('arrow-left'));
     backBtn.title = I18n.t('crossRefBackTooltip');
     backBtn.addEventListener('click', () => navBack(paneId));
+
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'pane-pin-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    const isPinned = linkTargetPaneId === paneId;
+    pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
+    pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
+    if (isPinned) pinBtn.classList.add('pane-link-target');
+    pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    pinBtn.addEventListener('click', () => {
+      if (linkTargetPaneId === paneId) {
+        clearLinkTarget();
+      } else {
+        setLinkTarget(paneId);
+      }
+    });
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'pane-copy-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+    copyBtn.appendChild(Icons.create('copy'));
+    copyBtn.setAttribute('data-i18n-title', 'copySelection');
+    copyBtn.title = I18n.t('copySelection');
 
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
@@ -307,7 +351,7 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, prevBtn, navBtn, nextBtn, backBtn, spacer, closeBtn);
+    toolbar.append(select, navGroup, spacer, backBtn, pinBtn, copyBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -425,8 +469,9 @@ const PaneManager = (() => {
     const fetchCrossRefsP = crossRefModules
       ? window.api.getCrossReferences(pane.bookNumber, pane.chapter, crossRefModules)
       : Promise.resolve([]);
+    const fetchChapterCountP = window.api.getChapterCount(pane.moduleId, pane.bookNumber);
 
-    const [verses, crossRefs] = await Promise.all([fetchVersesP, fetchCrossRefsP]);
+    const [verses, crossRefs, chapterCount] = await Promise.all([fetchVersesP, fetchCrossRefsP, fetchChapterCountP]);
     pane.verses = verses;
 
     if (verses.length === 0) {
@@ -455,6 +500,41 @@ const PaneManager = (() => {
     const navBtnLabel = el.querySelector('.nav-btn-label');
     if (navBtnLabel && book) {
       navBtnLabel.textContent = `${book.shortName} ${pane.chapter}`;
+    }
+
+    // Update prev/next navigation labels
+    if (book) {
+      const bookIdx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
+      const prevLabelEl = el.querySelector('.nav-prev-label');
+      const nextLabelEl = el.querySelector('.nav-next-label');
+      const prevBtnEl = el.querySelector('.nav-prev-btn');
+      const nextBtnEl = el.querySelector('.nav-next-btn');
+
+      if (prevBtnEl && prevLabelEl) {
+        if (pane.chapter > 1) {
+          prevLabelEl.textContent = `${book.shortName} ${pane.chapter - 1}`;
+          prevBtnEl.classList.remove('hidden');
+        } else if (bookIdx > 0) {
+          prevLabelEl.textContent = pane.books[bookIdx - 1].shortName;
+          prevBtnEl.classList.remove('hidden');
+        } else {
+          prevLabelEl.textContent = '';
+          prevBtnEl.classList.add('hidden');
+        }
+      }
+
+      if (nextBtnEl && nextLabelEl) {
+        if (pane.chapter < chapterCount) {
+          nextLabelEl.textContent = `${book.shortName} ${pane.chapter + 1}`;
+          nextBtnEl.classList.remove('hidden');
+        } else if (bookIdx < pane.books.length - 1) {
+          nextLabelEl.textContent = `${pane.books[bookIdx + 1].shortName} 1`;
+          nextBtnEl.classList.remove('hidden');
+        } else {
+          nextLabelEl.textContent = '';
+          nextBtnEl.classList.add('hidden');
+        }
+      }
     }
 
     if (scrollToVerse) {
@@ -545,6 +625,47 @@ const PaneManager = (() => {
     }
   }
 
+  // ---- Link target ----
+
+  function setLinkTarget(paneId) {
+    if (!panes[paneId]) return;
+    linkTargetPaneId = paneId;
+    updatePinButtons();
+    emitStateChange();
+  }
+
+  function clearLinkTarget() {
+    linkTargetPaneId = null;
+    updatePinButtons();
+    emitStateChange();
+  }
+
+  function getLinkTargetPaneId() {
+    return linkTargetPaneId;
+  }
+
+  function getNavigationTarget(fallbackPaneId) {
+    if (linkTargetPaneId && panes[linkTargetPaneId]) return linkTargetPaneId;
+    return fallbackPaneId;
+  }
+
+  function updatePinButtons() {
+    document.querySelectorAll('[data-pane-id]').forEach(el => {
+      const id = el.getAttribute('data-pane-id');
+      const btn = el.querySelector('.pane-pin-btn');
+      if (!btn) return;
+      const pinned = id === linkTargetPaneId;
+      btn.replaceChildren(Icons.create(pinned ? 'pin' : 'pin-off'));
+      if (pinned) {
+        btn.classList.add('pane-link-target');
+        btn.title = I18n.t('unpinLinkTarget');
+      } else {
+        btn.classList.remove('pane-link-target');
+        btn.title = I18n.t('pinLinkTarget');
+      }
+    });
+  }
+
   // ---- Split / Close ----
 
   function splitActivePane(direction) {
@@ -633,6 +754,9 @@ const PaneManager = (() => {
     }
 
     delete panes[paneId];
+    if (linkTargetPaneId === paneId) {
+      linkTargetPaneId = null;
+    }
     if (activePaneId === paneId) {
       activePaneId = getFirstLeafId(sibling);
     }
@@ -650,5 +774,5 @@ const PaneManager = (() => {
     return null;
   }
 
-  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters };
+  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters, getNavigationTarget };
 })();

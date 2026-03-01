@@ -130,7 +130,7 @@ const SearchPanel = (() => {
     // Status line
     statusEl = document.createElement('div');
     statusEl.className = 'search-panel-status';
-    statusEl.textContent = I18n.t('searchMinChars');
+    statusEl.textContent = '';
     panel.appendChild(statusEl);
 
     // Results list
@@ -201,6 +201,11 @@ const SearchPanel = (() => {
     const query = input.value.trim();
     resultsList.innerHTML = '';
 
+    if (!query) {
+      statusEl.textContent = '';
+      return;
+    }
+
     const hasStrong = /strong:[HhGg]?\d+\w*/i.test(query);
     const textTerms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
     if (!hasStrong && textTerms.length === 0) {
@@ -226,6 +231,7 @@ const SearchPanel = (() => {
 
       const semanticKeys = new Set(semanticResults.map(r => `${r.bookNumber}:${r.chapter}:${r.verse}`));
       const normalResults = lexicalResults.filter(r => !semanticKeys.has(`${r.bookNumber}:${r.chapter}:${r.verse}`));
+      const useSemanticLabels = semanticEnabled && textTerms.length > 0;
 
       if (semanticResults.length === 0 && normalResults.length === 0) {
         statusEl.textContent = I18n.t('searchNoResults');
@@ -233,17 +239,19 @@ const SearchPanel = (() => {
       }
 
       const parts = [];
-      if (semanticEnabled && textTerms.length > 0) {
+      if (useSemanticLabels) {
         parts.push(I18n.t('searchSemanticCount').replace('{count}', semanticResults.length));
+        parts.push(I18n.t('searchKeywordCount').replace('{count}', normalResults.length));
+      } else {
+        parts.push(I18n.t('searchResultCount').replace('{count}', lexicalResults.length));
       }
-      parts.push(I18n.t('searchKeywordCount').replace('{count}', normalResults.length));
       statusEl.textContent = parts.join(' | ');
 
-      if (semanticEnabled && textTerms.length > 0 && semanticResponse && !semanticResponse.ready) {
+      if (useSemanticLabels && semanticResponse && !semanticResponse.ready) {
         statusEl.textContent += ` - ${I18n.t('semanticFallbackKeyword')}`;
       }
 
-      renderResults(semanticResults, normalResults, query);
+      renderResults(semanticResults, normalResults, query, useSemanticLabels);
     } catch (err) {
       statusEl.textContent = err.message;
     }
@@ -256,12 +264,14 @@ const SearchPanel = (() => {
     return h;
   }
 
-  function renderResults(semanticResults, normalResults, query) {
+  function renderResults(semanticResults, normalResults, query, useSemanticLabels = false) {
     const frag = document.createDocumentFragment();
     const terms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
 
     if (semanticResults.length > 0) {
-      frag.appendChild(createSectionTitle(I18n.t('searchSemanticResults')));
+      if (useSemanticLabels) {
+        frag.appendChild(createSectionTitle(I18n.t('searchSemanticResults')));
+      }
       for (const row of sortResultsCanonical(semanticResults)) {
         const item = createResultItem(row, terms, true);
         frag.appendChild(item);
@@ -269,7 +279,9 @@ const SearchPanel = (() => {
     }
 
     if (normalResults.length > 0) {
-      frag.appendChild(createSectionTitle(I18n.t('searchKeywordResults')));
+      if (useSemanticLabels) {
+        frag.appendChild(createSectionTitle(I18n.t('searchKeywordResults')));
+      }
       for (const row of sortResultsCanonical(normalResults)) {
         const item = createResultItem(row, terms, false);
         frag.appendChild(item);
@@ -292,7 +304,7 @@ const SearchPanel = (() => {
     item.className = 'search-result-item';
     item.addEventListener('click', () => {
       const paneId = PaneManager.getActivePaneId();
-      PaneManager.navigatePane(paneId, row.bookNumber, row.chapter, row.verse);
+      PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), row.bookNumber, row.chapter, row.verse);
     });
 
     const ref = document.createElement('div');
