@@ -307,21 +307,26 @@ const SearchPanel = (() => {
       PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), row.bookNumber, row.chapter, row.verse);
     });
 
+    const top = document.createElement('div');
+    top.className = 'search-result-top';
+
     const ref = document.createElement('div');
     ref.className = 'search-result-ref';
+    ref.textContent = `${getBookShortName(row.bookNumber)} ${row.chapter}:${row.verse}`;
+
     if (semantic) {
       const badge = document.createElement('span');
       badge.className = 'semantic-result-badge';
       badge.textContent = I18n.t('searchSemanticBadge');
-      ref.appendChild(badge);
+      top.appendChild(badge);
     }
-    ref.appendChild(document.createTextNode(`${getBookShortName(row.bookNumber)} ${row.chapter}:${row.verse}`));
+    top.appendChild(ref);
 
     const preview = document.createElement('div');
     preview.className = 'search-result-text';
     preview.innerHTML = highlightText(VerseUtils.cleanText(row.text), terms);
 
-    item.appendChild(ref);
+    item.appendChild(top);
     item.appendChild(preview);
     return item;
   }

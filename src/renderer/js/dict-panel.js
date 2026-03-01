@@ -568,24 +568,42 @@ const DictPanel = (() => {
   }
 
   function bindBibleRefs(container) {
-    const links = container.querySelectorAll('a[href^="B:"]');
+    const links = container.querySelectorAll('a[href^="B:"], a[href^="b:"]');
     for (const link of links) {
       const href = link.getAttribute('href');
-      // Format: B:BOOKNUM chapter:verse
-      const match = href.match(/^B:(\d+)\s+(\d+):(\d+)$/);
-      if (!match) continue;
-      const bookNumber = parseInt(match[1]);
-      const chapter = parseInt(match[2]);
-      const verse = parseInt(match[3]);
+      const parsedRef = parseBibleRef(href);
 
       link.removeAttribute('href');
       link.classList.add('dict-bible-ref');
+      if (!parsedRef) {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+        });
+        continue;
+      }
+
+      const { bookNumber, chapter, verse } = parsedRef;
       link.addEventListener('click', (e) => {
         e.preventDefault();
         const paneId = PaneManager.getActivePaneId();
-        PaneManager.navigatePane(paneId, bookNumber, chapter, verse);
+        PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), bookNumber, chapter, verse);
       });
     }
+  }
+
+  function parseBibleRef(rawHref) {
+    if (!rawHref) return null;
+    const decoded = decodeURIComponent(rawHref.trim());
+    // Supports:
+    // B:50 7:7
+    // b:50 7:7-8 (verse ranges -> navigate to first verse)
+    const match = decoded.match(/^B:(\d+)\s+(\d+):(\d+)(?:-(\d+))?$/i);
+    if (!match) return null;
+    return {
+      bookNumber: parseInt(match[1], 10),
+      chapter: parseInt(match[2], 10),
+      verse: parseInt(match[3], 10),
+    };
   }
 
   function bindVCrossRefs(container) {
