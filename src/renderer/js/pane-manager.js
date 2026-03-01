@@ -248,10 +248,10 @@ const PaneManager = (() => {
     el.addEventListener('mousedown', () => setActivePane(paneId));
 
     const toolbar = document.createElement('div');
-    toolbar.className = 'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0';
+    toolbar.className = 'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
 
     const select = document.createElement('select');
-    select.className = 'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
+    select.className = 'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
     const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
       a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
     );
@@ -274,7 +274,7 @@ const PaneManager = (() => {
     });
 
     const prevBtn = document.createElement('button');
-    prevBtn.className = 'nav-prev-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    prevBtn.className = 'nav-prev-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const prevIcon = Icons.create('chevron-left');
     prevIcon.setAttribute('width', '16');
     prevIcon.setAttribute('height', '16');
@@ -287,8 +287,8 @@ const PaneManager = (() => {
     prevBtn.addEventListener('click', () => prevChapter(paneId));
 
     const navBtn = document.createElement('button');
-    navBtn.className = 'nav-btn px-3 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
-    navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-gray-500 dark:text-gray-400'));
+    navBtn.className = 'nav-btn px-3 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
+    navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-brand-600 dark:text-night-300'));
     const navBtnLabel = document.createElement('span');
     navBtnLabel.className = 'nav-btn-label';
     navBtnLabel.textContent = '...';
@@ -299,7 +299,7 @@ const PaneManager = (() => {
     });
 
     const nextBtn = document.createElement('button');
-    nextBtn.className = 'nav-next-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+    nextBtn.className = 'nav-next-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const nextBtnLabel = document.createElement('span');
     nextBtnLabel.className = 'nav-next-label';
     nextBtn.appendChild(nextBtnLabel);
@@ -316,13 +316,13 @@ const PaneManager = (() => {
     navGroup.append(prevBtn, navBtn, nextBtn);
 
     const backBtn = document.createElement('button');
-    backBtn.className = 'pane-back-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+    backBtn.className = 'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
     backBtn.appendChild(Icons.create('arrow-left'));
     backBtn.title = I18n.t('crossRefBackTooltip');
     backBtn.addEventListener('click', () => navBack(paneId));
 
     const pinBtn = document.createElement('button');
-    pinBtn.className = 'pane-pin-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+    pinBtn.className = 'pane-pin-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
     const isPinned = linkTargetPaneId === paneId;
     pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
     pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
@@ -337,7 +337,7 @@ const PaneManager = (() => {
     });
 
     const copyBtn = document.createElement('button');
-    copyBtn.className = 'pane-copy-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+    copyBtn.className = 'pane-copy-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
     copyBtn.appendChild(Icons.create('copy'));
     copyBtn.setAttribute('data-i18n-title', 'copySelection');
     copyBtn.title = I18n.t('copySelection');
@@ -346,7 +346,7 @@ const PaneManager = (() => {
     spacer.className = 'flex-1';
 
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    closeBtn.className = 'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));

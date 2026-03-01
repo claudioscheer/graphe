@@ -443,7 +443,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
 
   if (bibleModules.length === 0) {
     document.getElementById('pane-root').innerHTML =
-      '<div class="flex items-center justify-center h-full text-gray-500 text-lg">' +
+      '<div class="flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg">' +
       I18n.t('noModules') + '</div>';
     return;
   }

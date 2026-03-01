@@ -81,7 +81,7 @@ const DictPanel = (() => {
 
     searchInput = document.createElement('input');
     searchInput.type = 'text';
-    searchInput.className = 'w-full pl-2 pr-7 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100';
+    searchInput.className = 'w-full pl-2 pr-7 py-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
     searchInput.setAttribute('data-i18n-placeholder', 'dictSearchPlaceholder');
     searchInput.placeholder = I18n.t('dictSearchPlaceholder');
     searchInput.addEventListener('input', onSearchInput);

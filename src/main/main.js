@@ -6,6 +6,7 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 
 let mainWindow;
 let reloadTimer = null;
+const windowIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.png');
 
 function setupDevHotReload() {
   if (app.isPackaged) return;
@@ -45,6 +46,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    icon: windowIconPath,
     show: false,
   });
 

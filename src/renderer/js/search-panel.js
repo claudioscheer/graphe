@@ -66,7 +66,7 @@ const SearchPanel = (() => {
 
     // Translation select
     select = document.createElement('select');
-    select.className = 'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer';
+    select.className = 'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
     const sortedModules = [...modules].filter(m => m.type === 'bible').sort((a, b) =>
       a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
     );
@@ -92,7 +92,7 @@ const SearchPanel = (() => {
 
     input = document.createElement('input');
     input.type = 'text';
-    input.className = 'w-full px-3 py-2 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+    input.className = 'w-full px-3 py-2 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
     input.setAttribute('data-i18n-placeholder', 'searchPlaceholder');
     input.placeholder = I18n.t('searchPlaceholder');
     input.addEventListener('keydown', (e) => {

@@ -65,7 +65,7 @@ const Navigation = (() => {
 
   function createSectionLabel(text) {
     const label = document.createElement('div');
-    label.className = 'text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2 mt-2';
+    label.className = 'text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-night-300 mb-2 mt-2';
     label.textContent = text;
     return label;
   }
@@ -76,8 +76,8 @@ const Navigation = (() => {
 
     for (const book of books) {
       const btn = document.createElement('button');
-      btn.className = 'nav-book-btn rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900 ' +
-        'text-gray-800 dark:text-gray-200 font-medium cursor-pointer transition-colors truncate px-2';
+      btn.className = 'nav-book-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+        'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors truncate px-2';
       btn.textContent = book.shortName;
       btn.title = book.longName;
       btn.addEventListener('click', () => selectBook(book));
@@ -98,7 +98,7 @@ const Navigation = (() => {
     g.innerHTML = '';
 
     const label = document.createElement('div');
-    label.className = 'text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3';
+    label.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-3';
     label.textContent = book.longName;
     g.appendChild(label);
 
@@ -107,8 +107,8 @@ const Navigation = (() => {
 
     for (let ch = 1; ch <= count; ch++) {
       const btn = document.createElement('button');
-      btn.className = 'nav-chapter-btn rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900 ' +
-        'text-gray-800 dark:text-gray-200 font-medium cursor-pointer transition-colors';
+      btn.className = 'nav-chapter-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+        'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
       btn.textContent = ch;
       btn.addEventListener('click', () => {
         PaneManager.navigatePane(activePaneId, book.bookNumber, ch);

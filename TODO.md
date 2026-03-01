@@ -1,1 +1,2 @@
 - onboarding first time the user opens the app
+- show original text below
