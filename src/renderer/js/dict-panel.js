@@ -3,17 +3,20 @@
  */
 const DictPanel = (() => {
   let dictModules = [];
-  let wordDictModules = [];
   let onStateChange = null;
   let autocompleteTimer = null;
   let activeAutocompleteIdx = -1;
+
+  // Navigation history
+  let history = [];
+  let historyIdx = -1;
+  let navBackBtn, navForwardBtn;
 
   // DOM refs
   let panel, contentEl, searchInput, autocompleteEl, dictClearBtn;
 
   function init(modules, savedState) {
     dictModules = modules;
-    wordDictModules = modules.filter(m => !m.isStrongDict);
     if (dictModules.length === 0) return;
     buildDOM(savedState?.dictHeight);
   }
@@ -51,6 +54,25 @@ const DictPanel = (() => {
     title.setAttribute('data-i18n', 'dictionary');
     title.textContent = I18n.t('dictionary');
     titleRow.appendChild(title);
+
+    const navGroup = document.createElement('div');
+    navGroup.className = 'dict-nav-group';
+    navBackBtn = document.createElement('button');
+    navBackBtn.className = 'dict-nav-btn';
+    navBackBtn.type = 'button';
+    navBackBtn.disabled = true;
+    navBackBtn.appendChild(Icons.create('chevron-left', 'w-3.5 h-3.5'));
+    navBackBtn.addEventListener('click', navBack);
+    navForwardBtn = document.createElement('button');
+    navForwardBtn.className = 'dict-nav-btn';
+    navForwardBtn.type = 'button';
+    navForwardBtn.disabled = true;
+    navForwardBtn.appendChild(Icons.create('chevron-right', 'w-3.5 h-3.5'));
+    navForwardBtn.addEventListener('click', navForward);
+    navGroup.appendChild(navBackBtn);
+    navGroup.appendChild(navForwardBtn);
+    titleRow.appendChild(navGroup);
+
     header.appendChild(titleRow);
 
     // Search input with autocomplete wrapper
@@ -73,6 +95,7 @@ const DictPanel = (() => {
       searchInput.value = '';
       dictClearBtn.style.display = 'none';
       hideAutocomplete();
+      contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
       searchInput.focus();
     });
     dictClearBtn.style.display = 'none';
@@ -143,20 +166,33 @@ const DictPanel = (() => {
     const val = searchInput.value.trim();
     clearTimeout(autocompleteTimer);
 
-    if (val.length < 2 || wordDictModules.length === 0) {
+    if (val.length < 2 || dictModules.length === 0 || /^[HGhg]\d+\w*$/.test(val)) {
       hideAutocomplete();
       return;
     }
 
     autocompleteTimer = setTimeout(async () => {
       try {
-        const moduleId = wordDictModules[0].id;
-        const topics = await window.api.searchDictionaryTopics(moduleId, val, 15);
-        if (topics.length === 0) {
+        const promises = dictModules.map(m =>
+          window.api.searchDictionaryTopics(m.id, val, 15)
+            .then(topics => topics.map(t => ({ topic: t, moduleId: m.id })))
+            .catch(() => [])
+        );
+        const allResults = (await Promise.all(promises)).flat();
+        // Deduplicate by topic (keep first occurrence)
+        const seen = new Set();
+        const unique = [];
+        for (const r of allResults) {
+          if (!seen.has(r.topic)) {
+            seen.add(r.topic);
+            unique.push(r);
+          }
+        }
+        if (unique.length === 0) {
           hideAutocomplete();
           return;
         }
-        showAutocomplete(topics, moduleId);
+        showAutocomplete(unique);
       } catch (_) {
         hideAutocomplete();
       }
@@ -168,7 +204,10 @@ const DictPanel = (() => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const val = searchInput.value.trim();
-        if (val && wordDictModules.length > 0) {
+        if (!val) return;
+        if (/^[HGhg]\d+\w*$/.test(val)) {
+          lookup(val);
+        } else if (dictModules.length > 0) {
           lookupWord(val);
         }
       }
@@ -188,19 +227,37 @@ const DictPanel = (() => {
       e.preventDefault();
       if (activeAutocompleteIdx >= 0 && items[activeAutocompleteIdx]) {
         items[activeAutocompleteIdx].click();
+      } else {
+        hideAutocomplete();
+        const val = searchInput.value.trim();
+        if (!val) return;
+        if (/^[HGhg]\d+\w*$/.test(val)) {
+          lookup(val);
+        } else if (dictModules.length > 0) {
+          lookupWord(val);
+        }
       }
     } else if (e.key === 'Escape') {
       hideAutocomplete();
     }
   }
 
-  function showAutocomplete(topics, moduleId) {
+  function showAutocomplete(results) {
     autocompleteEl.innerHTML = '';
     activeAutocompleteIdx = -1;
-    for (const topic of topics) {
+    const showSource = dictModules.length > 1;
+    for (const { topic, moduleId } of results) {
       const item = document.createElement('div');
       item.className = 'dict-autocomplete-item';
-      item.textContent = topic;
+      const label = document.createElement('span');
+      label.textContent = topic;
+      item.appendChild(label);
+      if (showSource) {
+        const badge = document.createElement('span');
+        badge.className = 'dict-source-tag';
+        badge.textContent = moduleId;
+        item.appendChild(badge);
+      }
       item.addEventListener('click', () => {
         searchInput.value = topic;
         hideAutocomplete();
@@ -243,15 +300,55 @@ const DictPanel = (() => {
     return header;
   }
 
+  // --- Navigation history ---
+
+  function pushHistory(entry) {
+    const prev = history[historyIdx];
+    if (prev && prev.type === entry.type && prev.topic === entry.topic && prev.moduleId === entry.moduleId) return;
+    history.splice(historyIdx + 1);
+    history.push(entry);
+    historyIdx = history.length - 1;
+    updateNavButtons();
+  }
+
+  function updateNavButtons() {
+    if (navBackBtn) navBackBtn.disabled = historyIdx <= 0;
+    if (navForwardBtn) navForwardBtn.disabled = historyIdx >= history.length - 1;
+  }
+
+  function navBack() {
+    if (historyIdx <= 0) return;
+    historyIdx--;
+    replayHistory();
+  }
+
+  function navForward() {
+    if (historyIdx >= history.length - 1) return;
+    historyIdx++;
+    replayHistory();
+  }
+
+  function replayHistory() {
+    updateNavButtons();
+    const entry = history[historyIdx];
+    if (entry.type === 'strong') {
+      lookup(entry.topic, true);
+    } else {
+      lookupWord(entry.topic, entry.moduleId, true);
+    }
+  }
+
   // --- Strong's lookup (multi-dictionary) ---
 
-  async function lookup(strongsNumber) {
+  async function lookup(strongsNumber, skipHistory) {
     if (!panel || dictModules.length === 0) return;
 
     searchInput.value = strongsNumber;
     if (dictClearBtn) dictClearBtn.style.display = strongsNumber ? '' : 'none';
     hideAutocomplete();
     contentEl.innerHTML = '';
+
+    if (!skipHistory) pushHistory({ type: 'strong', topic: strongsNumber });
 
     try {
       const strongsDicts = AppStateStore.getSettings().strongsDicts;
@@ -291,26 +388,52 @@ const DictPanel = (() => {
 
   // --- Word lookup (Almeida-style dictionaries) ---
 
-  async function lookupWord(topic, moduleId) {
+  async function lookupWord(topic, moduleId, skipHistory) {
     if (!panel) return;
-    moduleId = moduleId || (wordDictModules[0] && wordDictModules[0].id);
-    if (!moduleId) return;
 
     hideAutocomplete();
     contentEl.innerHTML = '';
 
+    if (!skipHistory) pushHistory({ type: 'word', topic, moduleId: moduleId || null });
+
     try {
-      const entry = await window.api.getDictionaryEntry(moduleId, topic);
-      if (!entry) {
+      // If a specific module was provided, query only that one
+      if (moduleId) {
+        const entry = await window.api.getDictionaryEntry(moduleId, topic);
+        if (!entry) {
+          contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+          return;
+        }
+        const section = document.createElement('div');
+        section.className = 'dict-module-section';
+        section.appendChild(createModuleHeader(moduleId));
+        renderModuleEntry(section, moduleId, entry);
+        contentEl.appendChild(section);
+        return;
+      }
+
+      // No specific module — search across all dicts
+      if (dictModules.length === 0) return;
+
+      const promises = dictModules.map(m =>
+        window.api.getDictionaryEntry(m.id, topic)
+          .then(entry => entry ? { moduleId: m.id, entry } : null)
+          .catch(() => null)
+      );
+      const results = (await Promise.all(promises)).filter(Boolean);
+
+      if (results.length === 0) {
         contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
       }
 
-      const section = document.createElement('div');
-      section.className = 'dict-module-section';
-      section.appendChild(createModuleHeader(moduleId));
-      renderModuleEntry(section, moduleId, entry);
-      contentEl.appendChild(section);
+      for (const { moduleId: modId, entry } of results) {
+        const section = document.createElement('div');
+        section.className = 'dict-module-section';
+        section.appendChild(createModuleHeader(modId));
+        renderModuleEntry(section, modId, entry);
+        contentEl.appendChild(section);
+      }
     } catch (err) {
       contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(err.message) + '</div>';
     }
@@ -425,7 +548,7 @@ const DictPanel = (() => {
         const tag = document.createElement('span');
         tag.className = 'dict-cognate-tag';
         tag.textContent = cog;
-        tag.addEventListener('click', () => SearchPanel.search('strong:' + cog));
+        tag.addEventListener('click', () => lookup(cog));
         section.appendChild(tag);
       }
 
