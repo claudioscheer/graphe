@@ -425,6 +425,33 @@ const Settings = (() => {
 })();
 
 window.Settings = Settings;
+
+window.showTooltip = function(paneId, message) {
+  const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
+  if (!paneEl) return;
+  const content = paneEl.querySelector('.pane-content');
+  if (!content) return;
+
+  // Remove any existing tooltip in this pane
+  const existing = content.querySelector('.app-tooltip-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'app-tooltip-overlay';
+
+  const tip = document.createElement('div');
+  tip.className = 'app-tooltip';
+  tip.textContent = message;
+
+  overlay.appendChild(tip);
+  content.appendChild(overlay);
+
+  setTimeout(() => {
+    overlay.classList.add('app-tooltip-hiding');
+    overlay.addEventListener('transitionend', () => overlay.remove());
+  }, 2500);
+};
+
 window.api.onOpenSettings(() => Settings.open());
 window.api.onSplitH(() => PaneManager.splitActivePane('h'));
 window.api.onSplitV(() => PaneManager.splitActivePane('v'));
@@ -521,7 +548,9 @@ const LoadingScreen = (() => {
       const bookTo = parseInt(refEl.dataset.bookTo, 10);
       const chapterTo = parseInt(refEl.dataset.chapterTo, 10);
       const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
-      PaneManager.navigatePane(PaneManager.getNavigationTarget(paneId), bookTo, chapterTo, verseTo);
+      const target = PaneManager.getNavigationTarget(paneId);
+      PaneManager.navigatePane(target, bookTo, chapterTo, verseTo)
+        .then(ok => { if (!ok) showTooltip(target, I18n.t('refUnavailable')); });
       return;
     }
 

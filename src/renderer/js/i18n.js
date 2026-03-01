@@ -70,6 +70,7 @@ const I18n = (() => {
       crossRefBackTooltip: 'Voltar à referência anterior',
       pinLinkTarget: 'Fixar como destino de links',
       unpinLinkTarget: 'Desafixar destino de links',
+      refUnavailable: 'Referência indisponível nesta tradução',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -138,6 +139,7 @@ const I18n = (() => {
       crossRefBackTooltip: 'Go back to previous reference',
       pinLinkTarget: 'Pin as link target',
       unpinLinkTarget: 'Unpin link target',
+      refUnavailable: 'Reference unavailable in this translation',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -206,6 +208,7 @@ const I18n = (() => {
       crossRefBackTooltip: 'Volver a la referencia anterior',
       pinLinkTarget: 'Fijar como destino de enlaces',
       unpinLinkTarget: 'Desfijar destino de enlaces',
+      refUnavailable: 'Referencia no disponible en esta traducción',
     },
   };
 

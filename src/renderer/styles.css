@@ -451,6 +451,10 @@
 }
 
 /* Scrollbar styling */
+.pane-content {
+  position: relative;
+}
+
 .pane-content::-webkit-scrollbar {
   width: 8px;
 }
@@ -1324,4 +1328,44 @@ el { color: var(--ui-link); }
   border-color: var(--ui-warn-dark-border);
   background: var(--ui-warn-bg);
   color: var(--ui-warn);
+}
+
+/* Tooltip overlay (cross-ref unavailable, etc.) */
+.app-tooltip-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--ui-surface-rgb) / 0.55);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.35s ease;
+}
+
+.dark .app-tooltip-overlay {
+  background: rgb(var(--ui-overlay-rgb) / 0.45);
+}
+
+.app-tooltip-overlay.app-tooltip-hiding {
+  opacity: 0;
+}
+
+.app-tooltip {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--ui-text);
+  background: var(--ui-surface-elevated);
+  border: 1px solid var(--ui-border);
+  box-shadow: 0 4px 16px rgb(var(--ui-shadow-rgb) / 0.16);
+}
+
+.dark .app-tooltip {
+  background: var(--ui-surface-muted);
+  border-color: var(--ui-border-strong);
 }

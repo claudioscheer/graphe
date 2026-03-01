@@ -598,13 +598,17 @@ const PaneManager = (() => {
 
   async function navigatePane(paneId, bookNumber, chapter, verse) {
     const pane = panes[paneId];
-    if (!pane) return;
+    if (!pane) return false;
+    if (pane.books.length > 0 && !pane.books.find(b => b.bookNumber === bookNumber)) {
+      return false;
+    }
     pushNavHistory(paneId);
     pane.bookNumber = bookNumber;
     pane.chapter = chapter;
     await loadChapter(paneId, verse || null);
     updateBackBtn(paneId);
     emitStateChange();
+    return true;
   }
 
   async function prevChapter(paneId) {
@@ -669,6 +673,16 @@ const PaneManager = (() => {
         navBtnLabel.textContent = `${name} ${pane.chapter}`;
       }
     }
+
+    // Hide prev/next buttons and clear labels so they don't show stale data
+    const prevBtnEl = el.querySelector('.nav-prev-btn');
+    const nextBtnEl = el.querySelector('.nav-next-btn');
+    const prevLabelEl = el.querySelector('.nav-prev-label');
+    const nextLabelEl = el.querySelector('.nav-next-label');
+    if (prevBtnEl) prevBtnEl.classList.add('hidden');
+    if (nextBtnEl) nextBtnEl.classList.add('hidden');
+    if (prevLabelEl) prevLabelEl.textContent = '';
+    if (nextLabelEl) nextLabelEl.textContent = '';
   }
 
   // ---- Link target ----

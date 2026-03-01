@@ -92,7 +92,7 @@ const SearchPanel = (() => {
 
     input = document.createElement('input');
     input.type = 'text';
-    input.className = 'w-full px-3 py-2 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
+    input.className = 'w-full px-3 py-1.5 pr-7 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500';
     input.setAttribute('data-i18n-placeholder', 'searchPlaceholder');
     input.placeholder = I18n.t('searchPlaceholder');
     input.addEventListener('keydown', (e) => {
