@@ -59,6 +59,10 @@ function registerIpcHandlers() {
     modules.cancelSemanticIndexBuild(jobId)
   );
 
+  ipcMain.handle('get-cross-references', (_event, book, chapter, allowedModuleIds) =>
+    modules.lookupAllCrossRefModules(book, chapter, allowedModuleIds)
+  );
+
   ipcMain.handle('get-app-state', () => stateStore.loadState());
 
   ipcMain.handle('save-app-state', (_event, state) => stateStore.saveState(state));

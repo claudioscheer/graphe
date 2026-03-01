@@ -46,6 +46,8 @@ const PaneManager = (() => {
       bookShortName: initial.bookShortName || '',
       books: [],
       verses: [],
+      navHistory: [],
+      navHistoryIdx: -1,
     };
 
     return id;
@@ -87,6 +89,8 @@ const PaneManager = (() => {
         bookShortName: raw.bookShortName || '',
         books: [],
         verses: [],
+        navHistory: [],
+        navHistoryIdx: -1,
       };
 
       maxCounter = Math.max(maxCounter, parsePaneNumber(paneId));
@@ -288,6 +292,12 @@ const PaneManager = (() => {
     nextBtn.title = I18n.t('nextChapter');
     nextBtn.addEventListener('click', () => nextChapter(paneId));
 
+    const backBtn = document.createElement('button');
+    backBtn.className = 'pane-back-btn px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+    backBtn.appendChild(Icons.create('arrow-left'));
+    backBtn.title = I18n.t('crossRefBackTooltip');
+    backBtn.addEventListener('click', () => navBack(paneId));
+
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
 
@@ -297,7 +307,7 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(select, prevBtn, navBtn, nextBtn, spacer, closeBtn);
+    toolbar.append(select, prevBtn, navBtn, nextBtn, backBtn, spacer, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -359,11 +369,64 @@ const PaneManager = (() => {
     await loadChapter(paneId);
   }
 
+  function getCrossRefModules() {
+    if (typeof AppStateStore === 'undefined') return null;
+    return AppStateStore.getSettings().crossRefModules || null;
+  }
+
+  function bookNameResolver(pane) {
+    return (bookNumber) => {
+      const b = pane.books.find(bk => bk.bookNumber === bookNumber);
+      return b ? b.shortName : String(bookNumber);
+    };
+  }
+
+  function updateBackBtn(paneId) {
+    const pane = panes[paneId];
+    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+    if (!el || !pane) return;
+    const btn = el.querySelector('.pane-back-btn');
+    if (!btn) return;
+    if (pane.navHistoryIdx >= 0) {
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  }
+
+  function pushNavHistory(paneId) {
+    const pane = panes[paneId];
+    if (!pane) return;
+    // Truncate any forward history
+    pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
+    pane.navHistory.push({ bookNumber: pane.bookNumber, chapter: pane.chapter });
+    pane.navHistoryIdx = pane.navHistory.length - 1;
+    updateBackBtn(paneId);
+  }
+
+  async function navBack(paneId) {
+    const pane = panes[paneId];
+    if (!pane || pane.navHistoryIdx < 0) return;
+    const entry = pane.navHistory[pane.navHistoryIdx];
+    pane.navHistoryIdx--;
+    pane.bookNumber = entry.bookNumber;
+    pane.chapter = entry.chapter;
+    await loadChapter(paneId);
+    updateBackBtn(paneId);
+    emitStateChange();
+  }
+
   async function loadChapter(paneId, scrollToVerse) {
     const pane = panes[paneId];
     if (!pane || !pane.moduleId) return;
 
-    const verses = await window.api.getChapter(pane.moduleId, pane.bookNumber, pane.chapter);
+    const crossRefModules = getCrossRefModules();
+    const fetchVersesP = window.api.getChapter(pane.moduleId, pane.bookNumber, pane.chapter);
+    const fetchCrossRefsP = crossRefModules
+      ? window.api.getCrossReferences(pane.bookNumber, pane.chapter, crossRefModules)
+      : Promise.resolve([]);
+
+    const [verses, crossRefs] = await Promise.all([fetchVersesP, fetchCrossRefsP]);
     pane.verses = verses;
 
     if (verses.length === 0) {
@@ -377,7 +440,11 @@ const PaneManager = (() => {
     const content = el.querySelector('.pane-content');
     const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
     if (book) pane.bookShortName = book.shortName;
-    BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber);
+    BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
+      crossRefs,
+      crossRefMode: crossRefModules ? 'inline' : 'none',
+      bookNameResolver: bookNameResolver(pane),
+    });
 
     const wrapper = content.querySelector('.verse-text');
     if (wrapper && book) {
@@ -397,12 +464,20 @@ const PaneManager = (() => {
     }
   }
 
+  function reloadAllChapters() {
+    for (const pane of Object.values(panes)) {
+      if (pane.books.length > 0) loadChapter(pane.id);
+    }
+  }
+
   async function navigatePane(paneId, bookNumber, chapter, verse) {
     const pane = panes[paneId];
     if (!pane) return;
+    pushNavHistory(paneId);
     pane.bookNumber = bookNumber;
     pane.chapter = chapter;
     await loadChapter(paneId, verse || null);
+    updateBackBtn(paneId);
     emitStateChange();
   }
 
@@ -575,5 +650,5 @@ const PaneManager = (() => {
     return null;
   }
 
-  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane };
+  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters };
 })();

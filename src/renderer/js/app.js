@@ -9,6 +9,7 @@ const AppStateStore = (() => {
       language: 'pt',
       fontSize: 20,
       strongsDicts: null,
+      crossRefModules: null,
       semanticSearchEnabled: false,
       semanticModelId: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
       semanticResultCount: 5,
@@ -368,6 +369,37 @@ const Settings = (() => {
     }
   }
 
+  function initCrossRefModules(allCrossRefModules) {
+    const section = document.getElementById('settings-crossref-section');
+    const list = document.getElementById('settings-crossref-list');
+    if (!section || !list || allCrossRefModules.length === 0) return;
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+
+    const current = AppStateStore.getSettings().crossRefModules;
+
+    for (const mod of allCrossRefModules) {
+      const label = document.createElement('label');
+      label.className = 'settings-checkbox-option';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = mod.id;
+      cb.checked = Array.isArray(current) && current.includes(mod.id);
+      cb.addEventListener('change', () => {
+        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.value);
+        AppStateStore.setSettings({ crossRefModules: checked.length > 0 ? checked : null });
+        PaneManager.reloadAllChapters();
+      });
+      const text = document.createElement('span');
+      text.className = 'settings-checkbox-text';
+      text.textContent = mod.description;
+      label.appendChild(cb);
+      label.appendChild(text);
+      list.appendChild(label);
+    }
+  }
+
   function initSemanticIndex(allBibleModules) {
     if (!semanticSection || !semanticModuleSelect) return;
     semanticModules = allBibleModules || [];
@@ -389,7 +421,7 @@ const Settings = (() => {
     refreshSemanticStatus();
   }
 
-  return { open, close, init, initStrongsDicts, initSemanticIndex, syncSearchPanelSemanticSettings };
+  return { open, close, init, initStrongsDicts, initCrossRefModules, initSemanticIndex, syncSearchPanelSemanticSettings };
 })();
 
 window.Settings = Settings;
@@ -407,6 +439,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   const modules = await window.api.getModules();
   const bibleModules = modules.filter(m => m.type === 'bible');
   const dictModules = modules.filter(m => m.type === 'dictionary');
+  const crossRefModules = modules.filter(m => m.type === 'crossreference');
 
   if (bibleModules.length === 0) {
     document.getElementById('pane-root').innerHTML =
@@ -435,6 +468,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   DictPanel.init(dictModules, AppStateStore.getDictPanel());
 
   Settings.initStrongsDicts(dictModules);
+  Settings.initCrossRefModules(crossRefModules);
   Settings.initSemanticIndex(bibleModules);
 
   function getActivePaneContent() {
@@ -453,6 +487,20 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
 
   // Left-click on a Strong's number → dictionary lookup
   document.addEventListener('click', (e) => {
+    // Cross-reference link click → navigate pane
+    const refEl = e.target.closest('.crossref-link');
+    if (refEl) {
+      e.preventDefault();
+      const paneEl = refEl.closest('[data-pane-id]');
+      if (!paneEl) return;
+      const paneId = paneEl.getAttribute('data-pane-id');
+      const bookTo = parseInt(refEl.dataset.bookTo, 10);
+      const chapterTo = parseInt(refEl.dataset.chapterTo, 10);
+      const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
+      PaneManager.navigatePane(paneId, bookTo, chapterTo, verseTo);
+      return;
+    }
+
     const strongsEl = e.target.closest('.strongs');
     if (strongsEl) {
       e.preventDefault();
@@ -460,6 +508,8 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
       DictPanel.lookup(strongsNumber);
     }
   });
+
+  let lastContextMenuVerseLine = null;
 
   document.addEventListener('contextmenu', (e) => {
     const paneContent = e.target.closest('.pane-content');
@@ -482,11 +532,28 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
       return;
     }
 
+    const verseLine = e.target.closest('.verse-line');
+    const wrapper = verseLine ? verseLine.closest('.verse-text') : null;
+    const verse = verseLine ? parseInt(verseLine.dataset.verse, 10) : null;
+    const hasCrossRefs = wrapper && wrapper._crossRefsByVerse && verse != null && wrapper._crossRefsByVerse.has(verse);
+    lastContextMenuVerseLine = hasCrossRefs ? verseLine : null;
+
     const hasSelection = paneContent.querySelectorAll('.verse-selected').length > 0;
-    window.api.showVerseContextMenu({ hasSelection });
+    window.api.showVerseContextMenu({
+      hasSelection,
+      hasCrossRefs: !!hasCrossRefs,
+      crossRefsLabel: I18n.t('crossReferences'),
+    });
   });
 
   window.api.onContextMenuCopy(() => copySelectedVerses());
+
+  window.api.onContextMenuCrossRefs(() => {
+    if (lastContextMenuVerseLine) {
+      BibleView.toggleVerseRefs(lastContextMenuVerseLine);
+      lastContextMenuVerseLine = null;
+    }
+  });
 
   window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
     SearchPanel.search(`strong:${strongsNumber}`);

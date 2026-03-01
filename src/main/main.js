@@ -109,15 +109,25 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-ipcMain.on('show-verse-context-menu', (event, { hasSelection }) => {
-  const menu = Menu.buildFromTemplate([
+ipcMain.on('show-verse-context-menu', (event, { hasSelection, hasCrossRefs, crossRefsLabel }) => {
+  const items = [
     {
       label: 'Copy',
       accelerator: 'CmdOrCtrl+C',
       enabled: hasSelection,
       click: () => event.sender.send('context-menu-copy'),
     },
-  ]);
+  ];
+  if (hasCrossRefs) {
+    items.push(
+      { type: 'separator' },
+      {
+        label: crossRefsLabel || 'Cross-references',
+        click: () => event.sender.send('context-menu-crossrefs'),
+      }
+    );
+  }
+  const menu = Menu.buildFromTemplate(items);
   menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
 });
 

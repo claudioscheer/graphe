@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('semantic-index-progress', jobId),
   cancelSemanticIndexBuild: (jobId) =>
     ipcRenderer.invoke('semantic-index-cancel', jobId),
+  getCrossReferences: (book, chapter, allowedModuleIds) =>
+    ipcRenderer.invoke('get-cross-references', book, chapter, allowedModuleIds),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', callback),
@@ -36,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   onSplitV: (callback) => ipcRenderer.on('split-v', callback),
   showVerseContextMenu: (opts) => ipcRenderer.send('show-verse-context-menu', opts),
   onContextMenuCopy: (callback) => ipcRenderer.on('context-menu-copy', callback),
+  onContextMenuCrossRefs: (callback) => ipcRenderer.on('context-menu-crossrefs', callback),
   showStrongsContextMenu: (opts) => ipcRenderer.send('show-strongs-context-menu', opts),
   onStrongsSearch: (callback) => ipcRenderer.on('strongs-search', callback),
   onStrongsLookup: (callback) => ipcRenderer.on('strongs-lookup', callback),

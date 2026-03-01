@@ -64,6 +64,9 @@ const I18n = (() => {
       searchSemanticCount: 'Semântico: {count}',
       searchKeywordCount: 'Normal: {count}',
       searchSemanticBadge: 'Semântico',
+      crossReferences: 'Referências cruzadas',
+      crossRefModulesHint: 'Escolha quais módulos usar para exibir referências cruzadas.',
+      crossRefBackTooltip: 'Voltar à referência anterior',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -126,6 +129,9 @@ const I18n = (() => {
       searchSemanticCount: 'Semantic: {count}',
       searchKeywordCount: 'Normal: {count}',
       searchSemanticBadge: 'Semantic',
+      crossReferences: 'Cross-references',
+      crossRefModulesHint: 'Choose which modules to use for displaying cross-references.',
+      crossRefBackTooltip: 'Go back to previous reference',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -188,6 +194,9 @@ const I18n = (() => {
       searchSemanticCount: 'Semántico: {count}',
       searchKeywordCount: 'Normal: {count}',
       searchSemanticBadge: 'Semántico',
+      crossReferences: 'Referencias cruzadas',
+      crossRefModulesHint: 'Elija qué módulos usar para mostrar referencias cruzadas.',
+      crossRefBackTooltip: 'Volver a la referencia anterior',
     },
   };
 

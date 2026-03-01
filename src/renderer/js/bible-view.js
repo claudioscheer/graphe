@@ -51,12 +51,69 @@ const BibleView = (() => {
    * @param {Array} verses - [{verse, text}]
    * @param {boolean} showStrongs
    */
-  function renderChapter(container, verses, showStrongs, bookNumber) {
+  function formatRefLabel(ref, bookNameResolver) {
+    const bookName = bookNameResolver ? bookNameResolver(ref.bookTo) : String(ref.bookTo);
+    if (ref.verseToStart && ref.verseToEnd && ref.verseToEnd > ref.verseToStart) {
+      return `${bookName} ${ref.chapterTo}:${ref.verseToStart}-${ref.verseToEnd}`;
+    }
+    if (ref.verseToStart) {
+      return `${bookName} ${ref.chapterTo}:${ref.verseToStart}`;
+    }
+    return `${bookName} ${ref.chapterTo}`;
+  }
+
+  function createRefLink(ref, bookNameResolver) {
+    const link = document.createElement('span');
+    link.className = 'crossref-link';
+    link.textContent = formatRefLabel(ref, bookNameResolver);
+    link.dataset.bookTo = ref.bookTo;
+    link.dataset.chapterTo = ref.chapterTo;
+    link.dataset.verseTo = ref.verseToStart || '';
+    return link;
+  }
+
+  function buildCrossRefsByVerse(crossRefs) {
+    const map = new Map();
+    for (const ref of crossRefs) {
+      const key = ref.verse;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(ref);
+    }
+    return map;
+  }
+
+  function renderCrossRefsInline(container, crossRefsByVerse, bookNameResolver) {
+    if (!crossRefsByVerse || crossRefsByVerse.size === 0) return;
+    const lines = container.querySelectorAll('.verse-line');
+    for (const line of lines) {
+      const verse = parseInt(line.dataset.verse, 10);
+      const refs = crossRefsByVerse.get(verse);
+      if (!refs || refs.length === 0) continue;
+      const span = document.createElement('span');
+      span.className = 'crossref-refs';
+      for (let i = 0; i < refs.length; i++) {
+        if (i > 0) span.appendChild(document.createTextNode(' '));
+        span.appendChild(createRefLink(refs[i], bookNameResolver));
+      }
+      line.appendChild(span);
+    }
+  }
+
+  function renderChapter(container, verses, showStrongs, bookNumber, opts) {
+    const { crossRefs, crossRefMode, bookNameResolver } = opts || {};
     const strongsPrefix = bookNumber < 470 ? 'H' : 'G';
     container.innerHTML = '';
     const fragment = document.createDocumentFragment();
     const wrapper = document.createElement('div');
     wrapper.className = 'verse-text px-6 py-4';
+
+    const crossRefsByVerse = crossRefs && crossRefs.length > 0 ? buildCrossRefsByVerse(crossRefs) : null;
+
+    // Store cross-ref data on the wrapper for right-click access
+    if (crossRefsByVerse) {
+      wrapper._crossRefsByVerse = crossRefsByVerse;
+      wrapper._bookNameResolver = bookNameResolver;
+    }
 
     let lastClickedVerse = null;
 
@@ -87,25 +144,22 @@ const BibleView = (() => {
       line.appendChild(textSpan);
 
       line.addEventListener('click', (e) => {
+        if (e.target.closest('.crossref-link')) return;
         const all = Array.from(wrapper.querySelectorAll('.verse-line'));
 
         if (e.shiftKey && lastClickedVerse !== null) {
-          // Shift+click: select range from lastClickedVerse to this verse
           const lastIdx = all.findIndex(el => el.dataset.verse === String(lastClickedVerse));
           const curIdx = all.indexOf(line);
           if (lastIdx !== -1 && curIdx !== -1) {
             const from = Math.min(lastIdx, curIdx);
             const to = Math.max(lastIdx, curIdx);
-            // Clear previous selection, then select range
             all.forEach(el => el.classList.remove('verse-selected'));
             for (let i = from; i <= to; i++) all[i].classList.add('verse-selected');
           }
         } else if (e.ctrlKey || e.metaKey) {
-          // Ctrl/Cmd+click: toggle this verse
           line.classList.toggle('verse-selected');
           lastClickedVerse = v.verse;
         } else {
-          // Plain click: deselect all, select this verse
           all.forEach(el => el.classList.remove('verse-selected'));
           line.classList.toggle('verse-selected');
           lastClickedVerse = v.verse;
@@ -115,8 +169,36 @@ const BibleView = (() => {
       wrapper.appendChild(line);
     }
 
+    // Render inline cross-references if enabled
+    if (crossRefMode === 'inline' && crossRefsByVerse) {
+      renderCrossRefsInline(wrapper, crossRefsByVerse, bookNameResolver);
+    }
+
     fragment.appendChild(wrapper);
     container.appendChild(fragment);
+  }
+
+  /**
+   * Toggle cross-reference display for a specific verse line.
+   */
+  function toggleVerseRefs(verseLine) {
+    const existing = verseLine.querySelector('.crossref-refs');
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    const wrapper = verseLine.closest('.verse-text');
+    if (!wrapper || !wrapper._crossRefsByVerse) return;
+    const verse = parseInt(verseLine.dataset.verse, 10);
+    const refs = wrapper._crossRefsByVerse.get(verse);
+    if (!refs || refs.length === 0) return;
+    const span = document.createElement('span');
+    span.className = 'crossref-refs';
+    for (let i = 0; i < refs.length; i++) {
+      if (i > 0) span.appendChild(document.createTextNode(' '));
+      span.appendChild(createRefLink(refs[i], wrapper._bookNameResolver));
+    }
+    verseLine.appendChild(span);
   }
 
   /**
@@ -179,5 +261,5 @@ const BibleView = (() => {
     return lines.join('\n');
   }
 
-  return { renderChapter, scrollToVerse, selectAdjacentVerse, getSelectedText };
+  return { renderChapter, scrollToVerse, selectAdjacentVerse, getSelectedText, toggleVerseRefs };
 })();

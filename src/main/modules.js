@@ -88,6 +88,15 @@ function hasDictionaryTable(db) {
   }
 }
 
+function hasCrossRefTable(db) {
+  try {
+    db.prepare('SELECT 1 FROM cross_references LIMIT 1').get();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function cleanVerseText(text) {
   if (!text) return '';
   return String(text)
@@ -183,7 +192,7 @@ function getModules() {
       for (const row of rows) info[row.name] = row.value;
     } catch (_) {}
 
-    const type = hasDictionaryTable(db) ? 'dictionary' : 'bible';
+    const type = hasDictionaryTable(db) ? 'dictionary' : hasCrossRefTable(db) ? 'crossreference' : 'bible';
 
     const mod = {
       id,
@@ -429,6 +438,37 @@ function cancelSemanticIndexBuild(jobId) {
   return semanticIndex.cancelBuild(String(jobId));
 }
 
+function getCrossReferences(moduleId, book, chapter) {
+  const db = getDb(moduleId);
+  return db
+    .prepare(
+      'SELECT verse, verse_end AS verseEnd, book_to AS bookTo, chapter_to AS chapterTo, verse_to_start AS verseToStart, verse_to_end AS verseToEnd, votes FROM cross_references WHERE book = ? AND chapter = ? ORDER BY verse, votes DESC'
+    )
+    .bind(book, chapter)
+    .all();
+}
+
+function lookupAllCrossRefModules(book, chapter, allowedModuleIds) {
+  if (!allowedModuleIds || allowedModuleIds.length === 0) return [];
+  const results = [];
+  for (const id of allowedModuleIds) {
+    const db = dbs.get(id);
+    if (!db || !hasCrossRefTable(db)) continue;
+    try {
+      const refs = getCrossReferences(id, book, chapter);
+      for (const ref of refs) {
+        results.push(ref);
+      }
+    } catch (_) {}
+  }
+  // Re-sort merged results by verse then votes descending
+  results.sort((a, b) => {
+    if (a.verse !== b.verse) return a.verse - b.verse;
+    return b.votes - a.votes;
+  });
+  return results;
+}
+
 module.exports = {
   init,
   getModules,
@@ -446,4 +486,6 @@ module.exports = {
   buildSemanticIndex,
   getSemanticIndexProgress,
   cancelSemanticIndexBuild,
+  getCrossReferences,
+  lookupAllCrossRefModules,
 };
