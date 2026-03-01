@@ -885,7 +885,9 @@ const DictPanel = (() => {
       normalized.startsWith('http:') ||
       normalized.startsWith('https:') ||
       normalized.startsWith('mailto:') ||
-      normalized.startsWith('tel:')
+      normalized.startsWith('tel:') ||
+      normalized.startsWith('b:') ||
+      normalized.startsWith('s:')
     );
   }
 

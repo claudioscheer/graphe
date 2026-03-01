@@ -349,7 +349,8 @@ const PaneManager = (() => {
 
     const backBtn = document.createElement('button');
     backBtn.className =
-      'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center hidden';
+      'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors items-center justify-center';
+    backBtn.hidden = true;
     backBtn.appendChild(Icons.create('arrow-left'));
     backBtn.title = I18n.t('crossRefBackTooltip');
     backBtn.addEventListener('click', () => navBack(paneId));
@@ -471,17 +472,21 @@ const PaneManager = (() => {
     };
   }
 
+  function hasNavBackHistory(pane) {
+    if (!pane || !Array.isArray(pane.navHistory)) return false;
+    if (pane.navHistory.length === 0) return false;
+    return pane.navHistoryIdx >= 0 && pane.navHistoryIdx < pane.navHistory.length;
+  }
+
   function updateBackBtn(paneId) {
     const pane = panes[paneId];
     const el = document.querySelector(`[data-pane-id="${paneId}"]`);
     if (!el || !pane) return;
     const btn = el.querySelector('.pane-back-btn');
     if (!btn) return;
-    if (pane.navHistoryIdx >= 0) {
-      btn.classList.remove('hidden');
-    } else {
-      btn.classList.add('hidden');
-    }
+    const visible = hasNavBackHistory(pane);
+    btn.hidden = !visible;
+    btn.disabled = !visible;
   }
 
   function pushNavHistory(paneId) {
@@ -496,7 +501,7 @@ const PaneManager = (() => {
 
   async function navBack(paneId) {
     const pane = panes[paneId];
-    if (!pane || pane.navHistoryIdx < 0) return;
+    if (!hasNavBackHistory(pane)) return;
     const entry = pane.navHistory[pane.navHistoryIdx];
     pane.navHistoryIdx--;
     pane.bookNumber = entry.bookNumber;
@@ -597,6 +602,7 @@ const PaneManager = (() => {
       console.error('Failed to load chapter:', err);
       renderUnavailableMessage(paneId, 'chapter');
     } finally {
+      updateBackBtn(paneId);
       markInitialLoaded(paneId);
     }
   }

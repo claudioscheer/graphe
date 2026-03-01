@@ -9,32 +9,9 @@ const dbs = new Map();
 const modulePaths = new Map();
 const dictColumnCache = new Map();
 
-function getBundledDataDir() {
-  // In packaged app, extraResource puts 'data' alongside the asar
-  if (process.resourcesPath) {
-    const resourcePath = path.join(process.resourcesPath, 'data');
-    if (fs.existsSync(resourcePath)) return resourcePath;
-  }
-  // In development, data is in project root
-  return path.join(__dirname, '..', '..', 'data');
-}
-
 function init() {
-  // Ensure ~/.graphe/modules/ exists
+  // Only load modules explicitly installed in ~/.graphe/modules/
   fs.mkdirSync(MODULES_DIR, { recursive: true });
-
-  // Copy bundled modules if not already present
-  const bundledDir = getBundledDataDir();
-  if (fs.existsSync(bundledDir)) {
-    for (const file of fs.readdirSync(bundledDir)) {
-      if (file.toLowerCase().endsWith('.sqlite3')) {
-        const dest = path.join(MODULES_DIR, file);
-        if (!fs.existsSync(dest)) {
-          fs.copyFileSync(path.join(bundledDir, file), dest);
-        }
-      }
-    }
-  }
 
   semanticIndex.init();
 
