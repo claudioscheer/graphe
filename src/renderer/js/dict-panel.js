@@ -9,7 +9,7 @@ const DictPanel = (() => {
   let activeAutocompleteIdx = -1;
 
   // DOM refs
-  let panel, contentEl, searchInput, autocompleteEl;
+  let panel, contentEl, searchInput, autocompleteEl, dictClearBtn;
 
   function init(modules, savedState) {
     dictModules = modules;
@@ -59,17 +59,34 @@ const DictPanel = (() => {
 
     searchInput = document.createElement('input');
     searchInput.type = 'text';
-    searchInput.className = 'w-full pl-2 pr-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100';
+    searchInput.className = 'w-full pl-2 pr-7 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100';
     searchInput.setAttribute('data-i18n-placeholder', 'dictSearchPlaceholder');
     searchInput.placeholder = I18n.t('dictSearchPlaceholder');
     searchInput.addEventListener('input', onSearchInput);
     searchInput.addEventListener('keydown', onSearchKeydown);
+
+    dictClearBtn = document.createElement('button');
+    dictClearBtn.className = 'input-clear-btn';
+    dictClearBtn.type = 'button';
+    dictClearBtn.innerHTML = '&times;';
+    dictClearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      dictClearBtn.style.display = 'none';
+      hideAutocomplete();
+      searchInput.focus();
+    });
+    dictClearBtn.style.display = 'none';
+
+    searchInput.addEventListener('input', () => {
+      dictClearBtn.style.display = searchInput.value ? '' : 'none';
+    });
 
     autocompleteEl = document.createElement('div');
     autocompleteEl.className = 'dict-autocomplete';
     autocompleteEl.style.display = 'none';
 
     searchWrapper.appendChild(searchInput);
+    searchWrapper.appendChild(dictClearBtn);
     searchWrapper.appendChild(autocompleteEl);
     header.appendChild(searchWrapper);
     panel.appendChild(header);
@@ -205,17 +222,53 @@ const DictPanel = (() => {
     }
   }
 
+  // --- Module header helper ---
+
+  function createModuleHeader(moduleId) {
+    const mod = dictModules.find(m => m.id === moduleId);
+    const header = document.createElement('div');
+    header.className = 'dict-module-header';
+
+    const idSpan = document.createElement('span');
+    idSpan.textContent = moduleId;
+    header.appendChild(idSpan);
+
+    if (mod && mod.description && mod.description !== moduleId) {
+      const tag = document.createElement('span');
+      tag.className = 'dict-source-tag';
+      tag.textContent = mod.description;
+      header.appendChild(tag);
+    }
+
+    return header;
+  }
+
   // --- Strong's lookup (multi-dictionary) ---
 
   async function lookup(strongsNumber) {
     if (!panel || dictModules.length === 0) return;
 
     searchInput.value = strongsNumber;
+    if (dictClearBtn) dictClearBtn.style.display = strongsNumber ? '' : 'none';
     hideAutocomplete();
     contentEl.innerHTML = '';
 
     try {
-      const results = await window.api.lookupAllStrongDicts(strongsNumber);
+      const strongsDicts = AppStateStore.getSettings().strongsDicts;
+      if (!strongsDicts || strongsDicts.length === 0) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'dict-placeholder';
+        placeholder.textContent = I18n.t('dictNoDictsConfigured') + ' ';
+        const link = document.createElement('a');
+        link.className = 'dict-settings-link';
+        link.textContent = I18n.t('settings');
+        link.addEventListener('click', () => Settings.open());
+        placeholder.appendChild(link);
+        contentEl.innerHTML = '';
+        contentEl.appendChild(placeholder);
+        return;
+      }
+      const results = await window.api.lookupAllStrongDicts(strongsNumber, strongsDicts);
       if (results.length === 0) {
         contentEl.innerHTML = '<div class="dict-placeholder">' + escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
@@ -225,11 +278,7 @@ const DictPanel = (() => {
         const section = document.createElement('div');
         section.className = 'dict-module-section';
 
-        // Module name header
-        const modHeader = document.createElement('div');
-        modHeader.className = 'dict-module-header';
-        modHeader.textContent = moduleId;
-        section.appendChild(modHeader);
+        section.appendChild(createModuleHeader(moduleId));
 
         // Render entry based on module type
         renderModuleEntry(section, moduleId, entry);
@@ -259,10 +308,7 @@ const DictPanel = (() => {
 
       const section = document.createElement('div');
       section.className = 'dict-module-section';
-      const modHeader = document.createElement('div');
-      modHeader.className = 'dict-module-header';
-      modHeader.textContent = moduleId;
-      section.appendChild(modHeader);
+      section.appendChild(createModuleHeader(moduleId));
       renderModuleEntry(section, moduleId, entry);
       contentEl.appendChild(section);
     } catch (err) {

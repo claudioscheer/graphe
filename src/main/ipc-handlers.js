@@ -23,8 +23,8 @@ function registerIpcHandlers() {
     modules.getDictionaryEntry(moduleId, topic)
   );
 
-  ipcMain.handle('lookup-all-strong-dicts', (_event, topic) =>
-    modules.lookupAllStrongDicts(topic)
+  ipcMain.handle('lookup-all-strong-dicts', (_event, topic, allowedModuleIds) =>
+    modules.lookupAllStrongDicts(topic, allowedModuleIds)
   );
 
   ipcMain.handle('search-dictionary-topics', (_event, moduleId, prefix, limit) =>

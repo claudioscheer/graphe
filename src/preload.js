@@ -11,8 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('search-verses', moduleId, query),
   getDictionaryEntry: (moduleId, topic) =>
     ipcRenderer.invoke('get-dictionary-entry', moduleId, topic),
-  lookupAllStrongDicts: (topic) =>
-    ipcRenderer.invoke('lookup-all-strong-dicts', topic),
+  lookupAllStrongDicts: (topic, allowedModuleIds) =>
+    ipcRenderer.invoke('lookup-all-strong-dicts', topic, allowedModuleIds),
   searchDictionaryTopics: (moduleId, prefix, limit) =>
     ipcRenderer.invoke('search-dictionary-topics', moduleId, prefix, limit),
   getDictionaryCognates: (moduleId, strongsNumber) =>

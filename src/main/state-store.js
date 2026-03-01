@@ -17,6 +17,7 @@ function getDefaultState() {
     },
     paneManager: null,
     searchPanel: null,
+    dictPanel: null,
   };
 }
 

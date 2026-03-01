@@ -119,16 +119,12 @@ function getDictionaryEntry(moduleId, topic) {
   return db.prepare(`SELECT ${select} FROM dictionary WHERE topic = ?`).get(topic) || null;
 }
 
-function lookupAllStrongDicts(topic) {
+function lookupAllStrongDicts(topic, allowedModuleIds) {
+  if (!allowedModuleIds || allowedModuleIds.length === 0) return [];
   const results = [];
-  for (const [id, db] of dbs) {
-    if (!hasDictionaryTable(db)) continue;
-    let isStrong = false;
-    try {
-      const row = db.prepare("SELECT value FROM info WHERE name = 'is_strong'").get();
-      isStrong = row && row.value.toLowerCase() === 'true';
-    } catch (_) {}
-    if (!isStrong) continue;
+  for (const id of allowedModuleIds) {
+    const db = dbs.get(id);
+    if (!db || !hasDictionaryTable(db)) continue;
     try {
       const entry = getDictionaryEntry(id, topic);
       if (entry) results.push({ moduleId: id, entry });

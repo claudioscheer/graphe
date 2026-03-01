@@ -8,6 +8,7 @@ const AppStateStore = (() => {
       theme: null,
       language: 'pt',
       fontSize: 20,
+      strongsDicts: null,
     },
     paneManager: null,
     searchPanel: null,
@@ -179,7 +180,34 @@ const Settings = (() => {
     if (e.target === overlay) close();
   });
 
-  return { open, close, init };
+  function initStrongsDicts(allDictModules) {
+    const section = document.getElementById('settings-strongs-section');
+    const list = document.getElementById('settings-strongs-list');
+    if (!section || !list || allDictModules.length === 0) return;
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+
+    const current = AppStateStore.getSettings().strongsDicts;
+
+    for (const mod of allDictModules) {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = mod.id;
+      cb.checked = Array.isArray(current) && current.includes(mod.id);
+      cb.addEventListener('change', () => {
+        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.value);
+        AppStateStore.setSettings({ strongsDicts: checked.length > 0 ? checked : null });
+      });
+      const text = document.createTextNode(mod.description);
+      label.appendChild(cb);
+      label.appendChild(text);
+      list.appendChild(label);
+    }
+  }
+
+  return { open, close, init, initStrongsDicts };
 })();
 
 window.Settings = Settings;
@@ -222,6 +250,8 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     AppStateStore.setDictPanel(dictState);
   });
   DictPanel.init(dictModules, AppStateStore.getDictPanel());
+
+  Settings.initStrongsDicts(dictModules);
 
   function getActivePaneContent() {
     const paneId = PaneManager.getActivePaneId();

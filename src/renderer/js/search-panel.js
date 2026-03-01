@@ -8,7 +8,7 @@ const SearchPanel = (() => {
   let onStateChange = null;
 
   // DOM refs
-  let sidebar, panel, divider, input, select, resultsList, statusEl;
+  let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn;
 
   const MIN_WIDTH = 200;
   const MAX_WIDTH = 600;
@@ -84,10 +84,13 @@ const SearchPanel = (() => {
     });
     header.appendChild(select);
 
-    // Search input
+    // Search input with clear button
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'input-clear-wrapper mt-2';
+
     input = document.createElement('input');
     input.type = 'text';
-    input.className = 'w-full px-3 py-2 mt-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+    input.className = 'w-full px-3 py-2 pr-7 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
     input.setAttribute('data-i18n-placeholder', 'searchPlaceholder');
     input.placeholder = I18n.t('searchPlaceholder');
     input.addEventListener('keydown', (e) => {
@@ -98,7 +101,27 @@ const SearchPanel = (() => {
         input.blur();
       }
     });
-    header.appendChild(input);
+
+    searchClearBtn = document.createElement('button');
+    searchClearBtn.className = 'input-clear-btn';
+    searchClearBtn.type = 'button';
+    searchClearBtn.innerHTML = '&times;';
+    searchClearBtn.addEventListener('click', () => {
+      input.value = '';
+      searchClearBtn.style.display = 'none';
+      resultsList.innerHTML = '';
+      statusEl.textContent = '';
+      input.focus();
+    });
+    searchClearBtn.style.display = 'none';
+
+    input.addEventListener('input', () => {
+      searchClearBtn.style.display = input.value ? '' : 'none';
+    });
+
+    searchWrapper.appendChild(input);
+    searchWrapper.appendChild(searchClearBtn);
+    header.appendChild(searchWrapper);
 
     panel.appendChild(header);
 
@@ -253,6 +276,7 @@ const SearchPanel = (() => {
   function search(query) {
     if (input) {
       input.value = query;
+      if (searchClearBtn) searchClearBtn.style.display = query ? '' : 'none';
       runSearch();
     }
   }
