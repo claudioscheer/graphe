@@ -13,6 +13,9 @@ const PaneManager = (() => {
   let activePaneId = null;
   let linkTargetPaneId = null;
   let allBooksCache = null;
+  let initialLoadPending = new Set();
+  let initialLoadPromise = Promise.resolve();
+  let resolveInitialLoad = null;
 
   const root = () => document.getElementById('pane-root');
 
@@ -28,8 +31,27 @@ const PaneManager = (() => {
       activePaneId = getFirstLeafId(tree);
     }
 
+    initialLoadPending = new Set(Object.keys(panes));
+    initialLoadPromise = new Promise((resolve) => {
+      resolveInitialLoad = resolve;
+      if (initialLoadPending.size === 0) resolve();
+    });
+
     render();
     emitStateChange();
+  }
+
+  function markInitialLoaded(paneId) {
+    if (!initialLoadPending.has(paneId)) return;
+    initialLoadPending.delete(paneId);
+    if (initialLoadPending.size === 0 && resolveInitialLoad) {
+      resolveInitialLoad();
+      resolveInitialLoad = null;
+    }
+  }
+
+  function waitForInitialLoad() {
+    return initialLoadPromise;
   }
 
   function createPaneState(initial = {}) {
@@ -401,21 +423,28 @@ const PaneManager = (() => {
 
   async function loadPaneData(paneId) {
     const pane = panes[paneId];
-    if (!pane || !pane.moduleId) return;
+    try {
+      if (!pane || !pane.moduleId) return;
 
-    if (!allBooksCache) {
-      allBooksCache = await window.api.getAllBooks();
-    }
+      if (!allBooksCache) {
+        allBooksCache = await window.api.getAllBooks();
+      }
 
-    pane.books = await window.api.getBooks(pane.moduleId);
+      pane.books = await window.api.getBooks(pane.moduleId);
 
-    const bookExists = pane.books.find(b => b.bookNumber === pane.bookNumber);
-    if (!bookExists) {
+      const bookExists = pane.books.find(b => b.bookNumber === pane.bookNumber);
+      if (!bookExists) {
+        renderUnavailableMessage(paneId, 'book');
+        return;
+      }
+
+      await loadChapter(paneId);
+    } catch (err) {
+      console.error('Failed to load pane data:', err);
       renderUnavailableMessage(paneId, 'book');
-      return;
+    } finally {
+      markInitialLoaded(paneId);
     }
-
-    await loadChapter(paneId);
   }
 
   function getCrossRefModules() {
@@ -472,85 +501,92 @@ const PaneManager = (() => {
 
   async function loadChapter(paneId, scrollToVerse) {
     const pane = panes[paneId];
-    if (!pane || !pane.moduleId) return;
+    try {
+      if (!pane || !pane.moduleId) return;
 
-    const crossRefModules = getCrossRefModules();
-    const fetchVersesP = window.api.getChapter(pane.moduleId, pane.bookNumber, pane.chapter);
-    const fetchCrossRefsP = crossRefModules
-      ? window.api.getCrossReferences(pane.bookNumber, pane.chapter, crossRefModules)
-      : Promise.resolve([]);
-    const fetchChapterCountP = window.api.getChapterCount(pane.moduleId, pane.bookNumber);
+      const crossRefModules = getCrossRefModules();
+      const fetchVersesP = window.api.getChapter(pane.moduleId, pane.bookNumber, pane.chapter);
+      const fetchCrossRefsP = crossRefModules
+        ? window.api.getCrossReferences(pane.bookNumber, pane.chapter, crossRefModules)
+        : Promise.resolve([]);
+      const fetchChapterCountP = window.api.getChapterCount(pane.moduleId, pane.bookNumber);
 
-    const [verses, crossRefs, chapterCount] = await Promise.all([fetchVersesP, fetchCrossRefsP, fetchChapterCountP]);
-    pane.verses = verses;
+      const [verses, crossRefs, chapterCount] = await Promise.all([fetchVersesP, fetchCrossRefsP, fetchChapterCountP]);
+      pane.verses = verses;
 
-    if (verses.length === 0) {
+      if (verses.length === 0) {
+        renderUnavailableMessage(paneId, 'chapter');
+        return;
+      }
+
+      const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+      if (!el) return;
+
+      const content = el.querySelector('.pane-content');
+      const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
+      if (book) pane.bookShortName = book.shortName;
+      BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
+        crossRefs,
+        crossRefMode: crossRefModules ? 'inline' : 'none',
+        bookNameResolver: bookNameResolver(pane),
+      });
+
+      const wrapper = content.querySelector('.verse-text');
+      if (wrapper && book) {
+        wrapper.dataset.bookShort = book.shortName;
+        wrapper.dataset.chapter = pane.chapter;
+      }
+
+      const navBtnLabel = el.querySelector('.nav-btn-label');
+      if (navBtnLabel && book) {
+        navBtnLabel.textContent = `${book.shortName} ${pane.chapter}`;
+      }
+
+      // Update prev/next navigation labels
+      if (book) {
+        const bookIdx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
+        const prevLabelEl = el.querySelector('.nav-prev-label');
+        const nextLabelEl = el.querySelector('.nav-next-label');
+        const prevBtnEl = el.querySelector('.nav-prev-btn');
+        const nextBtnEl = el.querySelector('.nav-next-btn');
+
+        if (prevBtnEl && prevLabelEl) {
+          if (pane.chapter > 1) {
+            prevLabelEl.textContent = `${book.shortName} ${pane.chapter - 1}`;
+            prevBtnEl.classList.remove('hidden');
+          } else if (bookIdx > 0) {
+            prevLabelEl.textContent = pane.books[bookIdx - 1].shortName;
+            prevBtnEl.classList.remove('hidden');
+          } else {
+            prevLabelEl.textContent = '';
+            prevBtnEl.classList.add('hidden');
+          }
+        }
+
+        if (nextBtnEl && nextLabelEl) {
+          if (pane.chapter < chapterCount) {
+            nextLabelEl.textContent = `${book.shortName} ${pane.chapter + 1}`;
+            nextBtnEl.classList.remove('hidden');
+          } else if (bookIdx < pane.books.length - 1) {
+            nextLabelEl.textContent = `${pane.books[bookIdx + 1].shortName} 1`;
+            nextBtnEl.classList.remove('hidden');
+          } else {
+            nextLabelEl.textContent = '';
+            nextBtnEl.classList.add('hidden');
+          }
+        }
+      }
+
+      if (scrollToVerse) {
+        setTimeout(() => BibleView.scrollToVerse(content, scrollToVerse), 100);
+      } else {
+        content.scrollTop = 0;
+      }
+    } catch (err) {
+      console.error('Failed to load chapter:', err);
       renderUnavailableMessage(paneId, 'chapter');
-      return;
-    }
-
-    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
-    if (!el) return;
-
-    const content = el.querySelector('.pane-content');
-    const book = pane.books.find(b => b.bookNumber === pane.bookNumber);
-    if (book) pane.bookShortName = book.shortName;
-    BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
-      crossRefs,
-      crossRefMode: crossRefModules ? 'inline' : 'none',
-      bookNameResolver: bookNameResolver(pane),
-    });
-
-    const wrapper = content.querySelector('.verse-text');
-    if (wrapper && book) {
-      wrapper.dataset.bookShort = book.shortName;
-      wrapper.dataset.chapter = pane.chapter;
-    }
-
-    const navBtnLabel = el.querySelector('.nav-btn-label');
-    if (navBtnLabel && book) {
-      navBtnLabel.textContent = `${book.shortName} ${pane.chapter}`;
-    }
-
-    // Update prev/next navigation labels
-    if (book) {
-      const bookIdx = pane.books.findIndex(b => b.bookNumber === pane.bookNumber);
-      const prevLabelEl = el.querySelector('.nav-prev-label');
-      const nextLabelEl = el.querySelector('.nav-next-label');
-      const prevBtnEl = el.querySelector('.nav-prev-btn');
-      const nextBtnEl = el.querySelector('.nav-next-btn');
-
-      if (prevBtnEl && prevLabelEl) {
-        if (pane.chapter > 1) {
-          prevLabelEl.textContent = `${book.shortName} ${pane.chapter - 1}`;
-          prevBtnEl.classList.remove('hidden');
-        } else if (bookIdx > 0) {
-          prevLabelEl.textContent = pane.books[bookIdx - 1].shortName;
-          prevBtnEl.classList.remove('hidden');
-        } else {
-          prevLabelEl.textContent = '';
-          prevBtnEl.classList.add('hidden');
-        }
-      }
-
-      if (nextBtnEl && nextLabelEl) {
-        if (pane.chapter < chapterCount) {
-          nextLabelEl.textContent = `${book.shortName} ${pane.chapter + 1}`;
-          nextBtnEl.classList.remove('hidden');
-        } else if (bookIdx < pane.books.length - 1) {
-          nextLabelEl.textContent = `${pane.books[bookIdx + 1].shortName} 1`;
-          nextBtnEl.classList.remove('hidden');
-        } else {
-          nextLabelEl.textContent = '';
-          nextBtnEl.classList.add('hidden');
-        }
-      }
-    }
-
-    if (scrollToVerse) {
-      setTimeout(() => BibleView.scrollToVerse(content, scrollToVerse), 100);
-    } else {
-      content.scrollTop = 0;
+    } finally {
+      markInitialLoaded(paneId);
     }
   }
 
@@ -784,5 +820,5 @@ const PaneManager = (() => {
     return null;
   }
 
-  return { init, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters, getNavigationTarget };
+  return { init, waitForInitialLoad, getPane, navigatePane, render, getState, setStateChangeListener, splitActivePane, cycleActivePane, getActivePaneId, setActivePane, reloadAllChapters, getNavigationTarget };
 })();

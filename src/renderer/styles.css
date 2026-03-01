@@ -98,6 +98,39 @@
   --ui-highlight-rgb: 193 138 31;
 }
 
+.app-loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 30%, rgb(var(--ui-link-rgb) / 0.08), transparent 45%),
+    var(--ui-bg);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s ease, visibility 0.22s ease;
+}
+
+.app-loading-screen.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-loading-logo {
+  width: min(380px, 68vw);
+  height: auto;
+  filter: drop-shadow(0 14px 26px rgb(var(--ui-shadow-rgb) / 0.18));
+  animation: app-loader-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes app-loader-pulse {
+  0%, 100% { opacity: 0.9; transform: scale(0.985); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
 /* Bible text styling */
 .verse-text {
   font-size: var(--font-size, 20px);

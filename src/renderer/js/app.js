@@ -429,47 +429,65 @@ window.api.onOpenSettings(() => Settings.open());
 window.api.onSplitH(() => PaneManager.splitActivePane('h'));
 window.api.onSplitV(() => PaneManager.splitActivePane('v'));
 
-(async function () {
-  const loadedState = await window.api.getAppState().catch(() => null);
-  AppStateStore.init(loadedState);
+const LoadingScreen = (() => {
+  const el = document.getElementById('app-loading-screen');
 
-  Settings.init(AppStateStore.getSettings());
-  I18n.updateAll();
-
-  const modules = await window.api.getModules();
-  const bibleModules = modules.filter(m => m.type === 'bible');
-  const dictModules = modules.filter(m => m.type === 'dictionary');
-  const crossRefModules = modules.filter(m => m.type === 'crossreference');
-
-  if (bibleModules.length === 0) {
-    document.getElementById('pane-root').innerHTML =
-      '<div class="flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg">' +
-      I18n.t('noModules') + '</div>';
-    return;
+  function hide() {
+    if (!el) return;
+    el.classList.add('is-hidden');
+    el.setAttribute('aria-busy', 'false');
+    setTimeout(() => {
+      if (el && el.parentElement) el.parentElement.removeChild(el);
+    }, 240);
   }
 
-  Navigation.init();
+  return { hide };
+})();
 
-  PaneManager.setStateChangeListener((paneState) => {
-    AppStateStore.setPaneManager(paneState);
-  });
+(async function () {
+  try {
+    const loadedState = await window.api.getAppState().catch(() => null);
+    AppStateStore.init(loadedState);
 
-  PaneManager.init(bibleModules, AppStateStore.getPaneManager());
+    Settings.init(AppStateStore.getSettings());
+    I18n.updateAll();
 
-  SearchPanel.setStateChangeListener((searchState) => {
-    AppStateStore.setSearchPanel(searchState);
-  });
-  SearchPanel.init(bibleModules, AppStateStore.getSearchPanel());
-  Settings.syncSearchPanelSemanticSettings();
+    const modules = await window.api.getModules();
+    const bibleModules = modules.filter(m => m.type === 'bible');
+    const dictModules = modules.filter(m => m.type === 'dictionary');
+    const crossRefModules = modules.filter(m => m.type === 'crossreference');
 
-  DictPanel.setStateChangeListener((dictState) => {
-    AppStateStore.setDictPanel(dictState);
-  });
-  DictPanel.init(dictModules, AppStateStore.getDictPanel());
+    if (bibleModules.length === 0) {
+      document.getElementById('pane-root').innerHTML =
+        '<div class="flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg">' +
+        I18n.t('noModules') + '</div>';
+      return;
+    }
 
-  Settings.initStrongsDicts(dictModules);
-  Settings.initCrossRefModules(crossRefModules);
-  Settings.initSemanticIndex(bibleModules);
+    Navigation.init();
+
+    PaneManager.setStateChangeListener((paneState) => {
+      AppStateStore.setPaneManager(paneState);
+    });
+
+    PaneManager.init(bibleModules, AppStateStore.getPaneManager());
+
+    SearchPanel.setStateChangeListener((searchState) => {
+      AppStateStore.setSearchPanel(searchState);
+    });
+    SearchPanel.init(bibleModules, AppStateStore.getSearchPanel());
+    Settings.syncSearchPanelSemanticSettings();
+
+    DictPanel.setStateChangeListener((dictState) => {
+      AppStateStore.setDictPanel(dictState);
+    });
+    DictPanel.init(dictModules, AppStateStore.getDictPanel());
+
+    Settings.initStrongsDicts(dictModules);
+    Settings.initCrossRefModules(crossRefModules);
+    Settings.initSemanticIndex(bibleModules);
+
+    await PaneManager.waitForInitialLoad();
 
   function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
     const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
@@ -627,15 +645,18 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     setTimeout(updateCopyButtonsVisibility, 0);
   });
 
-  updateCopyButtonsVisibility();
-  const paneRootEl = document.getElementById('pane-root');
-  if (paneRootEl) {
-    const observer = new MutationObserver(() => updateCopyButtonsVisibility());
-    observer.observe(paneRootEl, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['class'],
-    });
+    updateCopyButtonsVisibility();
+    const paneRootEl = document.getElementById('pane-root');
+    if (paneRootEl) {
+      const observer = new MutationObserver(() => updateCopyButtonsVisibility());
+      observer.observe(paneRootEl, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+  } finally {
+    LoadingScreen.hide();
   }
 })();
