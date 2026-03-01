@@ -565,14 +565,29 @@ el { color: #3b82f6; }
 
 .dict-module-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #9ca3af;
   margin-bottom: 8px;
+}
+
+.dict-module-desc {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #b0b5be;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.dark .dict-module-desc {
+  color: #3b4049;
 }
 
 .dark .dict-module-header {

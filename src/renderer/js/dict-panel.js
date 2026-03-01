@@ -166,7 +166,7 @@ const DictPanel = (() => {
     const val = searchInput.value.trim();
     clearTimeout(autocompleteTimer);
 
-    if (val.length < 2 || dictModules.length === 0 || /^[HGhg]\d+\w*$/.test(val)) {
+    if (val.length < 2 || dictModules.length === 0) {
       hideAutocomplete();
       return;
     }
@@ -205,9 +205,7 @@ const DictPanel = (() => {
         e.preventDefault();
         const val = searchInput.value.trim();
         if (!val) return;
-        if (/^[HGhg]\d+\w*$/.test(val)) {
-          lookup(val);
-        } else if (dictModules.length > 0) {
+        if (dictModules.length > 0) {
           lookupWord(val);
         }
       }
@@ -231,9 +229,7 @@ const DictPanel = (() => {
         hideAutocomplete();
         const val = searchInput.value.trim();
         if (!val) return;
-        if (/^[HGhg]\d+\w*$/.test(val)) {
-          lookup(val);
-        } else if (dictModules.length > 0) {
+        if (dictModules.length > 0) {
           lookupWord(val);
         }
       }
@@ -292,7 +288,7 @@ const DictPanel = (() => {
 
     if (mod && mod.description && mod.description !== moduleId) {
       const tag = document.createElement('span');
-      tag.className = 'dict-source-tag';
+      tag.className = 'dict-module-desc';
       tag.textContent = mod.description;
       header.appendChild(tag);
     }
