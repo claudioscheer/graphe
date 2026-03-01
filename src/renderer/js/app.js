@@ -635,6 +635,18 @@ const LoadingScreen = (() => {
 
     if (inputFocused || overlayOpen) return;
 
+    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+      if (window.getSelection().toString()) return;
+      const paneId = PaneManager.getActivePaneId();
+      const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
+      if (el && el.querySelectorAll('.verse-selected').length) {
+        e.preventDefault();
+        copySelectedVerses(paneId);
+        el.querySelectorAll('.verse-selected').forEach(v => v.classList.remove('verse-selected'));
+      }
+      return;
+    }
+
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const paneId = PaneManager.getActivePaneId();
