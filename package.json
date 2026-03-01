@@ -9,7 +9,19 @@
     "build:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css",
     "watch:css": "tailwindcss -i src/renderer/styles.css -o src/renderer/dist.css --watch",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "package:linux": "electron-forge package --platform=linux --arch=x64",
+    "package:win": "electron-forge package --platform=win32 --arch=x64",
+    "package:mac": "electron-forge package --platform=darwin --arch=x64",
+    "package:mac:arm64": "electron-forge package --platform=darwin --arch=arm64",
+    "package:mac:universal": "electron-forge package --platform=darwin --arch=universal",
+    "package:desktop": "npm run package:linux && npm run package:win && npm run package:mac",
+    "make": "electron-forge make",
+    "make:linux": "electron-forge make --platform=linux --arch=x64",
+    "make:win": "electron-forge make --platform=win32 --arch=x64",
+    "make:mac": "electron-forge make --platform=darwin --arch=x64",
+    "make:mac:arm64": "electron-forge make --platform=darwin --arch=arm64",
+    "make:mac:universal": "electron-forge make --platform=darwin --arch=universal",
+    "make:desktop": "npm run make:linux && npm run make:win && npm run make:mac"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.0.0",

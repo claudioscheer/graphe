@@ -29,12 +29,18 @@ const BibleView = (() => {
     // <i>...</i> → italic
     html = html.replace(/<i>([\s\S]*?)<\/i>/gi, '<span class="verse-italic">$1</span>');
 
+    // <n>...</n> → strip original-language annotations (dictionary lookup via Strong's is sufficient)
+    html = html.replace(/<n>[\s\S]*?<\/n>/gi, '');
+
     // Strong's numbers — strip space between a word and its <S> tag (ARA+ has this, ACF+ doesn't)
     html = html.replace(/(\w) (?=<S>)/g, '$1');
     // Add space between consecutive Strong's tags so numbers don't merge
     html = html.replace(/<\/S><S>/gi, '</S> <S>');
     if (showStrongs) {
-      html = html.replace(/<S>(\d+\w*)<\/S>/gi, `<span class="strongs">${strongsPrefix}$1</span>`);
+      html = html.replace(/<S>([GH]?\d+\w*)<\/S>/gi, (_, num) => {
+        const display = /^[GH]/i.test(num) ? num.toUpperCase() : `${strongsPrefix}${num}`;
+        return `<span class="strongs">${display}</span>`;
+      });
     } else {
       html = html.replace(/<S>[\s\S]*?<\/S>/gi, '');
     }
@@ -258,7 +264,7 @@ const BibleView = (() => {
       let text = '';
       if (content) {
         const clone = content.cloneNode(true);
-        clone.querySelectorAll('.strongs').forEach(s => s.remove());
+        clone.querySelectorAll('.strongs, .verse-annotation').forEach(s => s.remove());
         text = clone.textContent.trim();
       }
       lines.push(`[${bookShort} ${chapter}:${verse}] ${text}`);
