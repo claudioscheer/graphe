@@ -111,8 +111,8 @@ const SearchPanel = (() => {
     searchClearBtn.addEventListener('click', () => {
       input.value = '';
       searchClearBtn.style.display = 'none';
-      resultsList.innerHTML = '';
       statusEl.textContent = '';
+      showHint();
       input.focus();
     });
     searchClearBtn.style.display = 'none';
@@ -152,6 +152,17 @@ const SearchPanel = (() => {
     layout.appendChild(divider);
     layout.appendChild(paneRoot);
     body.appendChild(layout);
+
+    showHint();
+  }
+
+  function showHint() {
+    resultsList.innerHTML = '';
+    const hint = document.createElement('div');
+    hint.className = 'search-panel-hint';
+    hint.setAttribute('data-i18n', 'searchHint');
+    hint.textContent = I18n.t('searchHint');
+    resultsList.appendChild(hint);
   }
 
   function setupDividerDrag() {
