@@ -6,6 +6,8 @@ const SearchPanel = (() => {
   let selectedModuleId = null;
   let booksCache = {};
   let onStateChange = null;
+  let semanticEnabled = false;
+  let semanticResultCount = 5;
 
   // DOM refs
   let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn;
@@ -214,45 +216,102 @@ const SearchPanel = (() => {
     statusEl.textContent = I18n.t('searching');
 
     try {
-      const results = await window.api.searchVerses(selectedModuleId, query);
-      if (results.length === 0) {
+      const textPart = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim();
+      const semanticResponse = semanticEnabled && textTerms.length > 0
+        ? await window.api.searchVersesSemantic(selectedModuleId, textPart, { limit: semanticResultCount })
+        : { ready: false, mode: 'disabled', results: [] };
+
+      const lexicalResults = await window.api.searchVerses(selectedModuleId, query);
+      const semanticResults = semanticResponse && semanticResponse.ready ? (semanticResponse.results || []) : [];
+
+      const semanticKeys = new Set(semanticResults.map(r => `${r.bookNumber}:${r.chapter}:${r.verse}`));
+      const normalResults = lexicalResults.filter(r => !semanticKeys.has(`${r.bookNumber}:${r.chapter}:${r.verse}`));
+
+      if (semanticResults.length === 0 && normalResults.length === 0) {
         statusEl.textContent = I18n.t('searchNoResults');
         return;
       }
 
-      statusEl.textContent = I18n.t('searchResultCount').replace('{count}', results.length);
-      renderResults(results, query);
+      const parts = [];
+      if (semanticEnabled && textTerms.length > 0) {
+        parts.push(I18n.t('searchSemanticCount').replace('{count}', semanticResults.length));
+      }
+      parts.push(I18n.t('searchKeywordCount').replace('{count}', normalResults.length));
+      statusEl.textContent = parts.join(' | ');
+
+      if (semanticEnabled && textTerms.length > 0 && semanticResponse && !semanticResponse.ready) {
+        statusEl.textContent += ` - ${I18n.t('semanticFallbackKeyword')}`;
+      }
+
+      renderResults(semanticResults, normalResults, query);
     } catch (err) {
       statusEl.textContent = err.message;
     }
   }
 
-  function renderResults(results, query) {
+  function createSectionTitle(title) {
+    const h = document.createElement('div');
+    h.className = 'search-results-section-title';
+    h.textContent = title;
+    return h;
+  }
+
+  function renderResults(semanticResults, normalResults, query) {
     const frag = document.createDocumentFragment();
     const terms = query.replace(/strong:[HhGg]?\d+\w*/gi, '').trim().split(/\s+/).filter(t => t.length >= 2);
 
-    for (const row of results) {
-      const item = document.createElement('div');
-      item.className = 'search-result-item';
-      item.addEventListener('click', () => {
-        const paneId = PaneManager.getActivePaneId();
-        PaneManager.navigatePane(paneId, row.bookNumber, row.chapter, row.verse);
-      });
+    if (semanticResults.length > 0) {
+      frag.appendChild(createSectionTitle(I18n.t('searchSemanticResults')));
+      for (const row of sortResultsCanonical(semanticResults)) {
+        const item = createResultItem(row, terms, true);
+        frag.appendChild(item);
+      }
+    }
 
-      const ref = document.createElement('div');
-      ref.className = 'search-result-ref';
-      ref.textContent = `${getBookShortName(row.bookNumber)} ${row.chapter}:${row.verse}`;
-
-      const preview = document.createElement('div');
-      preview.className = 'search-result-text';
-      preview.innerHTML = highlightText(VerseUtils.cleanText(row.text), terms);
-
-      item.appendChild(ref);
-      item.appendChild(preview);
-      frag.appendChild(item);
+    if (normalResults.length > 0) {
+      frag.appendChild(createSectionTitle(I18n.t('searchKeywordResults')));
+      for (const row of sortResultsCanonical(normalResults)) {
+        const item = createResultItem(row, terms, false);
+        frag.appendChild(item);
+      }
     }
 
     resultsList.appendChild(frag);
+  }
+
+  function sortResultsCanonical(results) {
+    return [...results].sort((a, b) => {
+      if (a.bookNumber !== b.bookNumber) return a.bookNumber - b.bookNumber;
+      if (a.chapter !== b.chapter) return a.chapter - b.chapter;
+      return a.verse - b.verse;
+    });
+  }
+
+  function createResultItem(row, terms, semantic) {
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    item.addEventListener('click', () => {
+      const paneId = PaneManager.getActivePaneId();
+      PaneManager.navigatePane(paneId, row.bookNumber, row.chapter, row.verse);
+    });
+
+    const ref = document.createElement('div');
+    ref.className = 'search-result-ref';
+    if (semantic) {
+      const badge = document.createElement('span');
+      badge.className = 'semantic-result-badge';
+      badge.textContent = I18n.t('searchSemanticBadge');
+      ref.appendChild(badge);
+    }
+    ref.appendChild(document.createTextNode(`${getBookShortName(row.bookNumber)} ${row.chapter}:${row.verse}`));
+
+    const preview = document.createElement('div');
+    preview.className = 'search-result-text';
+    preview.innerHTML = highlightText(VerseUtils.cleanText(row.text), terms);
+
+    item.appendChild(ref);
+    item.appendChild(preview);
+    return item;
   }
 
   function highlightText(text, terms) {
@@ -289,6 +348,12 @@ const SearchPanel = (() => {
     onStateChange = typeof listener === 'function' ? listener : null;
   }
 
+  function setSemanticOptions(opts) {
+    semanticEnabled = !!(opts && opts.enabled === true);
+    const count = parseInt(opts && opts.resultCount, 10);
+    semanticResultCount = Number.isFinite(count) && count > 0 ? count : 5;
+  }
+
   function emitStateChange() {
     if (!onStateChange) return;
     onStateChange({
@@ -304,5 +369,5 @@ const SearchPanel = (() => {
     };
   }
 
-  return { init, focusInput, search, setStateChangeListener, getState, getSidebar };
+  return { init, focusInput, search, setStateChangeListener, getState, getSidebar, setSemanticOptions };
 })();

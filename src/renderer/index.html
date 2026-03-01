@@ -50,27 +50,32 @@
 
   <!-- Settings dialog -->
   <div id="settings-overlay" class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[360px] flex flex-col overflow-hidden">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden">
       <div class="p-4 border-b border-gray-200 dark:border-gray-700">
         <h2 class="text-lg font-semibold" data-i18n="settings">Settings</h2>
       </div>
-      <div class="p-4 flex flex-col gap-4">
-        <!-- Theme row -->
-        <div class="flex items-center justify-between">
-          <span data-i18n="theme">Theme</span>
-          <button id="settings-theme-toggle"
-            class="px-4 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600
-                   cursor-pointer transition-colors text-sm font-medium">
-            <span id="settings-theme-label" data-i18n="light">Light</span>
-          </button>
-        </div>
-        <!-- Font size row -->
-        <div class="flex items-center justify-between">
-          <span data-i18n="fontSize">Font size</span>
-          <select id="settings-font-size"
-            class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600
-                   bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100
-                   cursor-pointer">
+      <div class="settings-body p-4 flex flex-col gap-4 overflow-y-auto">
+        <div class="settings-group">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <span class="settings-row-title" data-i18n="theme">Theme</span>
+              <p class="settings-row-hint" data-i18n="themeHint">Escolha entre tema claro e escuro para leitura confortável.</p>
+            </div>
+            <button id="settings-theme-toggle"
+              class="px-4 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600
+                     cursor-pointer transition-colors text-sm font-medium">
+              <span id="settings-theme-label" data-i18n="light">Light</span>
+            </button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <span class="settings-row-title" data-i18n="fontSize">Font size</span>
+              <p class="settings-row-hint" data-i18n="fontSizeHint">Ajusta o tamanho do texto da Bíblia e das janelas laterais.</p>
+            </div>
+            <select id="settings-font-size"
+              class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600
+                     bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100
+                     cursor-pointer">
             <option value="14">14px</option>
             <option value="16">16px</option>
             <option value="18">18px</option>
@@ -78,25 +83,63 @@
             <option value="22">22px</option>
             <option value="24">24px</option>
             <option value="28">28px</option>
-          </select>
+            </select>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <span class="settings-row-title" data-i18n="language">Language</span>
+              <p class="settings-row-hint" data-i18n="languageHint">Muda os textos da interface sem alterar a tradução bíblica ativa.</p>
+            </div>
+            <select id="settings-lang-select"
+              class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600
+                     bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100
+                     cursor-pointer">
+              <option value="pt">PT</option>
+              <option value="en">EN</option>
+              <option value="es">ES</option>
+            </select>
+          </div>
         </div>
-        <!-- Language row -->
-        <div class="flex items-center justify-between">
-          <span data-i18n="language">Language</span>
-          <select id="settings-lang-select"
-            class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600
-                   bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100
-                   cursor-pointer">
-            <option value="pt">PT</option>
-            <option value="en">EN</option>
-            <option value="es">ES</option>
-          </select>
-        </div>
-        <!-- Strong's dictionaries section -->
-        <div id="settings-strongs-section" class="hidden">
-          <span class="font-medium" data-i18n="strongsDictionaries">Strong's Dictionaries</span>
+        <div id="settings-strongs-section" class="settings-group hidden">
+          <span class="font-medium settings-section-title" data-i18n="strongsDictionaries">Strong's Dictionaries</span>
           <p id="settings-strongs-hint" class="text-xs text-gray-500 dark:text-gray-400 mt-1" data-i18n="strongsDictsHint">Select which dictionaries to use when clicking a Strong's number.</p>
           <div id="settings-strongs-list"></div>
+        </div>
+        <div id="settings-semantic-section" class="settings-group">
+          <span class="font-medium settings-section-title" data-i18n="semanticIndexTitle">Semantic Search Index</span>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" data-i18n="semanticIndexHint">Usa IA para encontrar versículos relacionados por significado.</p>
+          <p class="settings-warning mt-2" data-i18n="semanticExperimentalWarning">Atenção: recurso em teste. Os resultados podem variar.</p>
+          <label class="settings-checkbox-option mt-2">
+            <input id="settings-semantic-enable" type="checkbox" class="h-4 w-4 cursor-pointer">
+            <span class="settings-checkbox-text" data-i18n="semanticEnable">Enable semantic search</span>
+          </label>
+          <div class="mt-2 settings-row">
+            <div class="settings-row-info">
+              <span class="settings-row-title text-sm" data-i18n="semanticResultCount">Semantic results</span>
+              <p class="settings-row-hint" data-i18n="semanticResultCountHint">Número máximo de resultados semânticos por busca.</p>
+            </div>
+            <input id="settings-semantic-count" type="number" min="1" max="50"
+              class="w-20 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm">
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <select id="settings-semantic-module"
+              class="app-select flex-1 pl-3 pr-8 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600
+                    bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100
+                    cursor-pointer">
+            </select>
+            <button id="settings-semantic-build"
+              class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition-colors text-sm"
+              data-i18n="semanticBuild">
+              Build
+            </button>
+            <button id="settings-semantic-cancel"
+              class="hidden px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer transition-colors text-sm"
+              data-i18n="semanticCancel">
+              Cancel
+            </button>
+          </div>
+          <p id="settings-semantic-status" class="text-xs text-gray-500 dark:text-gray-400 mt-2" data-i18n="semanticStatusMissing">Not built.</p>
+          <p id="settings-semantic-progress" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
         </div>
       </div>
       <div class="p-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">

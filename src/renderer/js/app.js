@@ -9,6 +9,9 @@ const AppStateStore = (() => {
       language: 'pt',
       fontSize: 20,
       strongsDicts: null,
+      semanticSearchEnabled: false,
+      semanticModelId: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
+      semanticResultCount: 5,
     },
     paneManager: null,
     searchPanel: null,
@@ -91,6 +94,18 @@ const Settings = (() => {
   const langSelect = document.getElementById('settings-lang-select');
   const fontSizeSelect = document.getElementById('settings-font-size');
   const closeBtn = document.getElementById('settings-close');
+  const semanticSection = document.getElementById('settings-semantic-section');
+  const semanticModuleSelect = document.getElementById('settings-semantic-module');
+  const semanticStatus = document.getElementById('settings-semantic-status');
+  const semanticProgress = document.getElementById('settings-semantic-progress');
+  const semanticBuildBtn = document.getElementById('settings-semantic-build');
+  const semanticCancelBtn = document.getElementById('settings-semantic-cancel');
+  const semanticEnableToggle = document.getElementById('settings-semantic-enable');
+  const semanticCountInput = document.getElementById('settings-semantic-count');
+
+  let semanticModules = [];
+  let semanticJobId = null;
+  let semanticPollTimer = null;
 
   function isDark() {
     return html.classList.contains('dark');
@@ -118,12 +133,16 @@ const Settings = (() => {
   function open() {
     langSelect.value = I18n.getCurrentLang();
     fontSizeSelect.value = AppStateStore.getSettings().fontSize || 20;
+    if (semanticEnableToggle) semanticEnableToggle.checked = AppStateStore.getSettings().semanticSearchEnabled === true;
+    if (semanticCountInput) semanticCountInput.value = AppStateStore.getSettings().semanticResultCount || 5;
     updateThemeLabel();
     overlay.classList.remove('hidden');
+    refreshSemanticStatus();
   }
 
   function close() {
     overlay.classList.add('hidden');
+    clearSemanticPoll();
   }
 
   function init(initialSettings) {
@@ -146,7 +165,100 @@ const Settings = (() => {
       theme: isDark() ? 'dark' : 'light',
       language: initialLang,
       fontSize: initialFontSize,
+      semanticSearchEnabled: initialSettings.semanticSearchEnabled === true,
+      semanticModelId: initialSettings.semanticModelId || 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
+      semanticResultCount: Math.max(1, parseInt(initialSettings.semanticResultCount || 5, 10) || 5),
     });
+
+    if (semanticEnableToggle) semanticEnableToggle.checked = initialSettings.semanticSearchEnabled === true;
+    if (semanticCountInput) semanticCountInput.value = Math.max(1, parseInt(initialSettings.semanticResultCount || 5, 10) || 5);
+  }
+
+  function syncSearchPanelSemanticSettings() {
+    if (typeof SearchPanel !== 'undefined' && SearchPanel.setSemanticOptions) {
+      const s = AppStateStore.getSettings();
+      SearchPanel.setSemanticOptions({
+        enabled: s.semanticSearchEnabled === true,
+        resultCount: Math.max(1, parseInt(s.semanticResultCount || 5, 10) || 5),
+      });
+    }
+  }
+
+  function clearSemanticPoll() {
+    if (semanticPollTimer) {
+      clearInterval(semanticPollTimer);
+      semanticPollTimer = null;
+    }
+  }
+
+  function getSemanticStatusLabel(status) {
+    switch (status) {
+      case 'ready':
+        return I18n.t('semanticStatusReady');
+      case 'building':
+        return I18n.t('semanticStatusBuilding');
+      case 'stale':
+        return I18n.t('semanticStatusStale');
+      case 'error':
+        return I18n.t('semanticStatusError');
+      default:
+        return I18n.t('semanticStatusMissing');
+    }
+  }
+
+  function updateSemanticStatusLine(row) {
+    if (!semanticStatus) return;
+    const label = getSemanticStatusLabel((row && row.status) || 'missing');
+    const withDate = row && row.builtAt
+      ? `${label} (${new Date(row.builtAt).toLocaleString()})`
+      : label;
+    const withErr = row && row.error ? `${withDate} - ${row.error}` : withDate;
+    semanticStatus.textContent = withErr;
+  }
+
+  async function refreshSemanticStatus() {
+    if (!semanticSection || !semanticModuleSelect || semanticModules.length === 0) return;
+    const moduleId = semanticModuleSelect.value;
+    if (!moduleId) return;
+
+    try {
+      const row = await window.api.getSemanticIndexStatus(moduleId);
+      updateSemanticStatusLine(row);
+    } catch (err) {
+      semanticStatus.textContent = err && err.message ? err.message : String(err);
+    }
+  }
+
+  async function pollSemanticProgress() {
+    if (!semanticJobId) return;
+
+    const progress = await window.api.getSemanticIndexProgress(semanticJobId);
+    if (!progress) {
+      semanticJobId = null;
+      clearSemanticPoll();
+      semanticProgress.textContent = '';
+      semanticCancelBtn.classList.add('hidden');
+      semanticBuildBtn.removeAttribute('disabled');
+      await refreshSemanticStatus();
+      return;
+    }
+
+    if (progress.total > 0) {
+      semanticProgress.textContent = I18n.t('semanticProgress')
+        .replace('{done}', progress.done)
+        .replace('{total}', progress.total)
+        .replace('{phase}', progress.phase);
+    } else {
+      semanticProgress.textContent = I18n.t('semanticPreparing');
+    }
+
+    if (progress.status === 'done' || progress.status === 'error' || progress.status === 'cancelled') {
+      semanticJobId = null;
+      clearSemanticPoll();
+      semanticCancelBtn.classList.add('hidden');
+      semanticBuildBtn.removeAttribute('disabled');
+      await refreshSemanticStatus();
+    }
   }
 
   // Theme toggle
@@ -175,6 +287,52 @@ const Settings = (() => {
     AppStateStore.setSettings({ fontSize });
   });
 
+  if (semanticModuleSelect) {
+    semanticModuleSelect.addEventListener('change', () => {
+      refreshSemanticStatus();
+    });
+  }
+
+  if (semanticBuildBtn) {
+    semanticBuildBtn.addEventListener('click', async () => {
+      if (!semanticModuleSelect || !semanticModuleSelect.value) return;
+      const { jobId } = await window.api.buildSemanticIndex(semanticModuleSelect.value);
+      semanticJobId = jobId;
+      semanticBuildBtn.setAttribute('disabled', 'disabled');
+      semanticCancelBtn.classList.remove('hidden');
+      clearSemanticPoll();
+      semanticPollTimer = setInterval(() => {
+        pollSemanticProgress().catch((err) => {
+          semanticProgress.textContent = err && err.message ? err.message : String(err);
+        });
+      }, 500);
+      pollSemanticProgress();
+    });
+  }
+
+  if (semanticCancelBtn) {
+    semanticCancelBtn.addEventListener('click', async () => {
+      if (!semanticJobId) return;
+      await window.api.cancelSemanticIndexBuild(semanticJobId);
+    });
+  }
+
+  if (semanticEnableToggle) {
+    semanticEnableToggle.addEventListener('change', () => {
+      AppStateStore.setSettings({ semanticSearchEnabled: semanticEnableToggle.checked });
+      syncSearchPanelSemanticSettings();
+    });
+  }
+
+  if (semanticCountInput) {
+    semanticCountInput.addEventListener('change', () => {
+      const value = Math.max(1, Math.min(50, parseInt(semanticCountInput.value || '5', 10) || 5));
+      semanticCountInput.value = value;
+      AppStateStore.setSettings({ semanticResultCount: value });
+      syncSearchPanelSemanticSettings();
+    });
+  }
+
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
@@ -192,6 +350,7 @@ const Settings = (() => {
 
     for (const mod of allDictModules) {
       const label = document.createElement('label');
+      label.className = 'settings-checkbox-option';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = mod.id;
@@ -200,14 +359,37 @@ const Settings = (() => {
         const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(b => b.value);
         AppStateStore.setSettings({ strongsDicts: checked.length > 0 ? checked : null });
       });
-      const text = document.createTextNode(mod.description);
+      const text = document.createElement('span');
+      text.className = 'settings-checkbox-text';
+      text.textContent = mod.description;
       label.appendChild(cb);
       label.appendChild(text);
       list.appendChild(label);
     }
   }
 
-  return { open, close, init, initStrongsDicts };
+  function initSemanticIndex(allBibleModules) {
+    if (!semanticSection || !semanticModuleSelect) return;
+    semanticModules = allBibleModules || [];
+    semanticModuleSelect.innerHTML = '';
+
+    if (semanticModules.length === 0) {
+      semanticSection.classList.add('hidden');
+      return;
+    }
+
+    semanticSection.classList.remove('hidden');
+    for (const mod of semanticModules) {
+      const opt = document.createElement('option');
+      opt.value = mod.id;
+      opt.textContent = mod.id;
+      semanticModuleSelect.appendChild(opt);
+    }
+
+    refreshSemanticStatus();
+  }
+
+  return { open, close, init, initStrongsDicts, initSemanticIndex, syncSearchPanelSemanticSettings };
 })();
 
 window.Settings = Settings;
@@ -245,6 +427,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
     AppStateStore.setSearchPanel(searchState);
   });
   SearchPanel.init(bibleModules, AppStateStore.getSearchPanel());
+  Settings.syncSearchPanelSemanticSettings();
 
   DictPanel.setStateChangeListener((dictState) => {
     AppStateStore.setDictPanel(dictState);
@@ -252,6 +435,7 @@ window.api.onSplitV(() => PaneManager.splitActivePane('v'));
   DictPanel.init(dictModules, AppStateStore.getDictPanel());
 
   Settings.initStrongsDicts(dictModules);
+  Settings.initSemanticIndex(bibleModules);
 
   function getActivePaneContent() {
     const paneId = PaneManager.getActivePaneId();

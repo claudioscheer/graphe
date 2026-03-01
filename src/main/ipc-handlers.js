@@ -19,6 +19,10 @@ function registerIpcHandlers() {
     modules.searchVerses(moduleId, query)
   );
 
+  ipcMain.handle('search-verses-semantic', (_event, moduleId, query, opts) =>
+    modules.searchVersesSemantic(moduleId, query, opts)
+  );
+
   ipcMain.handle('get-dictionary-entry', (_event, moduleId, topic) =>
     modules.getDictionaryEntry(moduleId, topic)
   );
@@ -33,6 +37,26 @@ function registerIpcHandlers() {
 
   ipcMain.handle('get-dictionary-cognates', (_event, moduleId, strongsNumber) =>
     modules.getDictionaryCognates(moduleId, strongsNumber)
+  );
+
+  ipcMain.handle('search-verses-hybrid', (_event, moduleId, query, opts) =>
+    modules.searchVersesHybrid(moduleId, query, opts)
+  );
+
+  ipcMain.handle('semantic-index-status', (_event, moduleId) =>
+    modules.getSemanticIndexStatus(moduleId)
+  );
+
+  ipcMain.handle('semantic-index-build', (_event, moduleId) =>
+    modules.buildSemanticIndex(moduleId)
+  );
+
+  ipcMain.handle('semantic-index-progress', (_event, jobId) =>
+    modules.getSemanticIndexProgress(jobId)
+  );
+
+  ipcMain.handle('semantic-index-cancel', (_event, jobId) =>
+    modules.cancelSemanticIndexBuild(jobId)
   );
 
   ipcMain.handle('get-app-state', () => stateStore.loadState());

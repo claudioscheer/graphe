@@ -14,6 +14,11 @@ function getDefaultState() {
     settings: {
       theme: null,
       language: 'pt',
+      fontSize: 20,
+      strongsDicts: null,
+      semanticSearchEnabled: false,
+      semanticModelId: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
+      semanticResultCount: 5,
     },
     paneManager: null,
     searchPanel: null,
