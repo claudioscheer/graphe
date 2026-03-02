@@ -17,6 +17,7 @@ const PaneManager = (() => {
   let initialLoadPending = new Set();
   let initialLoadPromise = Promise.resolve();
   let resolveInitialLoad = null;
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
   const root = () => document.getElementById('pane-root');
 
@@ -81,11 +82,13 @@ const PaneManager = (() => {
     paneCounter = Math.max(paneCounter, parsePaneNumber(id));
 
     const paneType = initial.paneType || 'bible';
+    const windowLabel = allocatePaneLabel(paneType, initial.windowLabel);
 
     if (paneType === 'commentary') {
       const moduleId = resolveCommentaryModuleId(initial.moduleId);
       panes[id] = {
         id,
+        windowLabel,
         paneType: 'commentary',
         moduleId,
         bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
@@ -101,6 +104,7 @@ const PaneManager = (() => {
 
       panes[id] = {
         id,
+        windowLabel,
         paneType: 'bible',
         moduleId,
         hasStrongs: mod ? mod.hasStrongs : false,
@@ -120,6 +124,56 @@ const PaneManager = (() => {
   function parsePaneNumber(id) {
     const match = String(id || '').match(/^pane-(\d+)$/);
     return match ? parseInt(match[1], 10) : 0;
+  }
+
+  function paneTypeForLabel(paneType) {
+    return paneType === 'commentary' ? 'commentary' : 'bible';
+  }
+
+  function labelForIndex(index) {
+    let n = Math.max(0, index);
+    let out = '';
+    do {
+      out = ALPHABET[n % 26] + out;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return out;
+  }
+
+  function normalizeWindowLabel(candidate) {
+    if (typeof candidate !== 'string') return null;
+    const trimmed = candidate.trim().toUpperCase();
+    return /^[A-Z]+$/.test(trimmed) ? trimmed : null;
+  }
+
+  function collectUsedWindowLabels(paneType) {
+    const targetType = paneTypeForLabel(paneType);
+    const used = new Set();
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType !== targetType) continue;
+      const label = normalizeWindowLabel(pane.windowLabel);
+      if (label) used.add(label);
+    }
+    return used;
+  }
+
+  function allocatePaneLabel(paneType, preferred) {
+    const used = collectUsedWindowLabels(paneType);
+    const normalizedPreferred = normalizeWindowLabel(preferred);
+    if (normalizedPreferred && !used.has(normalizedPreferred)) return normalizedPreferred;
+    let idx = 0;
+    while (used.has(labelForIndex(idx))) idx++;
+    return labelForIndex(idx);
+  }
+
+  function getPaneDisplayLabel(paneId) {
+    const pane = panes[paneId];
+    if (!pane) return '';
+    return normalizeWindowLabel(pane.windowLabel) || paneId.replace('pane-', '');
+  }
+
+  function getBiblePaneIdsForSync() {
+    return getAllLeafIds(tree).filter((id) => panes[id]?.paneType === 'bible');
   }
 
   function resolveModuleId(candidate) {
@@ -156,6 +210,7 @@ const PaneManager = (() => {
           const mod = modules.find((m) => m.id === fallbackModuleId) || modules[0] || null;
           nextPanes[paneId] = {
             id: paneId,
+            windowLabel: normalizeWindowLabel(raw.windowLabel),
             paneType: 'bible',
             moduleId: fallbackModuleId,
             hasStrongs: mod ? mod.hasStrongs : false,
@@ -170,6 +225,7 @@ const PaneManager = (() => {
         } else {
           nextPanes[paneId] = {
             id: paneId,
+            windowLabel: normalizeWindowLabel(raw.windowLabel),
             paneType: 'commentary',
             moduleId,
             bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
@@ -186,6 +242,7 @@ const PaneManager = (() => {
 
         nextPanes[paneId] = {
           id: paneId,
+          windowLabel: normalizeWindowLabel(raw.windowLabel),
           paneType: 'bible',
           moduleId,
           hasStrongs: mod ? mod.hasStrongs : false,
@@ -203,6 +260,7 @@ const PaneManager = (() => {
     }
 
     panes = nextPanes;
+    ensureWindowLabels();
     tree = restoredTree;
     paneCounter = maxCounter;
     if (savedState.linkTargetPaneId && nextPanes[savedState.linkTargetPaneId]) {
@@ -262,6 +320,7 @@ const PaneManager = (() => {
     for (const pane of Object.values(panes)) {
       const base = {
         paneType: pane.paneType || 'bible',
+        windowLabel: pane.windowLabel || null,
         moduleId: pane.moduleId,
         bookNumber: pane.bookNumber,
         chapter: pane.chapter,
@@ -294,6 +353,24 @@ const PaneManager = (() => {
   }
 
   // ---- Active pane ----
+
+  function ensureWindowLabels() {
+    const usedByType = { bible: new Set(), commentary: new Set() };
+
+    for (const pane of Object.values(panes)) {
+      const type = paneTypeForLabel(pane.paneType);
+      const normalized = normalizeWindowLabel(pane.windowLabel);
+      if (normalized && !usedByType[type].has(normalized)) {
+        pane.windowLabel = normalized;
+        usedByType[type].add(normalized);
+        continue;
+      }
+      let idx = 0;
+      while (usedByType[type].has(labelForIndex(idx))) idx++;
+      pane.windowLabel = labelForIndex(idx);
+      usedByType[type].add(pane.windowLabel);
+    }
+  }
 
   function getFirstLeafId(node) {
     if (node.type === 'leaf') return node.paneId;
@@ -499,7 +576,7 @@ const PaneManager = (() => {
 
     const idBadge = document.createElement('span');
     idBadge.className = 'pane-id-badge';
-    idBadge.textContent = paneId.replace('pane-', '');
+    idBadge.textContent = getPaneDisplayLabel(paneId);
 
     toolbar.append(idBadge, select, navGroup, spacer, backBtn, pinBtn, closeBtn);
 
@@ -551,39 +628,139 @@ const PaneManager = (() => {
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
 
-    // Sync toggle button
-    const syncBtn = document.createElement('button');
-    syncBtn.className =
-      'commentary-sync-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
-    const isSynced = !!pane.syncedToPaneId;
-    syncBtn.appendChild(Icons.create(isSynced ? 'link' : 'unlink'));
-    syncBtn.title = isSynced ? I18n.t('unsyncCommentary') : I18n.t('syncCommentary');
-    if (isSynced) syncBtn.classList.add('pane-link-target');
-    syncBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-    syncBtn.addEventListener('click', () => {
-      if (pane.syncedToPaneId) {
-        pane.syncedToPaneId = null;
-        syncBtn.replaceChildren(Icons.create('unlink'));
-        syncBtn.classList.remove('pane-link-target');
-        syncBtn.title = I18n.t('syncCommentary');
-        syncLabel.textContent = '';
-      } else {
-        // Prefer active Bible pane, fall back to first
-        const biblePaneId = (panes[activePaneId]?.paneType === 'bible')
-          ? activePaneId
-          : findFirstBiblePaneId();
-        if (biblePaneId) {
-          pane.syncedToPaneId = biblePaneId;
-          syncBtn.replaceChildren(Icons.create('link'));
-          syncBtn.classList.add('pane-link-target');
-          syncBtn.title = I18n.t('unsyncCommentary');
-          syncLabel.textContent = '\u2194 ' + biblePaneId.replace('pane-', '');
-          // Sync immediately
-          syncCommentaryToPane(paneId);
+    const syncWrap = document.createElement('div');
+    syncWrap.className = 'commentary-sync-control mr-1';
+    syncWrap.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    const syncTrigger = document.createElement('button');
+    syncTrigger.type = 'button';
+    syncTrigger.className =
+      'commentary-sync-trigger px-2 py-1 rounded-md text-sm text-brand-700 dark:text-night-200 hover:bg-brand-200 dark:hover:bg-night-700 cursor-pointer transition-colors';
+    syncTrigger.title = I18n.t('commentarySyncHint');
+    syncTrigger.setAttribute('aria-expanded', 'false');
+    syncTrigger.setAttribute('aria-haspopup', 'menu');
+
+    const syncMenu = document.createElement('div');
+    syncMenu.className = 'commentary-sync-menu hidden';
+    syncMenu.setAttribute('role', 'menu');
+    syncMenu.tabIndex = -1;
+
+    const biblePaneIds = getBiblePaneIdsForSync();
+    const syncOptions = [
+      { value: '', label: I18n.t('commentarySyncNone') },
+      ...biblePaneIds.map((biblePaneId) => ({
+        value: biblePaneId,
+        label: `${I18n.t('commentarySyncBiblePrefix')} ${getPaneDisplayLabel(biblePaneId)}`,
+      })),
+    ];
+
+    if (!pane.syncedToPaneId || !panes[pane.syncedToPaneId] || panes[pane.syncedToPaneId].paneType !== 'bible') {
+      pane.syncedToPaneId = null;
+    }
+
+    let isSyncMenuOpen = false;
+    let syncMenuDocListener = null;
+
+    const setSyncMenuOpen = (open) => {
+      isSyncMenuOpen = open;
+      syncMenu.classList.toggle('hidden', !open);
+      syncTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        if (!syncMenuDocListener) {
+          syncMenuDocListener = (e) => {
+            if (!syncWrap.isConnected) {
+              document.removeEventListener('mousedown', syncMenuDocListener);
+              syncMenuDocListener = null;
+              return;
+            }
+            if (!syncWrap.contains(e.target)) setSyncMenuOpen(false);
+          };
+          document.addEventListener('mousedown', syncMenuDocListener);
         }
+        syncMenu.focus();
+      } else if (syncMenuDocListener) {
+        document.removeEventListener('mousedown', syncMenuDocListener);
+        syncMenuDocListener = null;
       }
+    };
+
+    const updateSyncTriggerText = () => {
+      const selectedValue = pane.syncedToPaneId || '';
+      const selectedOption = syncOptions.find((option) => option.value === selectedValue);
+      syncTrigger.textContent = selectedOption ? selectedOption.label : I18n.t('commentarySyncNone');
+    };
+
+    const updateSyncMenuSelection = () => {
+      const selectedValue = pane.syncedToPaneId || '';
+      for (const item of syncMenu.children) {
+        const selected = item.dataset.value === selectedValue;
+        item.classList.toggle('is-selected', selected);
+        item.setAttribute('aria-checked', selected ? 'true' : 'false');
+      }
+    };
+
+    const selectSyncTarget = (value) => {
+      pane.syncedToPaneId = value || null;
+      if (biblePaneIds.length > 0) {
+        syncCommentaryToPane(paneId);
+      }
+      updateSyncMenuSelection();
+      updateSyncTriggerText();
+      setSyncMenuOpen(false);
       emitStateChange();
+    };
+
+    for (const option of syncOptions) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'commentary-sync-menu-item';
+      item.dataset.value = option.value;
+      item.textContent = option.label;
+      item.setAttribute('role', 'menuitemradio');
+      item.addEventListener('click', () => selectSyncTarget(option.value));
+      syncMenu.appendChild(item);
+    }
+
+    if (biblePaneIds.length === 0) {
+      pane.syncedToPaneId = null;
+      syncTrigger.classList.add('opacity-60', 'cursor-not-allowed');
+      syncTrigger.disabled = true;
+    }
+
+    updateSyncMenuSelection();
+    updateSyncTriggerText();
+
+    syncTrigger.addEventListener('click', () => {
+      if (syncTrigger.disabled) return;
+      setSyncMenuOpen(!isSyncMenuOpen);
     });
+
+    syncTrigger.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' && !isSyncMenuOpen) {
+        e.preventDefault();
+        setSyncMenuOpen(true);
+      } else if (e.key === 'Escape' && isSyncMenuOpen) {
+        e.preventDefault();
+        setSyncMenuOpen(false);
+      }
+    });
+
+    syncMenu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSyncMenuOpen(false);
+        syncTrigger.focus();
+      }
+    });
+
+    syncWrap.addEventListener('focusout', () => {
+      if (!isSyncMenuOpen) return;
+      setTimeout(() => {
+        if (!syncWrap.contains(document.activeElement)) setSyncMenuOpen(false);
+      }, 0);
+    });
+
+    syncWrap.append(syncTrigger, syncMenu);
 
     // Close button
     const closeBtn = document.createElement('button');
@@ -595,28 +772,9 @@ const PaneManager = (() => {
 
     const idBadge = document.createElement('span');
     idBadge.className = 'pane-id-badge';
-    idBadge.textContent = paneId.replace('pane-', '');
+    idBadge.textContent = getPaneDisplayLabel(paneId);
 
-    // Sync label showing linked Bible pane number (clickable to cycle)
-    const syncLabel = document.createElement('span');
-    syncLabel.className = 'commentary-sync-label';
-    if (pane.syncedToPaneId) {
-      syncLabel.textContent = '\u2194 ' + pane.syncedToPaneId.replace('pane-', '');
-    }
-    syncLabel.addEventListener('mousedown', (e) => e.stopPropagation());
-    syncLabel.addEventListener('click', () => {
-      if (!pane.syncedToPaneId) return;
-      const biblePaneIds = getAllLeafIds(tree).filter(id => panes[id]?.paneType === 'bible');
-      if (biblePaneIds.length < 2) return;
-      const curIdx = biblePaneIds.indexOf(pane.syncedToPaneId);
-      const nextIdx = (curIdx + 1) % biblePaneIds.length;
-      pane.syncedToPaneId = biblePaneIds[nextIdx];
-      syncLabel.textContent = '\u2194 ' + pane.syncedToPaneId.replace('pane-', '');
-      syncCommentaryToPane(paneId);
-      emitStateChange();
-    });
-
-    toolbar.append(idBadge, select, navLabel, spacer, syncBtn, syncLabel, closeBtn);
+    toolbar.append(idBadge, select, navLabel, spacer, syncWrap, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -627,8 +785,7 @@ const PaneManager = (() => {
   }
 
   function findFirstBiblePaneId() {
-    const leafIds = getAllLeafIds(tree);
-    for (const id of leafIds) {
+    for (const id of getBiblePaneIdsForSync()) {
       if (panes[id] && panes[id].paneType === 'bible') return id;
     }
     return null;

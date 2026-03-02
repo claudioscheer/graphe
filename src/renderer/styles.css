@@ -381,6 +381,10 @@
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+  min-height: 26px;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+  line-height: 1.1;
   padding-right: 2rem;
   background-image: url('icons/chevron-down.svg');
   background-repeat: no-repeat;
@@ -390,6 +394,18 @@
 
 .dark .app-select {
   background-image: url('icons/chevron-down-dark.svg');
+  color-scheme: dark;
+}
+
+.dark .app-select option,
+.dark .app-select optgroup {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+
+.dark .app-select option:checked {
+  background: var(--ui-accent-bg);
+  color: var(--ui-link-strong);
 }
 
 /* Divider */
@@ -1002,8 +1018,8 @@ el {
 }
 
 .dark .dict-source-tag {
-  color: var(--ui-link-softest);
-  background: rgb(var(--ui-link-soft-rgb) / 0.12);
+  color: var(--ui-text-muted);
+  background: rgb(var(--ui-link-soft-rgb) / 0.2);
 }
 
 /* Input clear button (shared by search & dict inputs) */
@@ -1066,6 +1082,10 @@ el {
 }
 
 .dict-autocomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer !important;
@@ -1079,13 +1099,20 @@ el {
 }
 
 .dark .dict-autocomplete-item {
-  color: var(--ui-border-soft);
+  color: var(--ui-text-muted);
 }
 
 .dark .dict-autocomplete-item:hover,
 .dark .dict-autocomplete-item.active {
   background: var(--ui-accent-bg);
-  color: var(--ui-link-softest);
+  color: var(--ui-link-strong);
+}
+
+.dict-autocomplete-item > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Bible reference links */
@@ -1527,6 +1554,49 @@ el {
   white-space: nowrap;
 }
 
+.commentary-sync-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.commentary-sync-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 170px;
+  z-index: 40;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: 0 8px 24px rgb(var(--ui-shadow-rgb) / 0.2);
+}
+
+.commentary-sync-menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ui-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.commentary-sync-menu-item:hover {
+  background: rgb(var(--ui-primary-rgb) / 0.12);
+}
+
+.commentary-sync-menu-item.is-selected {
+  color: var(--ui-primary-strong);
+  background: rgb(var(--ui-primary-rgb) / 0.28);
+  box-shadow: inset 3px 0 0 var(--ui-primary-strong);
+  font-weight: 700;
+}
+
 /* Panel ID badge */
 .pane-id-badge {
   display: inline-flex;
@@ -1547,41 +1617,4 @@ el {
 .dark .pane-id-badge {
   color: var(--ui-text-muted);
   background: rgb(var(--ui-surface-rgb) / 0.1);
-}
-
-/* Commentary sync label */
-.commentary-sync-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ui-text-subtle);
-  white-space: nowrap;
-  margin-right: 2px;
-  cursor: pointer;
-  border-radius: 4px;
-  padding: 2px 4px;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.commentary-sync-label:not(:empty):hover {
-  color: var(--ui-link);
-  background-color: rgb(var(--ui-link-rgb) / 0.1);
-}
-
-.dark .commentary-sync-label {
-  color: var(--ui-text-muted);
-}
-
-.dark .commentary-sync-label:not(:empty):hover {
-  color: var(--ui-link-soft);
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.15);
-}
-
-.commentary-sync-btn.pane-link-target {
-  color: var(--ui-link);
-  background-color: rgb(var(--ui-link-rgb) / 0.12);
-}
-
-.dark .commentary-sync-btn.pane-link-target {
-  color: var(--ui-link-soft);
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.18);
 }
