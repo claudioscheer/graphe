@@ -1,6 +1,6 @@
 {
   "name": "graphe-bible",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A modern Bible study app with split panes and Strong's numbers",
   "main": "src/main/main.js",
   "scripts": {
