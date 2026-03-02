@@ -2,7 +2,7 @@
  * pane-manager.js — Recursive binary split pane system
  *
  * Tree structure:
- *   Node = { type: 'leaf', paneId } | { type: 'split', direction: 'h'|'v', children: [Node, Node], sizes: [px, px] }
+ *   Node = { type: 'leaf', paneId } | { type: 'split', direction: 'h'|'v', children: [Node, Node], ratio: number }
  */
 const PaneManager = (() => {
   let tree = null;
@@ -40,7 +40,7 @@ const PaneManager = (() => {
             { type: 'leaf', paneId: biblePaneId },
             { type: 'leaf', paneId: commentaryPaneId },
           ],
-          sizes: [650, 350],
+          ratio: 0.65,
         };
         activePaneId = biblePaneId;
       } else {
@@ -228,15 +228,20 @@ const PaneManager = (() => {
     if (!left || !right) return null;
 
     const direction = node.direction === 'v' ? 'v' : 'h';
-    const size0 = Number.isFinite(node.sizes?.[0]) ? Math.max(100, Math.floor(node.sizes[0])) : 300;
-    const size1 = Number.isFinite(node.sizes?.[1]) ? Math.max(100, Math.floor(node.sizes[1])) : 300;
+    if (!Number.isFinite(node.ratio)) return null;
+    const ratio = clampRatio(node.ratio);
 
     return {
       type: 'split',
       direction,
       children: [left, right],
-      sizes: [size0, size1],
+      ratio,
     };
+  }
+
+  function clampRatio(value) {
+    const ratio = Number.isFinite(value) ? Number(value) : 0.5;
+    return Math.min(0.9, Math.max(0.1, ratio));
   }
 
   function getPane(paneId) {
@@ -269,9 +274,22 @@ const PaneManager = (() => {
     }
 
     return {
-      tree,
+      tree: serializeTree(tree),
       panes: serializablePanes,
       linkTargetPaneId,
+    };
+  }
+
+  function serializeTree(node) {
+    if (!node || typeof node !== 'object') return null;
+    if (node.type === 'leaf') {
+      return { type: 'leaf', paneId: node.paneId };
+    }
+    return {
+      type: 'split',
+      direction: node.direction === 'v' ? 'v' : 'h',
+      ratio: clampRatio(node.ratio),
+      children: [serializeTree(node.children[0]), serializeTree(node.children[1])],
     };
   }
 
@@ -352,9 +370,8 @@ const PaneManager = (() => {
     const divider = createDivider(node);
     const child1El = renderNode(node.children[1]);
 
-    const dim = node.direction === 'h' ? 'width' : 'height';
     child0El.style.flex = 'none';
-    child0El.style[dim] = node.sizes[0] + 'px';
+    child0El.style.flexBasis = `${clampRatio(node.ratio) * 100}%`;
     child1El.style.flex = '1 1 0';
 
     container.appendChild(child0El);
@@ -626,17 +643,21 @@ const PaneManager = (() => {
       e.preventDefault();
       div.classList.add('dragging');
       const startPos = node.direction === 'h' ? e.clientX : e.clientY;
-      const startSize = node.sizes[0];
+      const container = div.parentElement;
+      const firstChild = container.children[0];
+      const startSize =
+        node.direction === 'h' ? firstChild.offsetWidth : firstChild.offsetHeight;
 
       const onMove = (e2) => {
+        const currentContainerSize =
+          node.direction === 'h' ? container.clientWidth : container.clientHeight;
+        if (currentContainerSize <= 0) return;
         const delta = (node.direction === 'h' ? e2.clientX : e2.clientY) - startPos;
-        const newSize = Math.max(100, startSize + delta);
-        node.sizes[0] = newSize;
-
-        const container = div.parentElement;
-        const firstChild = container.children[0];
-        const dim = node.direction === 'h' ? 'width' : 'height';
-        firstChild.style[dim] = newSize + 'px';
+        const minPx = Math.min(100, Math.max(40, Math.floor(currentContainerSize * 0.2)));
+        const maxPx = Math.max(minPx, currentContainerSize - minPx);
+        const nextSize = Math.min(maxPx, Math.max(minPx, startSize + delta));
+        node.ratio = clampRatio(nextSize / currentContainerSize);
+        firstChild.style.flexBasis = `${node.ratio * 100}%`;
       };
 
       const onUp = () => {
@@ -1153,15 +1174,11 @@ const PaneManager = (() => {
     const leaf = { type: 'leaf', paneId };
     const newLeaf = { type: 'leaf', paneId: newPaneId };
 
-    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
-    const size = direction === 'h' ? (el ? el.offsetWidth : 400) : el ? el.offsetHeight : 300;
-    const halfSize = Math.floor(size / 2);
-
     const splitNode = {
       type: 'split',
       direction,
       children: [leaf, newLeaf],
-      sizes: [halfSize, halfSize],
+      ratio: 0.5,
     };
 
     if (!parent) {
@@ -1260,6 +1277,7 @@ const PaneManager = (() => {
     setActivePane,
     reloadAllChapters,
     getNavigationTarget,
+    getLinkTargetPaneId,
     notifyVerseClick,
   };
 })();

@@ -11,6 +11,8 @@ const DictPanel = (() => {
   let history = [];
   let historyIdx = -1;
   let navBackBtn, navForwardBtn;
+  let dictHeightRatio = null;
+  let resizeBound = false;
 
   // DOM refs
   let panel, contentEl, searchInput, autocompleteEl, dictClearBtn;
@@ -18,10 +20,13 @@ const DictPanel = (() => {
   function init(modules, savedState) {
     dictModules = modules;
     if (dictModules.length === 0) return;
-    buildDOM(savedState?.dictHeight);
+    if (savedState && Number.isFinite(savedState.dictHeightRatio)) {
+      dictHeightRatio = Math.min(0.9, Math.max(0.1, Number(savedState.dictHeightRatio)));
+    }
+    buildDOM(savedState);
   }
 
-  function buildDOM(savedHeight) {
+  function buildDOM(savedState) {
     const sidebar = SearchPanel.getSidebar();
     if (!sidebar) return;
 
@@ -33,6 +38,7 @@ const DictPanel = (() => {
     // Dict panel
     panel = document.createElement('div');
     panel.id = 'dict-panel';
+    const savedHeight = resolveInitialHeight(sidebar);
     if (savedHeight) {
       panel.style.flex = 'none';
       panel.style.height = savedHeight + 'px';
@@ -125,6 +131,7 @@ const DictPanel = (() => {
 
     sidebar.appendChild(divider);
     sidebar.appendChild(panel);
+    setupResizeSync();
 
     // Close autocomplete when clicking outside
     document.addEventListener('click', (e) => {
@@ -137,18 +144,19 @@ const DictPanel = (() => {
       e.preventDefault();
       divider.classList.add('dragging');
       const startY = e.clientY;
-      const searchPanel = document.getElementById('search-panel');
-      const startSearchH = searchPanel.offsetHeight;
+      const sidebar = SearchPanel.getSidebar();
+      if (!sidebar) return;
       const startDictH = panel.offsetHeight;
 
       const onMove = (e2) => {
         const delta = e2.clientY - startY;
-        const newSearchH = Math.max(100, startSearchH + delta);
-        const newDictH = Math.max(80, startDictH - delta);
-        searchPanel.style.flex = 'none';
-        searchPanel.style.height = newSearchH + 'px';
+        const sidebarH = Math.max(1, sidebar.clientHeight || 1);
+        const minDictH = 80;
+        const maxDictH = Math.max(minDictH, sidebarH - 100);
+        const newDictH = Math.min(maxDictH, Math.max(minDictH, startDictH - delta));
         panel.style.flex = 'none';
         panel.style.height = newDictH + 'px';
+        dictHeightRatio = Math.min(0.9, Math.max(0.1, newDictH / sidebarH));
       };
 
       const onUp = () => {
@@ -160,6 +168,28 @@ const DictPanel = (() => {
 
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function resolveInitialHeight(sidebar) {
+    if (!Number.isFinite(dictHeightRatio)) return null;
+    const sidebarHeight = Math.max(1, sidebar?.clientHeight || 1);
+    const minDictH = 80;
+    const maxDictH = Math.max(minDictH, sidebarHeight - 100);
+    return Math.min(maxDictH, Math.max(minDictH, Math.round(sidebarHeight * dictHeightRatio)));
+  }
+
+  function setupResizeSync() {
+    if (resizeBound) return;
+    resizeBound = true;
+    window.addEventListener('resize', () => {
+      if (!panel || !Number.isFinite(dictHeightRatio)) return;
+      const sidebar = SearchPanel.getSidebar();
+      if (!sidebar) return;
+      const nextHeight = resolveInitialHeight(sidebar);
+      if (!nextHeight) return;
+      panel.style.flex = 'none';
+      panel.style.height = nextHeight + 'px';
     });
   }
 
@@ -849,12 +879,33 @@ const DictPanel = (() => {
     for (const el of dangerous) el.remove();
 
     const urlAttrs = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster']);
+    const legacyPresentationalAttrs = new Set([
+      'align',
+      'background',
+      'bgcolor',
+      'border',
+      'cellpadding',
+      'cellspacing',
+      'color',
+      'face',
+      'height',
+      'hspace',
+      'size',
+      'valign',
+      'vspace',
+      'width',
+    ]);
     const all = doc.body.querySelectorAll('*');
     for (const el of all) {
       for (const attr of [...el.attributes]) {
         const name = attr.name.toLowerCase();
         const value = (attr.value || '').trim();
-        if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+        if (
+          name.startsWith('on') ||
+          name === 'style' ||
+          name === 'srcdoc' ||
+          legacyPresentationalAttrs.has(name)
+        ) {
           el.removeAttribute(attr.name);
           continue;
         }
@@ -901,8 +952,15 @@ const DictPanel = (() => {
   }
 
   function getState() {
+    const sidebar = SearchPanel.getSidebar();
+    const sidebarHeight = Math.max(1, sidebar?.clientHeight || 1);
+    const dictHeight = panel ? panel.offsetHeight : null;
+    dictHeightRatio =
+      Number.isFinite(dictHeight) && dictHeight > 0
+        ? Math.min(0.9, Math.max(0.1, dictHeight / sidebarHeight))
+        : dictHeightRatio;
     return {
-      dictHeight: panel ? panel.offsetHeight : null,
+      dictHeightRatio,
     };
   }
 

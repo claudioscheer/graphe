@@ -8,21 +8,45 @@ const SearchPanel = (() => {
   let onStateChange = null;
   let semanticEnabled = false;
   let semanticResultCount = 5;
+  let widthRatio = null;
+  let resizeBound = false;
 
   // DOM refs
   let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn;
 
   const MIN_WIDTH = 200;
-  const MAX_WIDTH = 600;
+  const MAX_WIDTH_RATIO = 0.6;
   const DEFAULT_WIDTH = 280;
 
   function init(moduleList, savedState) {
     modules = moduleList;
     selectedModuleId = savedState?.moduleId || (modules[0] && modules[0].id) || null;
-    const width = savedState?.width || DEFAULT_WIDTH;
+    widthRatio = resolveInitialWidthRatio(savedState);
+    const width = Math.round(getViewportWidth() * widthRatio);
     buildDOM(width);
     prefetchBooks();
     emitStateChange();
+  }
+
+  function getViewportWidth() {
+    return Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  }
+
+  function resolveInitialWidthRatio(savedState) {
+    if (savedState && Number.isFinite(savedState.widthRatio)) {
+      return Math.min(0.9, Math.max(0.1, Number(savedState.widthRatio)));
+    }
+    return Math.min(0.9, Math.max(0.1, DEFAULT_WIDTH / getViewportWidth()));
+  }
+
+  function setupResizeSync() {
+    if (resizeBound) return;
+    resizeBound = true;
+    window.addEventListener('resize', () => {
+      if (!sidebar) return;
+      const next = clampWidth(Math.round(getViewportWidth() * (widthRatio || 0.25)));
+      sidebar.style.width = next + 'px';
+    });
   }
 
   function getSidebar() {
@@ -42,6 +66,7 @@ const SearchPanel = (() => {
     sidebar = document.createElement('div');
     sidebar.id = 'left-sidebar';
     sidebar.style.width = clampWidth(width) + 'px';
+    setupResizeSync();
 
     // Build search panel
     panel = document.createElement('div');
@@ -175,6 +200,7 @@ const SearchPanel = (() => {
       const onMove = (e2) => {
         const newWidth = clampWidth(startWidth + (e2.clientX - startX));
         sidebar.style.width = newWidth + 'px';
+        widthRatio = Math.min(0.9, Math.max(0.1, newWidth / getViewportWidth()));
       };
 
       const onUp = () => {
@@ -190,7 +216,8 @@ const SearchPanel = (() => {
   }
 
   function clampWidth(w) {
-    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(w)));
+    const maxWidth = Math.max(MIN_WIDTH + 40, Math.floor(getViewportWidth() * MAX_WIDTH_RATIO));
+    return Math.max(MIN_WIDTH, Math.min(maxWidth, Math.round(w)));
   }
 
   async function prefetchBooks() {
@@ -403,15 +430,19 @@ const SearchPanel = (() => {
 
   function emitStateChange() {
     if (!onStateChange) return;
+    const width = sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH;
+    widthRatio = Math.min(0.9, Math.max(0.1, width / getViewportWidth()));
     onStateChange({
-      width: sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH,
+      widthRatio,
       moduleId: selectedModuleId,
     });
   }
 
   function getState() {
+    const width = sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH;
+    widthRatio = Math.min(0.9, Math.max(0.1, width / getViewportWidth()));
     return {
-      width: sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH,
+      widthRatio,
       moduleId: selectedModuleId,
     };
   }

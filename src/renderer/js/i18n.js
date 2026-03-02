@@ -71,6 +71,9 @@ const I18n = (() => {
       crossRefBackTooltip: 'Voltar à referência anterior',
       pinLinkTarget: 'Fixar como destino de links',
       unpinLinkTarget: 'Desafixar destino de links',
+      crossRefPinnedModal: 'Abrir em modal apenas referências clicadas no painel fixado',
+      crossRefPinnedModalHint:
+        'Cliques de outros painéis continuam navegando no painel fixado normalmente. Apenas referências clicadas no painel fixado abrem prévia em modal.',
       refUnavailable: 'Referência indisponível nesta tradução',
       commentary: 'Comentário',
       commentaries: 'Comentários',
@@ -150,6 +153,9 @@ const I18n = (() => {
       crossRefBackTooltip: 'Go back to previous reference',
       pinLinkTarget: 'Pin as link target',
       unpinLinkTarget: 'Unpin link target',
+      crossRefPinnedModal: 'Only open references clicked inside the pinned panel in a modal',
+      crossRefPinnedModalHint:
+        'Clicks from other panes still navigate the pinned pane normally. Only cross-references clicked in the pinned pane open a modal preview.',
       refUnavailable: 'Reference unavailable in this translation',
       commentary: 'Commentary',
       commentaries: 'Commentaries',
@@ -230,6 +236,9 @@ const I18n = (() => {
       crossRefBackTooltip: 'Volver a la referencia anterior',
       pinLinkTarget: 'Fijar como destino de enlaces',
       unpinLinkTarget: 'Desfijar destino de enlaces',
+      crossRefPinnedModal: 'Abrir en modal solo referencias clicadas en el panel fijado',
+      crossRefPinnedModalHint:
+        'Los clics desde otros paneles siguen navegando el panel fijado normalmente. Solo las referencias clicadas en el panel fijado abren una vista modal.',
       refUnavailable: 'Referencia no disponible en esta traducción',
       commentary: 'Comentario',
       commentaries: 'Comentarios',

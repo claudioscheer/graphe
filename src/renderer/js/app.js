@@ -10,6 +10,7 @@ const AppStateStore = (() => {
       fontSize: 20,
       strongsDicts: null,
       crossRefModules: null,
+      openPinnedRefsInModal: false,
       semanticSearchEnabled: false,
       semanticModelId: 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
       semanticResultCount: 5,
@@ -113,6 +114,7 @@ const Settings = (() => {
   const semanticCancelBtn = document.getElementById('settings-semantic-cancel');
   const semanticEnableToggle = document.getElementById('settings-semantic-enable');
   const semanticCountInput = document.getElementById('settings-semantic-count');
+  const pinnedRefModalToggle = document.getElementById('settings-pinned-ref-modal');
 
   let semanticModules = [];
   let semanticJobId = null;
@@ -148,6 +150,8 @@ const Settings = (() => {
       semanticEnableToggle.checked = AppStateStore.getSettings().semanticSearchEnabled === true;
     if (semanticCountInput)
       semanticCountInput.value = AppStateStore.getSettings().semanticResultCount || 5;
+    if (pinnedRefModalToggle)
+      pinnedRefModalToggle.checked = AppStateStore.getSettings().openPinnedRefsInModal === true;
     updateThemeLabel();
     overlay.classList.remove('hidden');
     refreshSemanticStatus();
@@ -178,6 +182,7 @@ const Settings = (() => {
       theme: isDark() ? 'dark' : 'light',
       language: initialLang,
       fontSize: initialFontSize,
+      openPinnedRefsInModal: initialSettings.openPinnedRefsInModal === true,
       semanticSearchEnabled: initialSettings.semanticSearchEnabled === true,
       semanticModelId:
         initialSettings.semanticModelId || 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
@@ -191,6 +196,8 @@ const Settings = (() => {
         1,
         parseInt(initialSettings.semanticResultCount || 5, 10) || 5
       );
+    if (pinnedRefModalToggle)
+      pinnedRefModalToggle.checked = initialSettings.openPinnedRefsInModal === true;
   }
 
   function syncSearchPanelSemanticSettings() {
@@ -357,6 +364,12 @@ const Settings = (() => {
     });
   }
 
+  if (pinnedRefModalToggle) {
+    pinnedRefModalToggle.addEventListener('change', () => {
+      AppStateStore.setSettings({ openPinnedRefsInModal: pinnedRefModalToggle.checked });
+    });
+  }
+
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
@@ -508,6 +521,87 @@ const LoadingScreen = (() => {
   return { hide };
 })();
 
+const CrossRefPreview = (() => {
+  const overlay = document.getElementById('crossref-preview-overlay');
+  const closeBtn = document.getElementById('crossref-preview-close');
+  const titleEl = document.getElementById('crossref-preview-title');
+  const subtitleEl = document.getElementById('crossref-preview-subtitle');
+  const contentEl = document.getElementById('crossref-preview-content');
+  const booksByModule = new Map();
+  let requestToken = 0;
+
+  function isOpen() {
+    return !!overlay && !overlay.classList.contains('hidden');
+  }
+
+  function close() {
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+  }
+
+  async function getBooks(moduleId) {
+    if (booksByModule.has(moduleId)) return booksByModule.get(moduleId);
+    const books = await window.api.getBooks(moduleId);
+    booksByModule.set(moduleId, books);
+    return books;
+  }
+
+  function renderMessage(message) {
+    if (!contentEl) return;
+    contentEl.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'crossref-preview-empty';
+    msg.textContent = message;
+    contentEl.appendChild(msg);
+  }
+
+  async function open({ moduleId, hasStrongs, bookNumber, chapter, verse }) {
+    if (!overlay || !titleEl || !contentEl) return;
+    const token = ++requestToken;
+    overlay.classList.remove('hidden');
+    titleEl.textContent = '...';
+    if (subtitleEl) subtitleEl.textContent = moduleId || '';
+    renderMessage('...');
+
+    try {
+      const [books, verses] = await Promise.all([
+        getBooks(moduleId),
+        window.api.getChapter(moduleId, bookNumber, chapter),
+      ]);
+      if (token !== requestToken) return;
+
+      const book = books.find((b) => b.bookNumber === bookNumber);
+      titleEl.textContent = `${book ? book.shortName : bookNumber} ${chapter}`;
+      if (subtitleEl) subtitleEl.textContent = moduleId || '';
+
+      BibleView.renderChapter(contentEl, verses || [], !!hasStrongs, bookNumber, {
+        crossRefs: null,
+        crossRefMode: 'none',
+      });
+
+      if (verse != null) {
+        BibleView.scrollToVerse(contentEl, verse);
+      } else {
+        contentEl.scrollTop = 0;
+      }
+    } catch (err) {
+      if (token !== requestToken) return;
+      renderMessage(I18n.t('refUnavailable'));
+    }
+  }
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', close);
+  }
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+  }
+
+  return { open, close, isOpen };
+})();
+
 function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
   const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
   if (!el) return false;
@@ -521,7 +615,7 @@ function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
 document.addEventListener('click', (e) => {
   // Verse click → scroll synced commentary panes
   const verseLine = e.target.closest('.verse-line');
-  if (verseLine) {
+  if (verseLine && !e.target.closest('.crossref-link')) {
     const paneEl = verseLine.closest('[data-pane-id]');
     if (paneEl) {
       const verseNum = parseInt(verseLine.dataset.verse, 10);
@@ -544,6 +638,21 @@ document.addEventListener('click', (e) => {
     const verseTo = refEl.dataset.verseTo ? parseInt(refEl.dataset.verseTo, 10) : null;
     if (verseTo !== null && isNaN(verseTo)) return;
     const target = PaneManager.getNavigationTarget(paneId);
+    const pinnedTarget = PaneManager.getLinkTargetPaneId();
+    const openPinnedRefsInModal = AppStateStore.getSettings().openPinnedRefsInModal === true;
+    if (openPinnedRefsInModal && pinnedTarget && paneId === pinnedTarget && target === pinnedTarget) {
+      const targetPane = PaneManager.getPane(target);
+      if (targetPane && targetPane.paneType === 'bible') {
+        CrossRefPreview.open({
+          moduleId: targetPane.moduleId,
+          hasStrongs: targetPane.hasStrongs,
+          bookNumber: bookTo,
+          chapter: chapterTo,
+          verse: verseTo,
+        });
+        return;
+      }
+    }
     PaneManager.navigatePane(target, bookTo, chapterTo, verseTo)
       .then((ok) => {
         if (!ok) showTooltip(target, I18n.t('refUnavailable'));
@@ -600,7 +709,14 @@ document.addEventListener('keydown', (e) => {
   const inputFocused = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
   const overlayOpen =
     !document.getElementById('settings-overlay').classList.contains('hidden') ||
-    !document.getElementById('nav-overlay').classList.contains('hidden');
+    !document.getElementById('nav-overlay').classList.contains('hidden') ||
+    CrossRefPreview.isOpen();
+
+  if (e.key === 'Escape' && CrossRefPreview.isOpen()) {
+    e.preventDefault();
+    CrossRefPreview.close();
+    return;
+  }
 
   if (e.key === 'F' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.preventDefault();

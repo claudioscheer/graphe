@@ -48,7 +48,7 @@
         <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-between">
           <button
             id="nav-back"
-            class="hidden px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
+            class="hidden px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
             type="button"
           >
             <svg
@@ -68,7 +68,7 @@
           </button>
           <button
             id="nav-close"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
             data-i18n="close"
           >
             Close
@@ -99,7 +99,7 @@
               </div>
               <button
                 id="settings-theme-toggle"
-                class="px-4 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium"
+                class="px-4 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium"
               >
                 <span id="settings-theme-label" data-i18n="light">Light</span>
               </button>
@@ -165,6 +165,22 @@
               Choose which modules to use for displaying cross-references.
             </p>
             <div id="settings-crossref-list" class="settings-checkbox-list"></div>
+            <label class="settings-checkbox-option mt-3">
+              <input
+                id="settings-pinned-ref-modal"
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer"
+              />
+              <span class="settings-checkbox-text">
+                <span data-i18n="crossRefPinnedModal"
+                  >Only open references clicked inside the pinned panel in a modal</span
+                >
+                <span class="settings-row-hint mt-1 block" data-i18n="crossRefPinnedModalHint"
+                  >Clicks from other panels still navigate the pinned panel normally. Only
+                  cross-references clicked in the pinned panel open a modal preview.</span
+                >
+              </span>
+            </label>
           </div>
           <div id="settings-semantic-section" class="settings-group">
             <span class="font-medium settings-section-title" data-i18n="semanticIndexTitle"
@@ -199,7 +215,7 @@
                 type="number"
                 min="1"
                 max="50"
-                class="w-20 px-2 py-1 rounded border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm"
+                class="w-20 px-2 py-1 rounded border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-brand-900 dark:text-night-50 text-sm"
               />
             </div>
             <div class="mt-2 flex items-center gap-2">
@@ -216,7 +232,7 @@
               </button>
               <button
                 id="settings-semantic-cancel"
-                class="hidden px-3 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm"
+                class="hidden px-3 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm"
                 data-i18n="semanticCancel"
               >
                 Cancel
@@ -238,12 +254,36 @@
         <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-end">
           <button
             id="settings-close"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
             data-i18n="close"
           >
             Close
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Cross-reference preview modal -->
+    <div
+      id="crossref-preview-overlay"
+      class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+    >
+      <div class="crossref-preview-modal">
+        <div class="crossref-preview-header">
+          <div class="min-w-0">
+            <h2 id="crossref-preview-title" class="crossref-preview-title">...</h2>
+            <p id="crossref-preview-subtitle" class="crossref-preview-subtitle"></p>
+          </div>
+          <button
+            id="crossref-preview-close"
+            class="px-3 py-1.5 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            data-i18n="close"
+            type="button"
+          >
+            Close
+          </button>
+        </div>
+        <div id="crossref-preview-content" class="crossref-preview-content"></div>
       </div>
     </div>
 
