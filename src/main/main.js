@@ -7,6 +7,7 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 let mainWindow;
 let reloadTimer = null;
 const windowIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.png');
+const macDockIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.icns');
 
 function setupDevHotReload() {
   if (app.isPackaged) return;
@@ -164,6 +165,19 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
 });
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
+    const dockIconPath = fs.existsSync(macDockIconPath) && fs.existsSync(macDockIconPath)
+      ? macDockIconPath
+      : windowIconPath;
+    if (fs.existsSync(dockIconPath)) {
+      try {
+        app.dock.setIcon(dockIconPath);
+      } catch (err) {
+        console.warn('Failed to set macOS dock icon:', err.message || err);
+      }
+    }
+  }
+
   modules.init();
   registerIpcHandlers();
   buildMenu();

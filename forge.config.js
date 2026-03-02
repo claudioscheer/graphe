@@ -1,11 +1,12 @@
 const path = require('path');
 
-const appIcon = path.join(__dirname, 'assets', 'graphe.png');
+const appIconBase = path.join(__dirname, 'assets', 'graphe');
+const appIconPng = `${appIconBase}.png`;
 
 module.exports = {
   packagerConfig: {
     asar: true,
-    icon: appIcon,
+    icon: appIconBase,
   },
   makers: [
     { name: '@electron-forge/maker-zip' },
@@ -13,7 +14,7 @@ module.exports = {
       name: '@electron-forge/maker-deb',
       config: {
         options: {
-          icon: appIcon,
+          icon: appIconPng,
         },
       },
     },
