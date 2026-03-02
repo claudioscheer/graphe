@@ -617,7 +617,8 @@ const PaneManager = (() => {
       pane.moduleId = select.value;
       pane.commentaryBooks = [];
       pane.entries = [];
-      await loadCommentaryData(paneId);
+      const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
+      await loadCommentaryData(paneId, selectedVerse);
       emitStateChange();
     });
 
@@ -868,7 +869,26 @@ const PaneManager = (() => {
 
   // ---- Commentary data loading ----
 
-  async function loadCommentaryData(paneId) {
+  function getSelectedVerseFromSyncedBiblePane(commentaryPane) {
+    if (!commentaryPane || commentaryPane.paneType !== 'commentary' || !commentaryPane.syncedToPaneId) {
+      return null;
+    }
+    const sourcePane = panes[commentaryPane.syncedToPaneId];
+    if (!sourcePane || sourcePane.paneType !== 'bible') return null;
+
+    const sourceContent = document.querySelector(
+      `[data-pane-id="${commentaryPane.syncedToPaneId}"] .pane-content`
+    );
+    if (!sourceContent) return null;
+
+    const selected = sourceContent.querySelector('.verse-line.verse-selected');
+    if (!selected) return null;
+
+    const verse = parseInt(selected.dataset.verse, 10);
+    return Number.isFinite(verse) ? verse : null;
+  }
+
+  async function loadCommentaryData(paneId, scrollToVerse) {
     const pane = panes[paneId];
     try {
       if (!pane || !pane.moduleId) return;
@@ -884,7 +904,7 @@ const PaneManager = (() => {
         return;
       }
 
-      await loadCommentaryChapter(paneId);
+      await loadCommentaryChapter(paneId, scrollToVerse);
     } catch (err) {
       console.error('Failed to load commentary data:', err);
       renderCommentaryUnavailable(paneId);
@@ -911,7 +931,7 @@ const PaneManager = (() => {
         return;
       }
 
-      CommentaryView.renderChapter(content, entries, pane.bookNumber);
+      CommentaryView.renderChapter(content, entries, pane.bookNumber, pane.chapter);
 
       // Update nav label
       const navLabel = el.querySelector('.commentary-nav-label');
