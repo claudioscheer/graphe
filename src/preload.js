@@ -22,8 +22,6 @@ contextBridge.exposeInMainWorld('api', {
   getChapter: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
   searchVerses: (moduleId, query) => ipcRenderer.invoke('search-verses', moduleId, query),
-  searchVersesSemantic: (moduleId, query, opts) =>
-    ipcRenderer.invoke('search-verses-semantic', moduleId, query, opts),
   getDictionaryEntry: (moduleId, topic) =>
     ipcRenderer.invoke('get-dictionary-entry', moduleId, topic),
   lookupAllStrongDicts: (topic, allowedModuleIds) =>
@@ -32,12 +30,6 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('search-dictionary-topics', moduleId, prefix, limit),
   getDictionaryCognates: (moduleId, strongsNumber) =>
     ipcRenderer.invoke('get-dictionary-cognates', moduleId, strongsNumber),
-  searchVersesHybrid: (moduleId, query, opts) =>
-    ipcRenderer.invoke('search-verses-hybrid', moduleId, query, opts),
-  getSemanticIndexStatus: (moduleId) => ipcRenderer.invoke('semantic-index-status', moduleId),
-  buildSemanticIndex: (moduleId) => ipcRenderer.invoke('semantic-index-build', moduleId),
-  getSemanticIndexProgress: (jobId) => ipcRenderer.invoke('semantic-index-progress', jobId),
-  cancelSemanticIndexBuild: (jobId) => ipcRenderer.invoke('semantic-index-cancel', jobId),
   getCrossReferences: (book, chapter, allowedModuleIds) =>
     ipcRenderer.invoke('get-cross-references', book, chapter, allowedModuleIds),
   getCommentary: (moduleId, bookNumber, chapter) =>

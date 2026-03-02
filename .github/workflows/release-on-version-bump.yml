@@ -114,6 +114,7 @@ jobs:
             '.exe',
             '.msi',
             '.pkg',
+            '.zip',
           ]);
 
           function walk(dir) {

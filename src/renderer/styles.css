@@ -704,26 +704,6 @@
   margin-top: 1px;
 }
 
-.semantic-result-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.35;
-  white-space: nowrap;
-  color: var(--ui-accent-ink);
-  background: var(--ui-accent-bg);
-  border: 1px solid var(--ui-border-strong);
-}
-
-.dark .semantic-result-badge {
-  color: var(--ui-border-strong);
-  background: rgb(var(--ui-link-strong-rgb) / 0.28);
-  border-color: rgb(var(--ui-link-soft-rgb) / 0.35);
-}
-
 /* Dictionary panel */
 #dict-panel {
   display: flex;
@@ -1368,7 +1348,6 @@ el {
 }
 
 #settings-strongs-list .settings-checkbox-option input[type='checkbox'],
-#settings-semantic-enable,
 #settings-pinned-ref-modal {
   flex: 0 0 auto;
   margin-top: 1px;

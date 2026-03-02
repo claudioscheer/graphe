@@ -2,18 +2,14 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const Database = require('better-sqlite3');
-const semanticIndex = require('./semantic-index');
 
 const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
 const dbs = new Map();
-const modulePaths = new Map();
 const dictColumnCache = new Map();
 
 function init() {
   // Only load modules explicitly installed in ~/.graphe/modules/
   fs.mkdirSync(MODULES_DIR, { recursive: true });
-
-  semanticIndex.init();
 
   // Scan and open all modules
   loadAll();
@@ -26,7 +22,6 @@ function loadAll() {
     } catch (_) {}
   }
   dbs.clear();
-  modulePaths.clear();
   dictColumnCache.clear();
 
   for (const file of fs.readdirSync(MODULES_DIR)) {
@@ -36,7 +31,6 @@ function loadAll() {
         const db = new Database(filePath, { readonly: true });
         const id = path.basename(file, path.extname(file));
         dbs.set(id, db);
-        modulePaths.set(id, filePath);
       } catch (err) {
         console.error(`Failed to open module ${file}:`, err.message);
       }
@@ -48,12 +42,6 @@ function getDb(moduleId) {
   const db = dbs.get(moduleId);
   if (!db) throw new Error(`Module not found: ${moduleId}`);
   return db;
-}
-
-function getModulePath(moduleId) {
-  const modulePath = modulePaths.get(moduleId);
-  if (!modulePath) throw new Error(`Module not found: ${moduleId}`);
-  return modulePath;
 }
 
 function hasDictionaryTable(db) {
@@ -81,19 +69,6 @@ function hasCommentaryTable(db) {
   } catch (_) {
     return false;
   }
-}
-
-function cleanVerseText(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/<n>[\s\S]*?<\/n>/gi, '')
-    .replace(/<pb\s*\/?>/gi, ' ')
-    .replace(/<S>[\s\S]*?<\/S>/gi, ' ')
-    .replace(/<f>[\s\S]*?<\/f>/gi, ' ')
-    .replace(/<i>([\s\S]*?)<\/i>/gi, '$1')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function parseSearchQuery(query) {
@@ -155,27 +130,7 @@ function lexicalSearch(moduleId, query, opts = {}) {
     .all();
 }
 
-function scoreLexical(row, parsed) {
-  const verseText = cleanVerseText(row.text).toLowerCase();
-  let matched = 0;
-  let total = 0;
-
-  for (const { number } of parsed.strongs) {
-    total += 1;
-    const pattern = `<S>${String(number)}</S>`;
-    if (String(row.text).includes(pattern)) matched += 1;
-  }
-
-  for (const term of parsed.textTerms) {
-    total += 1;
-    if (verseText.includes(String(term).toLowerCase())) matched += 1;
-  }
-
-  if (total === 0) return 0;
-  return matched / total;
-}
-
-const SUPPORTED_TYPES = new Set(['bible', 'dictionary', 'commentary']);
+const SUPPORTED_TYPES = new Set(['bible', 'dictionary', 'commentary', 'crossreference']);
 
 function getModules() {
   const result = [];
@@ -317,154 +272,6 @@ function searchVerses(moduleId, query) {
   return lexicalSearch(moduleId, query);
 }
 
-async function searchVersesSemantic(moduleId, query, opts = {}) {
-  const parsed = parseSearchQuery(query);
-  if (parsed.textTerms.length === 0) {
-    return { ready: true, mode: 'empty', results: [] };
-  }
-
-  const modulePath = getModulePath(moduleId);
-  const semanticLimit = Number.isFinite(opts.limit) ? opts.limit : 5;
-  const semanticResponse = await semanticIndex.search(moduleId, parsed.textPart, {
-    modulePath,
-    limit: Math.max(1, semanticLimit),
-  });
-
-  if (!semanticResponse.ready) {
-    return { ready: false, mode: 'unavailable', reason: semanticResponse.reason, results: [] };
-  }
-
-  const sorted = [...semanticResponse.results].sort((a, b) => {
-    if (a.bookNumber !== b.bookNumber) return a.bookNumber - b.bookNumber;
-    if (a.chapter !== b.chapter) return a.chapter - b.chapter;
-    return a.verse - b.verse;
-  });
-
-  return { ready: true, mode: 'semantic', results: sorted.slice(0, Math.max(1, semanticLimit)) };
-}
-
-async function searchVersesHybrid(moduleId, query, opts = {}) {
-  const parsed = parseSearchQuery(query);
-  if (parsed.strongs.length === 0 && parsed.textTerms.length === 0) {
-    return { mode: 'empty', results: [] };
-  }
-
-  const lexicalLimit = Number.isFinite(opts.lexicalLimit) ? opts.lexicalLimit : 300;
-  const semanticLimit = Number.isFinite(opts.semanticLimit) ? opts.semanticLimit : 300;
-  const finalLimit = Number.isFinite(opts.limit) ? opts.limit : 200;
-
-  const lexicalResults = lexicalSearch(moduleId, query, { limit: lexicalLimit });
-
-  if (parsed.textTerms.length === 0) {
-    return {
-      mode: 'lexical-only',
-      results: lexicalResults.slice(0, finalLimit).map((row) => ({
-        ...row,
-        source: 'lexical',
-        score: 1,
-      })),
-    };
-  }
-
-  const modulePath = getModulePath(moduleId);
-  const semanticResponse = await semanticIndex.search(moduleId, parsed.textPart, {
-    modulePath,
-    limit: semanticLimit,
-  });
-
-  if (!semanticResponse.ready) {
-    return {
-      mode: 'lexical-fallback',
-      reason: semanticResponse.reason,
-      results: lexicalResults.slice(0, finalLimit).map((row) => ({
-        ...row,
-        source: 'lexical',
-        score: scoreLexical(row, parsed),
-      })),
-    };
-  }
-
-  const map = new Map();
-
-  for (const row of lexicalResults) {
-    const key = `${row.bookNumber}:${row.chapter}:${row.verse}`;
-    map.set(key, {
-      bookNumber: row.bookNumber,
-      chapter: row.chapter,
-      verse: row.verse,
-      text: row.text,
-      lexicalScore: scoreLexical(row, parsed),
-      semanticScore: 0,
-    });
-  }
-
-  for (const row of semanticResponse.results) {
-    const key = `${row.bookNumber}:${row.chapter}:${row.verse}`;
-    const existing = map.get(key);
-    if (existing) {
-      existing.semanticScore = Math.max(existing.semanticScore, row.semanticScore || 0);
-    } else {
-      map.set(key, {
-        bookNumber: row.bookNumber,
-        chapter: row.chapter,
-        verse: row.verse,
-        text: row.text,
-        lexicalScore: 0,
-        semanticScore: row.semanticScore || 0,
-      });
-    }
-  }
-
-  const ranked = Array.from(map.values())
-    .map((row) => {
-      const finalScore = 0.55 * row.lexicalScore + 0.45 * row.semanticScore;
-      let source = 'hybrid';
-      if (row.lexicalScore > 0 && row.semanticScore === 0) source = 'lexical';
-      if (row.lexicalScore === 0 && row.semanticScore > 0) source = 'semantic';
-
-      return {
-        bookNumber: row.bookNumber,
-        chapter: row.chapter,
-        verse: row.verse,
-        text: row.text,
-        source,
-        score: finalScore,
-      };
-    })
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (a.bookNumber !== b.bookNumber) return a.bookNumber - b.bookNumber;
-      if (a.chapter !== b.chapter) return a.chapter - b.chapter;
-      return a.verse - b.verse;
-    })
-    .slice(0, finalLimit);
-
-  let mode = 'hybrid';
-  if (ranked.length > 0 && ranked.every((r) => r.source === 'semantic')) mode = 'semantic-only';
-  else if (ranked.length > 0 && ranked.every((r) => r.source === 'lexical')) mode = 'lexical-only';
-
-  return { mode, results: ranked };
-}
-
-function getSemanticIndexStatus(moduleId) {
-  if (moduleId) {
-    return semanticIndex.getStatus(moduleId, getModulePath(moduleId));
-  }
-  return semanticIndex.getStatus();
-}
-
-function buildSemanticIndex(moduleId) {
-  return semanticIndex.startBuild(moduleId, getModulePath(moduleId));
-}
-
-function getSemanticIndexProgress(jobId) {
-  return semanticIndex.getProgress(String(jobId));
-}
-
-function cancelSemanticIndexBuild(jobId) {
-  return semanticIndex.cancelBuild(String(jobId));
-}
-
 function getCrossReferences(moduleId, book, chapter) {
   const db = getDb(moduleId);
   return db
@@ -522,16 +329,10 @@ module.exports = {
   getChapterCount,
   getChapter,
   searchVerses,
-  searchVersesSemantic,
-  searchVersesHybrid,
   getDictionaryEntry,
   lookupAllStrongDicts,
   searchDictionaryTopics,
   getDictionaryCognates,
-  getSemanticIndexStatus,
-  buildSemanticIndex,
-  getSemanticIndexProgress,
-  cancelSemanticIndexBuild,
   getCrossReferences,
   lookupAllCrossRefModules,
   getCommentary,
