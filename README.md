@@ -6,6 +6,8 @@ O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise p
 
 Disponível para **Windows**, **Linux** e **macOS**.
 
+![Screenshot do Graphe](assets/demo/demo.png)
+
 ## Download
 
 Baixe a versão mais recente para o seu sistema operacional na página de [releases](https://github.com/claudioscheer/graphe/releases/latest).
