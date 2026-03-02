@@ -295,7 +295,9 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
+  // In development, Electron launched by Forge does not need a dock icon override.
+  // Skipping this avoids noisy warnings and keeps startup on the safest code path.
+  if (app.isPackaged && process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
     const dockIconPath = fs.existsSync(macDockIconPath) ? macDockIconPath : windowIconPath;
     if (fs.existsSync(dockIconPath)) {
       try {

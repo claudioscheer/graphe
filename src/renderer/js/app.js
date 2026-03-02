@@ -388,14 +388,19 @@ window.api.onSplitVCommentary(() => PaneManager.splitActivePaneWithType('v', 'co
 
 const LoadingScreen = (() => {
   const el = document.getElementById('app-loading-screen');
+  const HIDE_DELAY_MS = 1000;
+  let hideScheduled = false;
 
   function hide() {
-    if (!el) return;
-    el.classList.add('is-hidden');
-    el.setAttribute('aria-busy', 'false');
+    if (!el || hideScheduled) return;
+    hideScheduled = true;
     setTimeout(() => {
-      if (el && el.parentElement) el.parentElement.removeChild(el);
-    }, 240);
+      el.classList.add('is-hidden');
+      el.setAttribute('aria-busy', 'false');
+      setTimeout(() => {
+        if (el && el.parentElement) el.parentElement.removeChild(el);
+      }, 240);
+    }, HIDE_DELAY_MS);
   }
 
   return { hide };
