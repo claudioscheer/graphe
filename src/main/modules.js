@@ -321,8 +321,42 @@ function getCommentaryBooks(moduleId) {
     .map((r) => r.bookNumber);
 }
 
+function isValidModule(filePath) {
+  try {
+    const db = new Database(filePath, { readonly: true });
+    try {
+      // Check for at least one known module table
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('verses','dictionary','commentaries','cross_references')"
+      ).all();
+      return tables.length > 0;
+    } finally {
+      db.close();
+    }
+  } catch (_) {
+    return false;
+  }
+}
+
+function installFiles(filePaths) {
+  const skipped = [];
+  let copied = 0;
+  for (const src of filePaths) {
+    if (!isValidModule(src)) {
+      skipped.push(path.basename(src));
+      continue;
+    }
+    const dest = path.join(MODULES_DIR, path.basename(src));
+    fs.copyFileSync(src, dest);
+    copied++;
+  }
+  if (copied > 0) loadAll();
+  return { copied, skipped };
+}
+
 module.exports = {
   init,
+  installFiles,
   getModules,
   getBooks,
   getAllBooks,

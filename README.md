@@ -49,17 +49,23 @@ Baixe a versão mais recente para o seu sistema operacional na página de [relea
 
 #### Instalando módulos
 
-Copie os arquivos `.SQLite3` para a pasta de módulos do Graphe:
+Use o instalador de módulos do próprio Graphe:
 
-| Sistema  | Caminho                          |
-| -------- | -------------------------------- |
-| Linux    | `~/.graphe/modules/`            |
-| macOS    | `~/.graphe/modules/`            |
-| Windows  | `%USERPROFILE%\.graphe\modules\` |
+1. Abra o menu **File > Install Modules...** (ou clique em **Instalar Módulos** quando o app não encontrar módulos bíblicos).
+2. Selecione um ou mais arquivos de módulo do theWord (`.SQLite3`/SQLite válidos).
+3. O Graphe instala os módulos automaticamente e recarrega a interface quando a instalação for concluída.
+
+Os arquivos selecionados são copiados automaticamente para a pasta de módulos do Graphe:
+
+| Sistema  | Caminho                           |
+| -------- | --------------------------------- |
+| Linux    | `~/.graphe/modules/`              |
+| macOS    | `~/.graphe/modules/`              |
+| Windows  | `%USERPROFILE%\\.graphe\\modules\\` |
 
 O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
 
-Após copiar os módulos, reinicie o app e acesse as **Configurações** para verificar e organizar os módulos instalados.
+Após a instalação, acesse as **Configurações** para verificar e organizar os módulos instalados.
 
 ### Pesquisa
 

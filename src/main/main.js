@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron');
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
@@ -117,6 +117,25 @@ function checkForUpdates() {
     });
 }
 
+async function installModulesFromDialog() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'All Files', extensions: ['*'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return;
+  const installed = modules.installFiles(result.filePaths);
+  if (installed.skipped.length > 0) {
+    dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: 'Install Modules',
+      message: `Skipped ${installed.skipped.length} invalid file(s):\n${installed.skipped.join('\n')}`,
+    });
+  }
+  if (installed.copied > 0 && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reloadIgnoringCache();
+  }
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const openAboutDialog = () => {
@@ -165,6 +184,10 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Install Modules...',
+          click: () => installModulesFromDialog(),
+        },
         settingsMenuItem,
         { type: 'separator' },
         ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }]),
@@ -280,6 +303,8 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
   ]);
   menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
 });
+
+ipcMain.on('install-modules', () => installModulesFromDialog());
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 

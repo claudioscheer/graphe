@@ -53,4 +53,5 @@ contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   onUpdateAvailable: (callback) => setSingleListener('update-available', callback),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  installModules: () => ipcRenderer.send('install-modules'),
 });

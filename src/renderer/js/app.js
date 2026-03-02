@@ -99,12 +99,23 @@ function renderNoModulesMessage() {
   if (!paneRoot) return;
 
   paneRoot.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.id = 'no-modules-message';
+  wrapper.className = 'flex flex-col items-center justify-center h-full gap-4 text-brand-600 dark:text-night-300 text-lg';
+
   const message = document.createElement('div');
-  message.id = 'no-modules-message';
-  message.className = 'flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg';
   message.setAttribute('data-i18n', 'noModules');
   message.textContent = I18n.t('noModules');
-  paneRoot.appendChild(message);
+  wrapper.appendChild(message);
+
+  const btn = document.createElement('button');
+  btn.setAttribute('data-i18n', 'installModules');
+  btn.textContent = I18n.t('installModules');
+  btn.className = 'text-brand-600 dark:text-night-300 underline cursor-pointer hover:opacity-80';
+  btn.addEventListener('click', () => window.api.installModules());
+  wrapper.appendChild(btn);
+
+  paneRoot.appendChild(wrapper);
 }
 
 /** Settings dialog — theme + language controls */
