@@ -1,5 +1,6 @@
 {
   "name": "graphe-bible",
+  "productName": "Graphe",
   "version": "1.0.2",
   "description": "A modern Bible study app with split panes and Strong's numbers",
   "author": "Claudio Scheer",

@@ -287,6 +287,51 @@
       </div>
     </div>
 
+    <!-- About dialog -->
+    <div
+      id="about-overlay"
+      class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+    >
+      <div
+        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[380px] max-w-[92vw] flex flex-col overflow-hidden items-center text-center p-8"
+      >
+        <img src="../../assets/graphe-full.png" alt="Graphe" class="h-20 mb-4" />
+        <p id="about-version" class="text-sm text-brand-600 dark:text-night-300 mt-1"></p>
+        <p class="text-sm text-brand-600 dark:text-night-300 mt-1">Claudio Scheer</p>
+        <p
+          class="text-sm text-brand-600 dark:text-night-300 mt-3"
+          data-i18n="aboutOpenSource"
+        >
+          Graphe is free and open-source. Contributions are welcome!
+        </p>
+        <div class="flex gap-4 mt-5">
+          <button
+            id="about-link-repo"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            type="button"
+          >
+            GitHub
+          </button>
+          <button
+            id="about-link-issues"
+            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            data-i18n="reportIssue"
+            type="button"
+          >
+            Report Issue
+          </button>
+        </div>
+        <button
+          id="about-close"
+          class="mt-5 px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+          data-i18n="close"
+          type="button"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+
     <script src="js/i18n.js"></script>
     <script src="../../node_modules/lucide/dist/umd/lucide.min.js"></script>
     <script src="js/icons.js"></script>

@@ -87,6 +87,9 @@ const I18n = (() => {
       commentarySyncNone: 'Nenhum',
       noCommentaryModules: 'Nenhum módulo de comentário encontrado.',
       commentaryUnavailable: 'Comentário indisponível para este capítulo.',
+      aboutTitle: 'Sobre o Graphe',
+      aboutOpenSource: 'Graphe é gratuito e de código aberto. Contribuições são bem-vindas!',
+      reportIssue: 'Reportar problema',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -171,6 +174,9 @@ const I18n = (() => {
       commentarySyncNone: 'None',
       noCommentaryModules: 'No commentary modules found.',
       commentaryUnavailable: 'Commentary unavailable for this chapter.',
+      aboutTitle: 'About Graphe',
+      aboutOpenSource: 'Graphe is free and open-source. Contributions are welcome!',
+      reportIssue: 'Report Issue',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -256,6 +262,9 @@ const I18n = (() => {
       commentarySyncNone: 'Ninguno',
       noCommentaryModules: 'No se encontraron módulos de comentario.',
       commentaryUnavailable: 'Comentario no disponible para este capítulo.',
+      aboutTitle: 'Acerca de Graphe',
+      aboutOpenSource: 'Graphe es gratuito y de código abierto. ¡Las contribuciones son bienvenidas!',
+      reportIssue: 'Reportar problema',
     },
   };
 

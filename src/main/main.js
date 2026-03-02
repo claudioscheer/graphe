@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const modules = require('./modules');
@@ -134,6 +134,28 @@ function buildMenu() {
       ],
     },
     { role: 'windowMenu' },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About Graphe',
+          click: () => {
+            if (isMac) {
+              app.showAboutPanel();
+            } else if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('open-about');
+            }
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Report Issue',
+          click: () => {
+            shell.openExternal('https://github.com/claudioscheer/graphe/issues');
+          },
+        },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -164,11 +186,30 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
   menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
 });
 
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('open-external', (_event, url) => {
+  const allowed = [
+    'https://github.com/claudioscheer/graphe',
+    'https://github.com/claudioscheer/graphe/issues',
+  ];
+  if (allowed.some((prefix) => url === prefix || url.startsWith(prefix + '/'))) {
+    return shell.openExternal(url);
+  }
+});
+
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    app.setAboutPanelOptions({
+      applicationName: 'Graphe',
+      applicationVersion: app.getVersion(),
+      copyright: 'Claudio Scheer',
+      iconPath: windowIconPath,
+    });
+  }
+
   if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
-    const dockIconPath = fs.existsSync(macDockIconPath) && fs.existsSync(macDockIconPath)
-      ? macDockIconPath
-      : windowIconPath;
+    const dockIconPath = fs.existsSync(macDockIconPath) ? macDockIconPath : windowIconPath;
     if (fs.existsSync(dockIconPath)) {
       try {
         app.dock.setIcon(dockIconPath);

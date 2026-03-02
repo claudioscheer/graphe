@@ -500,6 +500,59 @@ window.showTooltip = function (paneId, message) {
   }, 2500);
 };
 
+const AboutDialog = (() => {
+  const overlay = document.getElementById('about-overlay');
+  const closeBtn = document.getElementById('about-close');
+  const versionEl = document.getElementById('about-version');
+  const repoBtn = document.getElementById('about-link-repo');
+  const issuesBtn = document.getElementById('about-link-issues');
+
+  let versionLoaded = false;
+
+  function isOpen() {
+    return !!overlay && !overlay.classList.contains('hidden');
+  }
+
+  async function open() {
+    if (!overlay) return;
+    if (!versionLoaded) {
+      try {
+        const version = await window.api.getAppVersion();
+        if (versionEl) versionEl.textContent = `v${version}`;
+      } catch (_) {
+        /* ignore */
+      }
+      versionLoaded = true;
+    }
+    overlay.classList.remove('hidden');
+  }
+
+  function close() {
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+  }
+
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+  }
+  if (repoBtn) {
+    repoBtn.addEventListener('click', () => {
+      window.api.openExternal('https://github.com/claudioscheer/graphe');
+    });
+  }
+  if (issuesBtn) {
+    issuesBtn.addEventListener('click', () => {
+      window.api.openExternal('https://github.com/claudioscheer/graphe/issues');
+    });
+  }
+
+  return { open, close, isOpen };
+})();
+
+window.api.onOpenAbout(() => AboutDialog.open());
 window.api.onOpenSettings(() => Settings.open());
 window.api.onSplitH(() => PaneManager.splitActivePane('h'));
 window.api.onSplitV(() => PaneManager.splitActivePane('v'));
@@ -686,7 +739,12 @@ document.addEventListener('click', (e) => {
     const target = PaneManager.getNavigationTarget(paneId);
     const pinnedTarget = PaneManager.getLinkTargetPaneId();
     const openPinnedRefsInModal = AppStateStore.getSettings().openPinnedRefsInModal === true;
-    if (openPinnedRefsInModal && pinnedTarget && paneId === pinnedTarget && target === pinnedTarget) {
+    if (
+      openPinnedRefsInModal &&
+      pinnedTarget &&
+      paneId === pinnedTarget &&
+      target === pinnedTarget
+    ) {
       const targetPane = PaneManager.getPane(target);
       if (targetPane && targetPane.paneType === 'bible') {
         CrossRefPreview.open({
@@ -719,10 +777,10 @@ document.addEventListener('click', (e) => {
     if (!m) return;
     // Canonical book_number values in Protestant Bible order (1-66 → internal IDs)
     const CANONICAL_BOOK_IDS = [
-      10,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,190,220,
-      230,240,250,260,290,300,310,330,340,350,360,370,380,390,400,410,
-      420,430,440,450,460,470,480,490,500,510,520,530,540,550,560,570,
-      580,590,600,610,620,630,640,650,660,670,680,690,700,710,720,730
+      10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240,
+      250, 260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460,
+      470, 480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650,
+      660, 670, 680, 690, 700, 710, 720, 730,
     ];
     let bookNumber = parseInt(m[1], 10);
     if (hashMatch) {
@@ -791,7 +849,14 @@ document.addEventListener('keydown', (e) => {
   const overlayOpen =
     !document.getElementById('settings-overlay').classList.contains('hidden') ||
     !document.getElementById('nav-overlay').classList.contains('hidden') ||
-    CrossRefPreview.isOpen();
+    CrossRefPreview.isOpen() ||
+    AboutDialog.isOpen();
+
+  if (e.key === 'Escape' && AboutDialog.isOpen()) {
+    e.preventDefault();
+    AboutDialog.close();
+    return;
+  }
 
   if (e.key === 'Escape' && CrossRefPreview.isOpen()) {
     e.preventDefault();
