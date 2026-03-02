@@ -69,6 +69,8 @@ const I18n = (() => {
       aboutTitle: 'Sobre o Graphe',
       aboutOpenSource: 'Graphe é gratuito e de código aberto. Contribuições são bem-vindas!',
       reportIssue: 'Reportar problema',
+      updateAvailable: 'Graphe {version} disponível!',
+      updateDownload: 'Baixar',
     },
     en: {
       oldTestament: 'Old Testament',
@@ -135,6 +137,8 @@ const I18n = (() => {
       aboutTitle: 'About Graphe',
       aboutOpenSource: 'Graphe is free and open-source. Contributions are welcome!',
       reportIssue: 'Report Issue',
+      updateAvailable: 'Graphe {version} is available!',
+      updateDownload: 'Download',
     },
     es: {
       oldTestament: 'Antiguo Testamento',
@@ -203,6 +207,8 @@ const I18n = (() => {
       aboutOpenSource:
         'Graphe es gratuito y de código abierto. ¡Las contribuciones son bienvenidas!',
       reportIssue: 'Reportar problema',
+      updateAvailable: 'Graphe {version} disponible!',
+      updateDownload: 'Descargar',
     },
   };
 

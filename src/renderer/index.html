@@ -14,6 +14,12 @@
   <body
     class="bg-brand-50 dark:bg-night-900 text-brand-900 dark:text-night-50 overflow-hidden h-screen flex flex-col"
   >
+    <div id="update-banner" class="update-banner hidden">
+      <span id="update-banner-text"></span>
+      <button id="update-banner-link" class="update-banner-link" data-i18n="updateDownload">Download</button>
+      <button id="update-banner-close" class="update-banner-close" type="button" aria-label="Close">&times;</button>
+    </div>
+
     <div id="app-loading-screen" class="app-loading-screen" aria-live="polite" aria-busy="true">
       <img src="../../assets/graphe-full.png" alt="Graphe" class="app-loading-logo" />
     </div>

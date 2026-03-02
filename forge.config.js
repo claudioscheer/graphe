@@ -7,6 +7,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     icon: appIconBase,
+    executableName: 'graphe-bible',
   },
   makers: [
     {

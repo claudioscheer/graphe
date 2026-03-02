@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const modules = require('./modules');
@@ -64,7 +65,56 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
     mainWindow.show();
+    setTimeout(() => checkForUpdates(), 3000);
   });
+}
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na < nb) return -1;
+    if (na > nb) return 1;
+  }
+  return 0;
+}
+
+function checkForUpdates() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!require('electron').net.isOnline()) return;
+
+  const options = {
+    hostname: 'api.github.com',
+    path: '/repos/claudioscheer/graphe/releases/latest',
+    headers: { 'User-Agent': `Graphe/${app.getVersion()}` },
+  };
+
+  https
+    .get(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try {
+          const release = JSON.parse(data);
+          const tag = (release.tag_name || '').replace(/^v/, '');
+          if (tag && compareVersions(app.getVersion(), tag) < 0) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('update-available', {
+                version: tag,
+                url: release.html_url,
+              });
+            }
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    })
+    .on('error', () => {
+      /* ignore */
+    });
 }
 
 function buildMenu() {
@@ -201,6 +251,7 @@ ipcMain.handle('open-external', (_event, url) => {
   const allowed = [
     'https://github.com/claudioscheer/graphe',
     'https://github.com/claudioscheer/graphe/issues',
+    'https://github.com/claudioscheer/graphe/releases',
   ];
   if (allowed.some((prefix) => url === prefix || url.startsWith(prefix + '/'))) {
     return shell.openExternal(url);

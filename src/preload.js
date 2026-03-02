@@ -51,5 +51,6 @@ contextBridge.exposeInMainWorld('api', {
   onStrongsLookup: (callback) => setSingleListener('strongs-lookup', callback),
   onOpenAbout: (callback) => setSingleListener('open-about', callback),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateAvailable: (callback) => setSingleListener('update-available', callback),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });
