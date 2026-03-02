@@ -119,9 +119,25 @@ function checkForUpdates() {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const settingsMenuItem = {
+    label: 'Settings',
+    accelerator: 'CmdOrCtrl+,',
+    click: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('open-settings');
+      }
+    },
+  };
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
-    { role: 'fileMenu' },
+    {
+      label: 'File',
+      submenu: [
+        settingsMenuItem,
+        { type: 'separator' },
+        ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }]),
+      ],
+    },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -179,16 +195,6 @@ function buildMenu() {
               },
             },
           ],
-        },
-        { type: 'separator' },
-        {
-          label: 'Settings',
-          accelerator: 'CmdOrCtrl+,',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('open-settings');
-            }
-          },
         },
       ],
     },

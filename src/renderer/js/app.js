@@ -94,6 +94,19 @@ const AppStateStore = (() => {
   };
 })();
 
+function renderNoModulesMessage() {
+  const paneRoot = document.getElementById('pane-root');
+  if (!paneRoot) return;
+
+  paneRoot.innerHTML = '';
+  const message = document.createElement('div');
+  message.id = 'no-modules-message';
+  message.className = 'flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg';
+  message.setAttribute('data-i18n', 'noModules');
+  message.textContent = I18n.t('noModules');
+  paneRoot.appendChild(message);
+}
+
 /** Settings dialog — theme + language controls */
 const Settings = (() => {
   const html = document.documentElement;
@@ -141,6 +154,10 @@ const Settings = (() => {
     overlay.classList.add('hidden');
   }
 
+  function isOpen() {
+    return !overlay.classList.contains('hidden');
+  }
+
   function init(initialSettings) {
     const initialTheme = initialSettings.theme || localStorage.getItem('graphe-theme');
     const initialLang = initialSettings.language || localStorage.getItem('graphe-lang') || 'pt';
@@ -183,7 +200,9 @@ const Settings = (() => {
     I18n.setLang(language);
     localStorage.setItem('graphe-lang', language);
     AppStateStore.setSettings({ language });
-    PaneManager.render();
+    if (!document.getElementById('no-modules-message')) {
+      PaneManager.render();
+    }
     updateThemeLabel();
   });
 
@@ -273,6 +292,7 @@ const Settings = (() => {
   return {
     open,
     close,
+    isOpen,
     init,
     initStrongsDicts,
     initCrossRefModules,
@@ -671,6 +691,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && Settings.isOpen()) {
+    e.preventDefault();
+    Settings.close();
+    return;
+  }
+
   if (e.key === 'F' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.preventDefault();
     SearchPanel.focusInput();
@@ -747,10 +773,7 @@ document.addEventListener('keydown', (e) => {
     const commentaryModulesList = modules.filter((m) => m.type === 'commentary');
 
     if (bibleModules.length === 0) {
-      document.getElementById('pane-root').innerHTML =
-        '<div class="flex items-center justify-center h-full text-brand-600 dark:text-night-300 text-lg">' +
-        I18n.t('noModules') +
-        '</div>';
+      renderNoModulesMessage();
       return;
     }
 

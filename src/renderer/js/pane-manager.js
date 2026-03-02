@@ -408,6 +408,7 @@ const PaneManager = (() => {
 
   function render() {
     const r = root();
+    if (!tree) return;
     r.innerHTML = '';
     const el = renderNode(tree);
     r.appendChild(el);
