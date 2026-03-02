@@ -1,10 +1,14 @@
 # Graphe
 
-Uma alternativa moderna ao [theWord](https://www.theword.net/) para estudo bíblico, construída com Electron.
+Uma alternativa moderna e muito simplificada ao [theWord](https://www.theword.net/) para estudo bíblico.
 
 O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.
 
 Disponível para **Windows**, **Linux** e **macOS**.
+
+## Download
+
+Baixe a versão mais recente para o seu sistema operacional na página de [releases](https://github.com/claudioscheer/graphe/releases/latest).
 
 ## Funcionalidades
 
@@ -43,13 +47,17 @@ Disponível para **Windows**, **Linux** e **macOS**.
 
 #### Instalando módulos
 
-Copie os arquivos `.SQLite3` para a pasta de módulos e reinicie o app:
+Copie os arquivos `.SQLite3` para a pasta de módulos do Graphe:
 
-```
-~/.graphe/modules/
-```
+| Sistema  | Caminho                          |
+| -------- | -------------------------------- |
+| Linux    | `~/.graphe/modules/`            |
+| macOS    | `~/.graphe/modules/`            |
+| Windows  | `%USERPROFILE%\.graphe\modules\` |
 
 O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
+
+Após copiar os módulos, reinicie o app e acesse as **Configurações** para verificar e organizar os módulos instalados.
 
 ### Pesquisa
 

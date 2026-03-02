@@ -1,3 +1,2 @@
 - onboarding first time the user opens the app
 - show original text below
-- show there is a new version and redirect to it
