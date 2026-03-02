@@ -1,6 +1,3 @@
 - onboarding first time the user opens the app
 - show original text below
-- add about in menu context with version and link to github issues
-- name of the app is showing as graphe-bible and not as Graphe
 - show there is a new version and redirect to it
-- mac icon not working when installing

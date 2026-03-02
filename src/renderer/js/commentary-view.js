@@ -41,18 +41,24 @@ const CommentaryView = (() => {
   }
 
   /**
-   * Sanitize commentary HTML — adjust internal links and clean up.
+   * Sanitize commentary HTML — full sanitization then convert bible reference links.
    */
   function sanitizeCommentaryHtml(html) {
-    // Remove script tags for safety
-    let safe = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-    // Convert bible reference links to spans, preserving href as data-bhref
-    // Handles both B:<book> <ch>:<vs> and #b<book>.<ch>.<vs> formats
-    safe = safe.replace(
-      /<a\b[^>]*href=['"]((?:[Bb]:|#b)[^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi,
-      (_, href, text) => `<span class="commentary-ref" data-bhref="${href}">${text}</span>`
-    );
-    return safe;
+    const safe = Sanitize.sanitizeHtml(html);
+    // Convert bible reference <a> tags to <span> using DOM manipulation
+    // to avoid attribute-injection risks from string interpolation.
+    const doc = new DOMParser().parseFromString(safe, 'text/html');
+    for (const a of [...doc.querySelectorAll('a[href]')]) {
+      const href = a.getAttribute('href') || '';
+      if (/^(?:[Bb]:|#b)/.test(href)) {
+        const span = doc.createElement('span');
+        span.className = 'commentary-ref';
+        span.dataset.bhref = href;
+        span.innerHTML = a.innerHTML;
+        a.replaceWith(span);
+      }
+    }
+    return doc.body.innerHTML;
   }
 
   /**

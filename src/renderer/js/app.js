@@ -642,11 +642,11 @@ document.addEventListener('contextmenu', (e) => {
 
 window.api.onContextMenuCopy(() => copySelectedVerses());
 
-window.api.onStrongsSearch((_event, { strongsNumber, paneId }) => {
+window.api.onStrongsSearch(({ strongsNumber, paneId }) => {
   SearchPanel.search(`strong:${strongsNumber}`);
 });
 
-window.api.onStrongsLookup((_event, { strongsNumber, paneId }) => {
+window.api.onStrongsLookup(({ strongsNumber, paneId }) => {
   DictPanel.lookup(strongsNumber);
 });
 

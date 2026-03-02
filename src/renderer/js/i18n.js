@@ -200,7 +200,8 @@ const I18n = (() => {
       noCommentaryModules: 'No se encontraron módulos de comentario.',
       commentaryUnavailable: 'Comentario no disponible para este capítulo.',
       aboutTitle: 'Acerca de Graphe',
-      aboutOpenSource: 'Graphe es gratuito y de código abierto. ¡Las contribuciones son bienvenidas!',
+      aboutOpenSource:
+        'Graphe es gratuito y de código abierto. ¡Las contribuciones son bienvenidas!',
       reportIssue: 'Reportar problema',
     },
   };

@@ -622,7 +622,8 @@ const PaneManager = (() => {
 
     // Navigation label
     const navLabel = document.createElement('span');
-    navLabel.className = 'commentary-nav-label px-2 py-1 text-sm font-medium text-brand-700 dark:text-night-200';
+    navLabel.className =
+      'commentary-nav-label px-2 py-1 text-sm font-medium text-brand-700 dark:text-night-200';
     navLabel.textContent = '';
 
     const spacer = document.createElement('div');
@@ -654,7 +655,11 @@ const PaneManager = (() => {
       })),
     ];
 
-    if (!pane.syncedToPaneId || !panes[pane.syncedToPaneId] || panes[pane.syncedToPaneId].paneType !== 'bible') {
+    if (
+      !pane.syncedToPaneId ||
+      !panes[pane.syncedToPaneId] ||
+      panes[pane.syncedToPaneId].paneType !== 'bible'
+    ) {
       pane.syncedToPaneId = null;
     }
 
@@ -687,7 +692,9 @@ const PaneManager = (() => {
     const updateSyncTriggerText = () => {
       const selectedValue = pane.syncedToPaneId || '';
       const selectedOption = syncOptions.find((option) => option.value === selectedValue);
-      syncTrigger.textContent = selectedOption ? selectedOption.label : I18n.t('commentarySyncNone');
+      syncTrigger.textContent = selectedOption
+        ? selectedOption.label
+        : I18n.t('commentarySyncNone');
     };
 
     const updateSyncMenuSelection = () => {
@@ -802,8 +809,7 @@ const PaneManager = (() => {
       const startPos = node.direction === 'h' ? e.clientX : e.clientY;
       const container = div.parentElement;
       const firstChild = container.children[0];
-      const startSize =
-        node.direction === 'h' ? firstChild.offsetWidth : firstChild.offsetHeight;
+      const startSize = node.direction === 'h' ? firstChild.offsetWidth : firstChild.offsetHeight;
 
       const onMove = (e2) => {
         const currentContainerSize =
@@ -1266,7 +1272,11 @@ const PaneManager = (() => {
   }
 
   function getNavigationTarget(fallbackPaneId) {
-    if (linkTargetPaneId && panes[linkTargetPaneId] && panes[linkTargetPaneId].paneType === 'bible') {
+    if (
+      linkTargetPaneId &&
+      panes[linkTargetPaneId] &&
+      panes[linkTargetPaneId].paneType === 'bible'
+    ) {
       return linkTargetPaneId;
     }
     if (fallbackPaneId && panes[fallbackPaneId] && panes[fallbackPaneId].paneType === 'bible') {
@@ -1309,14 +1319,23 @@ const PaneManager = (() => {
     const newPaneType = forcePaneType || 'bible';
 
     // For commentary splits, find a bible pane to sync to
-    const syncTarget = newPaneType === 'commentary'
-      ? (orig.paneType === 'bible' ? paneId
-        : (panes[activePaneId]?.paneType === 'bible' ? activePaneId : findFirstBiblePaneId()))
-      : null;
+    const syncTarget =
+      newPaneType === 'commentary'
+        ? orig.paneType === 'bible'
+          ? paneId
+          : panes[activePaneId]?.paneType === 'bible'
+            ? activePaneId
+            : findFirstBiblePaneId()
+        : null;
 
     const newPaneId = createPaneState({
       paneType: newPaneType,
-      moduleId: newPaneType === 'commentary' ? (commentaryModules.length > 0 ? commentaryModules[0].id : null) : orig.moduleId,
+      moduleId:
+        newPaneType === 'commentary'
+          ? commentaryModules.length > 0
+            ? commentaryModules[0].id
+            : null
+          : orig.moduleId,
       bookNumber: orig.bookNumber,
       chapter: orig.chapter,
       syncedToPaneId: syncTarget,

@@ -17,8 +17,9 @@ const Utils = (() => {
   }
 
   function sortCommentaryModules(modules) {
-    return [...modules]
-      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+    return [...modules].sort((a, b) =>
+      a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
+    );
   }
 
   return { escapeHtml, sortBibleModules, sortCommentaryModules };

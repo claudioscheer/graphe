@@ -9,8 +9,9 @@ function setSingleListener(channel, callback) {
     listenerRegistry.delete(channel);
   }
   if (typeof callback !== 'function') return;
-  ipcRenderer.on(channel, callback);
-  listenerRegistry.set(channel, callback);
+  const wrapper = (_event, ...args) => callback(...args);
+  ipcRenderer.on(channel, wrapper);
+  listenerRegistry.set(channel, wrapper);
 }
 
 contextBridge.exposeInMainWorld('api', {
