@@ -712,9 +712,24 @@ document.addEventListener('click', (e) => {
   if (commentaryRef) {
     e.preventDefault();
     const raw = decodeURIComponent(commentaryRef.dataset.bhref.trim());
-    const m = raw.match(/^B:(\d+)\s+(\d+):(\d+)/i);
+    // Parse "B:<book> <ch>:<vs>" or "#b<book>.<ch>.<vs>" formats
+    const bMatch = raw.match(/^B:(\d+)\s+(\d+):(\d+)/i);
+    const hashMatch = raw.match(/^#b(\d+)\.(\d+)\.(\d+)/i);
+    const m = bMatch || hashMatch;
     if (!m) return;
-    const bookNumber = parseInt(m[1], 10);
+    // Canonical book_number values in Protestant Bible order (1-66 → internal IDs)
+    const CANONICAL_BOOK_IDS = [
+      10,20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,190,220,
+      230,240,250,260,290,300,310,330,340,350,360,370,380,390,400,410,
+      420,430,440,450,460,470,480,490,500,510,520,530,540,550,560,570,
+      580,590,600,610,620,630,640,650,660,670,680,690,700,710,720,730
+    ];
+    let bookNumber = parseInt(m[1], 10);
+    if (hashMatch) {
+      // #b format uses sequential 1-66 index; convert to internal book number
+      bookNumber = CANONICAL_BOOK_IDS[bookNumber - 1];
+      if (!bookNumber) return;
+    }
     const chapter = parseInt(m[2], 10);
     const verse = parseInt(m[3], 10);
     const paneId = PaneManager.getActivePaneId();
