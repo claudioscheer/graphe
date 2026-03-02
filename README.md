@@ -19,7 +19,6 @@ Disponível para **Windows**, **Linux** e **macOS**.
 - Exibição dos números de Strong (Hebraico e Grego) integrados ao texto bíblico
 - Consulta a dicionários de Strong com um clique
 - Suporte a múltiplos dicionários (Almeida, Strong-PT, BDB)
-- Pesquisa por número de Strong (ex: `strong:H1234`)
 - Exibição de cognatos e palavras relacionadas
 
 ### Referências Cruzadas
@@ -27,36 +26,35 @@ Disponível para **Windows**, **Linux** e **macOS**.
 - Integração com o Treasury of Scripture Knowledge (TSK)
 - Navegação direta para versículos referenciados
 - Suporte a múltiplos módulos de referências cruzadas
+- Opção de abrir referências em modal de prévia (painel fixado)
+
+### Comentários Bíblicos
+
+- Suporte a módulos de comentário (ex: Matthew Henry, Jamieson-Fausset-Brown)
+- Visualização sincronizada com o texto bíblico — o comentário acompanha o capítulo aberto
+- Abertura em painel dividido (horizontal ou vertical)
+- Vinculação flexível: escolha qual painel bíblico atualiza cada comentário
 
 ### Compatibilidade com Módulos do theWord
 
 - Importa e utiliza módulos no formato SQLite3 do theWord
-- Suporte a módulos de Bíblias, Dicionários e Referências Cruzadas
+- Suporte a módulos de Bíblias, Dicionários, Referências Cruzadas e Comentários
 - O tipo do módulo é detectado automaticamente a partir da estrutura do banco de dados
 
 #### Instalando módulos
 
-Copie os arquivos `.SQLite3` para a pasta de módulos:
+Copie os arquivos `.SQLite3` para a pasta de módulos e reinicie o app:
 
 ```
 ~/.graphe/modules/
 ```
 
-Exemplos de nomes de arquivos:
-
-| Tipo                 | Exemplo                         |
-| -------------------- | ------------------------------- |
-| Bíblia               | `ACF+.SQLite3`                  |
-| Dicionário           | `Strong-PT.dictionary.SQLite3`  |
-| Referências Cruzadas | `TSK-x.crossreferences.SQLite3` |
-
-Reinicie o app após adicionar novos módulos.
+O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
 
 ### Pesquisa
 
 - Busca textual em todos os versículos
-- Busca por números de Strong
-- Busca semântica com IA (experimental) — encontra versículos por significado, não apenas por palavras
+- Busca por números de Strong (ex: `strong:H1234`)
 
 ### Interface
 
@@ -66,9 +64,9 @@ Reinicie o app após adicionar novos módulos.
 - Seleção e cópia de versículos com `Ctrl+C`
 - Atalhos de teclado para navegação rápida
 
-## Limitações
+## Problemas ou Sugestões
 
-- Comentários bíblicos ainda **não** são suportados
+Encontrou um bug ou tem uma ideia para melhorar o Graphe? Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues).
 
 ## Desenvolvimento
 
