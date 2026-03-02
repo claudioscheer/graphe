@@ -88,7 +88,13 @@ jobs:
         run: npm run build:css
 
       - name: Build desktop artifacts
-        run: npm run ${{ matrix.make_script }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            DEBUG=electron-forge:*,electron-installer-debian* npm run ${{ matrix.make_script }}
+          else
+            npm run ${{ matrix.make_script }}
+          fi
 
       - name: Collect release files
         shell: bash

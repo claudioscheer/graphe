@@ -1,7 +1,8 @@
 {
   "name": "graphe-bible",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A modern Bible study app with split panes and Strong's numbers",
+  "author": "Claudio Scheer",
   "main": "src/main/main.js",
   "scripts": {
     "start": "npm run build:css && electron-forge start",

@@ -35,6 +35,7 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       config: {
         name: 'graphe_bible',
+        authors: 'Claudio Scheer',
       },
     },
   ],
