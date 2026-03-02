@@ -120,7 +120,7 @@ jobs:
           const fs = require('fs');
           const path = require('path');
 
-          const root = path.resolve('out');
+          const root = path.resolve('out', 'make');
           const output = path.resolve('release-assets');
           const allowedExtensions = new Set([
             '.dmg',
