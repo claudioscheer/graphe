@@ -175,6 +175,8 @@ function scoreLexical(row, parsed) {
   return matched / total;
 }
 
+const SUPPORTED_TYPES = new Set(['bible', 'dictionary', 'commentary']);
+
 function getModules() {
   const result = [];
   for (const [id, db] of dbs) {
@@ -191,6 +193,8 @@ function getModules() {
         : hasCrossRefTable(db)
           ? 'crossreference'
           : 'bible';
+
+    if (!SUPPORTED_TYPES.has(type)) continue;
 
     const mod = {
       id,
