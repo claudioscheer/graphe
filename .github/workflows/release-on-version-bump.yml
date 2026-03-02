@@ -62,7 +62,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            make_script: make:mac && npm run make:mac:arm64 && npm run make:mac:universal
+            make_script: make:mac
             artifact_name: release-assets-mac
           - os: ubuntu-latest
             make_script: make:linux
@@ -113,10 +113,6 @@ jobs:
             '.rpm',
             '.exe',
             '.msi',
-            '.nupkg',
-            '.blockmap',
-            '.yml',
-            '.yaml',
             '.pkg',
           ]);
 

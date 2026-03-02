@@ -32,10 +32,17 @@ module.exports = {
       },
     },
     {
-      name: '@electron-forge/maker-squirrel',
+      name: '@electron-forge/maker-wix',
       config: {
-        name: 'graphe_bible',
-        authors: 'Claudio Scheer',
+        name: 'Graphe',
+        manufacturer: 'Claudio Scheer',
+        description: "O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.",
+        icon: path.join(__dirname, 'assets', 'graphe.ico'),
+        arch: 'x64',
+        upgradeCode: 'e4657921-7180-4078-b6d9-c38405956c0b',
+        ui: {
+          chooseDirectory: true,
+        },
       },
     },
   ],
