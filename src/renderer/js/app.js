@@ -774,18 +774,35 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.api.onUpdateAvailable(({ version, url }) => {
+let dismissedUpdateVersion = null;
+
+function showUpdateBanner({ version, url }) {
   const banner = document.getElementById('update-banner');
   const text = document.getElementById('update-banner-text');
   const link = document.getElementById('update-banner-link');
   const close = document.getElementById('update-banner-close');
   if (!banner || !text || !link || !close) return;
+  if (!version || dismissedUpdateVersion === version) return;
 
   text.textContent = I18n.t('updateAvailable').replace('{version}', version);
   link.onclick = () => window.api.openExternal(url);
-  close.onclick = () => banner.classList.add('hidden');
+  close.onclick = () => {
+    dismissedUpdateVersion = version;
+    banner.classList.add('hidden');
+  };
   banner.classList.remove('hidden');
-});
+}
+
+window.api.onUpdateAvailable(showUpdateBanner);
+
+window.api
+  .getPendingUpdate()
+  .then((updateInfo) => {
+    if (updateInfo) showUpdateBanner(updateInfo);
+  })
+  .catch(() => {
+    /* ignore */
+  });
 
 (async function () {
   try {

@@ -7,8 +7,15 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 
 let mainWindow;
 let reloadTimer = null;
+let updateCheckTimer = null;
+let pendingUpdate = null;
+let isCheckingForUpdates = false;
 const windowIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.png');
 const macDockIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.icns');
+const UPDATE_CHECK_INITIAL_DELAY_MS = 3000;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const UPDATE_CHECK_RETRY_MS = 5 * 60 * 1000;
+const UPDATE_REQUEST_TIMEOUT_MS = 10000;
 
 function setupDevHotReload() {
   if (app.isPackaged) return;
@@ -65,7 +72,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
     mainWindow.show();
-    setTimeout(() => checkForUpdates(), 3000);
+    setTimeout(() => triggerUpdateCheck(), UPDATE_CHECK_INITIAL_DELAY_MS);
   });
 }
 
@@ -81,40 +88,84 @@ function compareVersions(a, b) {
   return 0;
 }
 
-function checkForUpdates() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (!require('electron').net.isOnline()) return;
+function sendUpdateAvailable(updateInfo) {
+  pendingUpdate = updateInfo;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-available', updateInfo);
+  }
+}
 
+function scheduleNextUpdateCheck(delayMs) {
+  clearTimeout(updateCheckTimer);
+  updateCheckTimer = setTimeout(() => {
+    triggerUpdateCheck();
+  }, delayMs);
+}
+
+function checkForUpdates() {
+  if (isCheckingForUpdates) return Promise.resolve(false);
+  if (!require('electron').net.isOnline()) return Promise.resolve(false);
+
+  isCheckingForUpdates = true;
   const options = {
     hostname: 'api.github.com',
     path: '/repos/claudioscheer/graphe/releases/latest',
-    headers: { 'User-Agent': `Graphe/${app.getVersion()}` },
+    method: 'GET',
+    timeout: UPDATE_REQUEST_TIMEOUT_MS,
+    headers: {
+      'User-Agent': `Graphe/${app.getVersion()}`,
+      Accept: 'application/vnd.github+json',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
   };
 
-  https
-    .get(options, (res) => {
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
         try {
+          if (res.statusCode !== 200) {
+            resolve(false);
+            return;
+          }
           const release = JSON.parse(data);
           const tag = (release.tag_name || '').replace(/^v/, '');
           if (tag && compareVersions(app.getVersion(), tag) < 0) {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('update-available', {
-                version: tag,
-                url: release.html_url,
-              });
+            const updateInfo = {
+              version: tag,
+              url: release.html_url,
+            };
+            if (!pendingUpdate || pendingUpdate.version !== updateInfo.version) {
+              sendUpdateAvailable(updateInfo);
             }
+            resolve(true);
+            return;
           }
+          resolve(false);
         } catch (_) {
-          /* ignore */
+          resolve(false);
+        } finally {
+          isCheckingForUpdates = false;
         }
       });
-    })
-    .on('error', () => {
-      /* ignore */
     });
+    req.on('error', () => {
+      isCheckingForUpdates = false;
+      resolve(false);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+    });
+    req.end();
+  });
+}
+
+async function triggerUpdateCheck() {
+  const hasUpdate = await checkForUpdates();
+  scheduleNextUpdateCheck(hasUpdate ? UPDATE_CHECK_INTERVAL_MS : UPDATE_CHECK_RETRY_MS);
 }
 
 async function installModulesFromDialog() {
@@ -307,6 +358,7 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
 ipcMain.on('install-modules', () => installModulesFromDialog());
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-pending-update', () => pendingUpdate);
 
 ipcMain.handle('open-external', (_event, url) => {
   const allowed = [
@@ -346,4 +398,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  clearTimeout(updateCheckTimer);
 });
