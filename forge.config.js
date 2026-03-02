@@ -9,7 +9,6 @@ module.exports = {
     icon: appIconBase,
   },
   makers: [
-    { name: '@electron-forge/maker-zip' },
     {
       name: '@electron-forge/maker-dmg',
       config: {

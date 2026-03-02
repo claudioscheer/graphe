@@ -32,7 +32,6 @@
     "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-dmg": "^7.11.1",
     "@electron-forge/maker-squirrel": "^7.11.1",
-    "@electron-forge/maker-zip": "^7.11.1",
     "@reforged/maker-appimage": "^5.2.0",
     "@tailwindcss/cli": "^4",
     "electron": "^33.0.0",
