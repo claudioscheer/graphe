@@ -758,6 +758,19 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+window.api.onUpdateAvailable(({ version, url }) => {
+  const banner = document.getElementById('update-banner');
+  const text = document.getElementById('update-banner-text');
+  const link = document.getElementById('update-banner-link');
+  const close = document.getElementById('update-banner-close');
+  if (!banner || !text || !link || !close) return;
+
+  text.textContent = I18n.t('updateAvailable').replace('{version}', version);
+  link.onclick = () => window.api.openExternal(url);
+  close.onclick = () => banner.classList.add('hidden');
+  banner.classList.remove('hidden');
+});
+
 (async function () {
   try {
     const loadedState = await window.api.getAppState().catch(() => null);
@@ -802,16 +815,4 @@ document.addEventListener('keydown', (e) => {
   } finally {
     LoadingScreen.hide();
   }
-
-  window.api.onUpdateAvailable(({ version, url }) => {
-    const banner = document.getElementById('update-banner');
-    const text = document.getElementById('update-banner-text');
-    const link = document.getElementById('update-banner-link');
-    const close = document.getElementById('update-banner-close');
-    if (!banner) return;
-    text.textContent = I18n.t('updateAvailable').replace('{version}', version);
-    link.addEventListener('click', () => window.api.openExternal(url));
-    close.addEventListener('click', () => banner.classList.add('hidden'));
-    banner.classList.remove('hidden');
-  });
 })();
