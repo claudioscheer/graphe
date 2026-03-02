@@ -611,6 +611,52 @@ function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
   return true;
 }
 
+const lastMousePosition = { x: null, y: null };
+
+document.addEventListener(
+  'mousemove',
+  (e) => {
+    lastMousePosition.x = e.clientX;
+    lastMousePosition.y = e.clientY;
+  },
+  { passive: true }
+);
+
+function getPaneFromMousePosition() {
+  if (!Number.isFinite(lastMousePosition.x) || !Number.isFinite(lastMousePosition.y)) return null;
+  const hovered = document.elementFromPoint(lastMousePosition.x, lastMousePosition.y);
+  return hovered ? hovered.closest('[data-pane-id]') : null;
+}
+
+function selectAllInPane(paneEl) {
+  if (!paneEl) return false;
+  const paneId = paneEl.getAttribute('data-pane-id');
+  if (!paneId) return false;
+  PaneManager.setActivePane(paneId);
+
+  const content = paneEl.querySelector('.pane-content');
+  if (!content) return false;
+
+  const verseLines = content.querySelectorAll('.verse-line');
+  if (verseLines.length > 0) {
+    document
+      .querySelectorAll('.pane-content .verse-selected')
+      .forEach((el) => el.classList.remove('verse-selected'));
+    verseLines.forEach((line) => line.classList.add('verse-selected'));
+    const selection = window.getSelection();
+    if (selection) selection.removeAllRanges();
+    return true;
+  }
+
+  const selection = window.getSelection();
+  if (!selection) return false;
+  const range = document.createRange();
+  range.selectNodeContents(content);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
 // Left-click on a Strong's number → dictionary lookup
 document.addEventListener('click', (e) => {
   // Verse click → scroll synced commentary panes
@@ -658,6 +704,26 @@ document.addEventListener('click', (e) => {
         if (!ok) showTooltip(target, I18n.t('refUnavailable'));
       })
       .catch((err) => console.warn('Cross-ref navigation failed:', err));
+    return;
+  }
+
+  // Commentary bible reference click → navigate pane
+  const commentaryRef = e.target.closest('.commentary-ref[data-bhref]');
+  if (commentaryRef) {
+    e.preventDefault();
+    const raw = decodeURIComponent(commentaryRef.dataset.bhref.trim());
+    const m = raw.match(/^B:(\d+)\s+(\d+):(\d+)/i);
+    if (!m) return;
+    const bookNumber = parseInt(m[1], 10);
+    const chapter = parseInt(m[2], 10);
+    const verse = parseInt(m[3], 10);
+    const paneId = PaneManager.getActivePaneId();
+    const target = PaneManager.getNavigationTarget(paneId);
+    PaneManager.navigatePane(target, bookNumber, chapter, verse)
+      .then((ok) => {
+        if (!ok) showTooltip(target, I18n.t('refUnavailable'));
+      })
+      .catch((err) => console.warn('Commentary ref navigation failed:', err));
     return;
   }
 
@@ -738,6 +804,18 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (inputFocused || overlayOpen) return;
+
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'a') {
+    e.preventDefault();
+    const paneUnderMouse = getPaneFromMousePosition();
+    if (paneUnderMouse) {
+      selectAllInPane(paneUnderMouse);
+      return;
+    }
+    const activePane = document.querySelector(`[data-pane-id="${PaneManager.getActivePaneId()}"]`);
+    if (activePane) selectAllInPane(activePane);
+    return;
+  }
 
   if (e.key === 'Tab') {
     e.preventDefault();

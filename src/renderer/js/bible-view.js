@@ -167,8 +167,9 @@ const BibleView = (() => {
           line.classList.toggle('verse-selected');
           lastClickedVerse = v.verse;
         } else {
+          const wasSelected = line.classList.contains('verse-selected');
           all.forEach((el) => el.classList.remove('verse-selected'));
-          line.classList.toggle('verse-selected');
+          if (!wasSelected) line.classList.add('verse-selected');
           lastClickedVerse = v.verse;
         }
       });

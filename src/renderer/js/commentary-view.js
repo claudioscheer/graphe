@@ -46,8 +46,17 @@ const CommentaryView = (() => {
   function sanitizeCommentaryHtml(html) {
     // Remove script tags for safety
     let safe = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-    // Convert <a class='B' href='B:...'> links to non-navigating spans
-    safe = safe.replace(/<a\b[^>]*class=['"]B['"][^>]*>([\s\S]*?)<\/a>/gi, '<span class="commentary-ref">$1</span>');
+    // Convert <a class='B' href='B:...'> links to spans, preserving href as data-bhref
+    safe = safe.replace(
+      /<a\b([^>]*?)class=['"]B['"]([^>]*)>([\s\S]*?)<\/a>/gi,
+      (_, before, after, text) => {
+        const hm = (before + after).match(/href=['"]([^'"]+)['"]/i);
+        const href = hm ? hm[1] : '';
+        return href
+          ? `<span class="commentary-ref" data-bhref="${href}">${text}</span>`
+          : `<span class="commentary-ref">${text}</span>`;
+      }
+    );
     return safe;
   }
 

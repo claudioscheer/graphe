@@ -652,7 +652,7 @@ const DictPanel = (() => {
     // Supports:
     // B:50 7:7
     // b:50 7:7-8 (verse ranges -> navigate to first verse)
-    const match = decoded.match(/^B:(\d+)\s+(\d+):(\d+)(?:-(\d+))?$/i);
+    const match = decoded.match(/^B:(\d+)\s+(\d+):(\d+)/i);
     if (!match) return null;
     return {
       bookNumber: parseInt(match[1], 10),
