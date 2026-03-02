@@ -218,7 +218,7 @@ const BibleView = (() => {
     const line = el.closest('.verse-line');
     const target = line || el;
     requestAnimationFrame(() => {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.scrollIntoView({ behavior: 'auto', block: 'center' });
       container
         .querySelectorAll('.verse-selected')
         .forEach((v) => v.classList.remove('verse-selected'));

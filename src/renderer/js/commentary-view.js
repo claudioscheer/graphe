@@ -68,7 +68,7 @@ const CommentaryView = (() => {
     const entry = container.querySelector(`.commentary-entry[data-verse-from="${verseNum}"]`);
     if (!entry) return;
     requestAnimationFrame(() => {
-      entry.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      entry.scrollIntoView({ behavior: 'auto', block: 'start' });
     });
   }
 
