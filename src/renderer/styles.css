@@ -110,6 +110,28 @@
   z-index: 50;
 }
 
+.dark #update-banner-text {
+  color: var(--color-night-900);
+}
+
+.dark .update-banner-link {
+  border-color: rgb(31 27 22 / 0.35);
+  background: rgb(31 27 22 / 0.12);
+  color: var(--color-night-900);
+}
+
+.dark .update-banner-link:hover {
+  background: rgb(31 27 22 / 0.2);
+}
+
+.dark .update-banner-close {
+  color: rgb(31 27 22 / 0.7);
+}
+
+.dark .update-banner-close:hover {
+  color: var(--color-night-900);
+}
+
 .update-banner.hidden {
   display: none;
 }
