@@ -119,6 +119,21 @@ function checkForUpdates() {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const openAboutDialog = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('open-about');
+      return;
+    }
+
+    createWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.once('did-finish-load', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('open-about');
+        }
+      });
+    }
+  };
   const settingsMenuItem = {
     label: 'Settings',
     accelerator: 'CmdOrCtrl+,',
@@ -129,7 +144,24 @@ function buildMenu() {
     },
   };
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { label: 'About Graphe', click: openAboutDialog },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
@@ -202,17 +234,15 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        {
-          label: 'About Graphe',
-          click: () => {
-            if (isMac) {
-              app.showAboutPanel();
-            } else if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('open-about');
-            }
-          },
-        },
-        { type: 'separator' },
+        ...(isMac
+          ? []
+          : [
+              {
+                label: 'About Graphe',
+                click: openAboutDialog,
+              },
+              { type: 'separator' },
+            ]),
         {
           label: 'Report Issue',
           click: () => {
@@ -265,15 +295,6 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') {
-    app.setAboutPanelOptions({
-      applicationName: 'Graphe',
-      applicationVersion: app.getVersion(),
-      copyright: 'Claudio Scheer',
-      iconPath: windowIconPath,
-    });
-  }
-
   if (process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
     const dockIconPath = fs.existsSync(macDockIconPath) ? macDockIconPath : windowIconPath;
     if (fs.existsSync(dockIconPath)) {
