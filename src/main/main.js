@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron')
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const modules = require('./modules');
 const { registerIpcHandlers } = require('./ipc-handlers');
 
@@ -171,7 +172,10 @@ async function triggerUpdateCheck() {
 async function installModulesFromDialog() {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'All Files', extensions: ['*'] }],
+    filters: [
+      { name: 'Bible Modules', extensions: ['sqlite3'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
   });
   if (result.canceled || result.filePaths.length === 0) return;
   const installed = modules.installFiles(result.filePaths);
@@ -184,6 +188,67 @@ async function installModulesFromDialog() {
   }
   if (installed.copied > 0 && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
+  }
+}
+
+async function convertModulesFromDialog() {
+  const converter = require('./modules/converters');
+  const extensions = converter.getSupportedExtensions().map((e) => e.slice(1));
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Convertible Modules', extensions }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-convert-'));
+  const converted = [];
+  const errors = [];
+
+  for (const file of result.filePaths) {
+    try {
+      const out = await converter.convertFile(file, tmpDir);
+      converted.push({ name: path.basename(out), tmpPath: out, sourceDir: path.dirname(file) });
+    } catch (err) {
+      errors.push({ file: path.basename(file), error: err.message });
+    }
+  }
+
+  if (converted.length > 0) {
+    const response = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      title: 'Convert Modules',
+      message: `Converted ${converted.length} module(s):\n${converted.map((c) => c.name).join('\n')}`,
+      buttons: ['Install', 'Save alongside original'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    const modulesDir = path.join(os.homedir(), '.graphe', 'modules');
+    if (response === 0) {
+      for (const c of converted) {
+        fs.copyFileSync(c.tmpPath, path.join(modulesDir, c.name));
+      }
+      modules.init();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    } else {
+      for (const c of converted) {
+        fs.copyFileSync(c.tmpPath, path.join(c.sourceDir, c.name));
+      }
+    }
+  }
+
+  // Clean up temp dir
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  if (errors.length > 0) {
+    dialog.showMessageBoxSync(mainWindow, {
+      type: converted.length === 0 ? 'error' : 'warning',
+      title: 'Convert Modules',
+      message: `Failed to convert ${errors.length} file(s):\n${errors.map((e) => `${e.file}: ${e.error}`).join('\n')}`,
+    });
   }
 }
 
@@ -238,6 +303,10 @@ function buildMenu() {
         {
           label: 'Install Modules...',
           click: () => installModulesFromDialog(),
+        },
+        {
+          label: 'Convert Modules...',
+          click: () => convertModulesFromDialog(),
         },
         settingsMenuItem,
         { type: 'separator' },
@@ -374,7 +443,12 @@ ipcMain.handle('open-external', (_event, url) => {
 app.whenReady().then(() => {
   // In development, Electron launched by Forge does not need a dock icon override.
   // Skipping this avoids noisy warnings and keeps startup on the safest code path.
-  if (app.isPackaged && process.platform === 'darwin' && app.dock && typeof app.dock.setIcon === 'function') {
+  if (
+    app.isPackaged &&
+    process.platform === 'darwin' &&
+    app.dock &&
+    typeof app.dock.setIcon === 'function'
+  ) {
     const dockIconPath = fs.existsSync(macDockIconPath) ? macDockIconPath : windowIconPath;
     if (fs.existsSync(dockIconPath)) {
       try {

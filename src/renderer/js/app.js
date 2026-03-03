@@ -460,14 +460,10 @@ const CrossRefPreview = (() => {
     renderMessage('...');
 
     try {
-      const [books, verses] = await Promise.all([
-        getBooks(moduleId),
-        window.api.getChapter(moduleId, bookNumber, chapter),
-      ]);
+      const verses = await window.api.getChapter(moduleId, bookNumber, chapter);
       if (token !== requestToken) return;
 
-      const book = books.find((b) => b.bookNumber === bookNumber);
-      titleEl.textContent = `${book ? book.shortName : bookNumber} ${chapter}`;
+      titleEl.textContent = `${I18n.bookName(bookNumber).short} ${chapter}`;
       if (subtitleEl) subtitleEl.textContent = moduleId || '';
 
       BibleView.renderChapter(contentEl, verses || [], !!hasStrongs, bookNumber, {

@@ -2,6 +2,100 @@
  * bible-view.js — Verse rendering with Strong's number parsing
  */
 const BibleView = (() => {
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function extractCasePairTagAt(text, index, openings) {
+    const rest = text.slice(index);
+    for (const open of openings) {
+      const close = open.toLowerCase();
+      const re = new RegExp(`^\\s*<${open}>([\\s\\S]*?)<${close}>`, 'i');
+      const match = re.exec(rest);
+      if (!match) continue;
+      return {
+        value: match[1],
+        nextIndex: index + match[0].length,
+      };
+    }
+    return null;
+  }
+
+  // Converts theWord case-paired tags (<E>...<e>, <O>/<OG>...<o>/<og>, <T>/<TG>...<t>/<tg>)
+  // into safe HTML spans before the browser parses them as malformed markup.
+  function normalizeTheWordWordAnnotations(text) {
+    let input = String(text || '');
+    let output = '';
+    let pos = 0;
+
+    while (true) {
+      const nextTranslation = input.slice(pos).match(/<E>/i);
+      if (!nextTranslation) {
+        output += input.slice(pos);
+        break;
+      }
+
+      const start = pos + nextTranslation.index;
+      output += input.slice(pos, start);
+
+      const transExtract = extractCasePairTagAt(input, start, ['E']);
+      if (!transExtract) {
+        output += input.slice(start);
+        break;
+      }
+
+      const translated = transExtract.value;
+      let cursor = transExtract.nextIndex;
+
+      const origExtract = extractCasePairTagAt(input, cursor, ['OG', 'OH', 'O']);
+      const original = origExtract ? origExtract.value : '';
+      if (origExtract) cursor = origExtract.nextIndex;
+
+      const translitExtract = extractCasePairTagAt(input, cursor, ['TG', 'TH', 'T']);
+      const transliteration = translitExtract ? translitExtract.value : '';
+      if (translitExtract) cursor = translitExtract.nextIndex;
+
+      const nextWordMatch = input.slice(cursor).match(/<E>/i);
+      const nextWordStart = nextWordMatch ? cursor + nextWordMatch.index : input.length;
+
+      const trailing = input
+        .slice(cursor, nextWordStart)
+        .replace(/<RX[^>]*>/gi, '')
+        .replace(/<wt>/gi, '')
+        .replace(/<(?:E|e|O|o|T|t|OG|og|OH|oh|TG|tg|TH|th)>/g, '');
+
+      const top = `${translated}${trailing}`;
+      const hasAnnotations = Boolean(original || transliteration);
+      if (!hasAnnotations) {
+        output += top;
+      } else {
+        const leadingWs = (top.match(/^\s*/) || [''])[0];
+        const topCore = top.slice(leadingWs.length);
+
+        if (!topCore) {
+          output += top;
+        } else {
+          let annotation = '';
+          if (original) {
+            annotation += `<span class="verse-word-original">${escapeHtml(original.trim())}</span>`;
+          }
+          if (transliteration) {
+            annotation += `<span class="verse-word-translit">${escapeHtml(transliteration.trim())}</span>`;
+          }
+          output += `${leadingWs}<span class="verse-word">${topCore}<span class="verse-annotation">${annotation}</span></span>`;
+        }
+      }
+
+      pos = nextWordStart;
+    }
+
+    return output.replace(/<RX[^>]*>/gi, '').replace(/<wt>/gi, '');
+  }
+
   /**
    * Parse verse text into HTML.
    * Handles: <S>number</S>, <pb/>, <f>...</f>, <i>...</i>
@@ -20,6 +114,9 @@ const BibleView = (() => {
     // Remove <f>...</f> footnotes
     let html = text.replace(/<f>[\s\S]*?<\/f>/gi, '');
 
+    // Normalize theWord case-paired original-language word tags before HTML parsing.
+    html = normalizeTheWordWordAnnotations(html);
+
     // Strip leading <pb/> so it doesn't push the first line away from the verse number
     html = html.replace(/^\s*(<pb\s*\/?>)+/i, '');
 
@@ -29,20 +126,54 @@ const BibleView = (() => {
     // <i>...</i> → italic
     html = html.replace(/<i>([\s\S]*?)<\/i>/gi, '<span class="verse-italic">$1</span>');
 
-    // <n>...</n> → strip original-language annotations (dictionary lookup via Strong's is sufficient)
+    // <n>...</n> → strip legacy original-language annotations
     html = html.replace(/<n>[\s\S]*?<\/n>/gi, '');
 
+    // <J>...</J> → red-letter (Jesus' words)
+    html = html.replace(/<J>([\s\S]*?)<\/J>/gi, '<span class="verse-jesus">$1</span>');
+
+    // <e>...</e> → emphasis
+    html = html.replace(/<e>([\s\S]*?)<\/e>/gi, '<span class="verse-emphasis">$1</span>');
+
+    // <t>...</t> → indented poetry/quotation
+    html = html.replace(/<t>([\s\S]*?)<\/t>/gi, '<span class="verse-poetry">$1</span>');
+
+    // <h>...</h> → inline subheading
+    html = html.replace(/<h>([\s\S]*?)<\/h>/gi, '<span class="verse-subheading">$1</span>');
+
+    // Normalize MyBible <m>/<l> tags into <S morph="..." lemma="..."> attribute format
+    html = html.replace(
+      /<S>(\d+\w*)<\/S>(?:\s*<m>([^<]*)<\/m>)?(?:\s*<l>([^<]*)<\/l>)?/gi,
+      (_, num, morph, lemma) => {
+        const attrs = [];
+        if (morph) attrs.push(`morph="${morph}"`);
+        if (lemma) attrs.push(`lemma="${lemma}"`);
+        return `<S${attrs.length ? ' ' + attrs.join(' ') : ''}>${num}</S>`;
+      }
+    );
+
     // Strong's numbers — strip space between a word and its <S> tag (ARA+ has this, ACF+ doesn't)
-    html = html.replace(/(\w) (?=<S>)/g, '$1');
+    html = html.replace(/(\w) (?=<S[\s>])/g, '$1');
     // Add space between consecutive Strong's tags so numbers don't merge
-    html = html.replace(/<\/S><S>/gi, '</S> <S>');
+    html = html.replace(/<\/S><S/gi, '</S> <S');
     if (showStrongs) {
-      html = html.replace(/<S>([GH]?\d+\w*)<\/S>/gi, (_, num) => {
-        const display = /^[GH]/i.test(num) ? num.toUpperCase() : `${strongsPrefix}${num}`;
-        return `<span class="strongs">${display}</span>`;
-      });
+      html = html.replace(
+        /<S(?:\s+morph="([^"]*)")?(?:\s+lemma="([^"]*)")?>([GH]?\d+\w*)<\/S>/gi,
+        (_, morph, lemma, num) => {
+          const display = /^[GH]/i.test(num) ? num.toUpperCase() : `${strongsPrefix}${num}`;
+          const attrs = [];
+          if (morph) attrs.push(`data-morph="${morph}"`);
+          if (lemma) attrs.push(`data-lemma="${lemma}"`);
+          const titleParts = [];
+          if (lemma) titleParts.push(lemma);
+          if (morph) titleParts.push(morph);
+          if (titleParts.length) attrs.push(`title="${titleParts.join(' · ')}"`);
+          const attrStr = attrs.length > 0 ? ' ' + attrs.join(' ') : '';
+          return `<span class="strongs"${attrStr}>${display}</span>`;
+        }
+      );
     } else {
-      html = html.replace(/<S>[\s\S]*?<\/S>/gi, '');
+      html = html.replace(/<S[^>]*>[\s\S]*?<\/S>/gi, '');
     }
 
     // Collapse multiple spaces left after tag removal
@@ -106,8 +237,8 @@ const BibleView = (() => {
   }
 
   function renderChapter(container, verses, showStrongs, bookNumber, opts) {
-    const { crossRefs, crossRefMode, bookNameResolver } = opts || {};
-    const strongsPrefix = bookNumber < 470 ? 'H' : 'G';
+    const { crossRefs, crossRefMode, bookNameResolver, strongsPrefix: prefixOverride } = opts || {};
+    const strongsPrefix = prefixOverride || (bookNumber < 470 ? 'H' : 'G');
     container.innerHTML = '';
     const fragment = document.createDocumentFragment();
     const wrapper = document.createElement('div');

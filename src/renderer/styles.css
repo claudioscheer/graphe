@@ -273,6 +273,65 @@
   font-style: italic;
 }
 
+.verse-jesus {
+  color: #b91c1c;
+}
+
+.dark .verse-jesus {
+  color: #f87171;
+}
+
+.verse-emphasis {
+  font-weight: bold;
+}
+
+.verse-poetry {
+  display: block;
+  padding-left: 1.5em;
+  padding-right: 1.5em;
+}
+
+.verse-subheading {
+  display: block;
+  font-weight: bold;
+  font-size: 0.95em;
+  color: var(--ui-text-muted);
+  margin-top: 0.3em;
+  margin-bottom: 0.1em;
+}
+
+.verse-word {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  vertical-align: baseline;
+}
+
+.verse-annotation {
+  display: block;
+  font-size: 0.72em;
+  line-height: 1.2;
+  color: var(--ui-text-muted);
+  margin-top: 1px;
+}
+
+.verse-word-original,
+.verse-word-translit {
+  display: block;
+}
+
+.verse-word-translit {
+  color: var(--ui-text-subtle);
+}
+
+.dark .verse-annotation {
+  color: var(--ui-text-subtle);
+}
+
+.dark .verse-word-translit {
+  color: var(--ui-text-muted);
+}
+
 /* Active toolbar only */
 .pane-toolbar {
   position: relative;
@@ -395,6 +454,12 @@
 .pane-toolbar button {
   min-height: 36px;
   min-width: 36px;
+}
+
+/* Keep module selectors compact in pane toolbars (Bible/commentary). */
+.pane-toolbar > .app-select {
+  width: clamp(8.5rem, 24vw, 14rem);
+  min-width: 0;
 }
 
 /* Keep chapter indicator compact: "... Gn 2" must stay in one line */

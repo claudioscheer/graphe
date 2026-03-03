@@ -229,10 +229,7 @@ const SearchPanel = (() => {
   }
 
   function getBookShortName(bookNumber) {
-    const books = booksCache[selectedModuleId];
-    if (!books) return `#${bookNumber}`;
-    const book = books.find((b) => b.bookNumber === bookNumber);
-    return book ? book.shortName : `#${bookNumber}`;
+    return I18n.bookName(bookNumber).short;
   }
 
   async function runSearch() {

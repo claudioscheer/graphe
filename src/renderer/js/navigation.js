@@ -80,8 +80,8 @@ const Navigation = (() => {
       btn.className =
         'nav-book-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors truncate px-2';
-      btn.textContent = book.shortName;
-      btn.title = book.longName;
+      btn.textContent = I18n.bookName(book.bookNumber).short;
+      btn.title = I18n.bookName(book.bookNumber).long;
       btn.addEventListener('click', () => selectBook(book));
       container.appendChild(btn);
     }
@@ -101,7 +101,7 @@ const Navigation = (() => {
 
     const label = document.createElement('div');
     label.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-3';
-    label.textContent = book.longName;
+    label.textContent = I18n.bookName(book.bookNumber).long;
     g.appendChild(label);
 
     const container = document.createElement('div');
@@ -138,10 +138,11 @@ const Navigation = (() => {
     const chapter = parseInt(match[2], 10);
     const verse = match[3] ? parseInt(match[3], 10) : null;
 
-    // Find book by abbreviation (case-insensitive prefix match on shortName)
-    const book = currentBooks.find(
-      (b) => b.shortName.toLowerCase() === abbrev || b.shortName.toLowerCase().startsWith(abbrev)
-    );
+    // Find book by localized abbreviation
+    const bookNumber = I18n.findBookByAbbrev(abbrev);
+    const book = bookNumber != null
+      ? currentBooks.find((b) => b.bookNumber === bookNumber)
+      : null;
 
     if (!book) return;
 

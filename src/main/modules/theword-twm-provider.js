@@ -1,0 +1,412 @@
+/**
+ * TheWord TWM provider — handles .twm commentary/dictionary modules (SQLite with RTF/RVF content).
+ */
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
+const rtfToHTML = require('@iarna/rtf-to-html');
+const { twBookToGraphe, grapheToTwBook } = require('./book-map');
+
+/**
+ * Load a .twm file and return a handle.
+ */
+function load(filePath) {
+  const db = new Database(filePath, { readonly: true });
+
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all()
+    .map((r) => r.name);
+
+  const hasConfig = tables.includes('config');
+  const hasBibleRefs = tables.includes('bible_refs');
+  const hasContent = tables.includes('content');
+  const hasTopics = tables.includes('topics');
+  const hasContentSearch = tables.includes('content_search');
+
+  if (!hasConfig || !hasContent) {
+    db.close();
+    return null;
+  }
+
+  // Read config into key-value object
+  const config = {};
+  const configRows = db.prepare('SELECT name, value FROM config').all();
+  for (const row of configRows) {
+    config[row.name] = row.value;
+  }
+
+  if (hasBibleRefs) {
+    // Type=2: verse-indexed commentary
+    return {
+      format: 'theword-twm',
+      filePath,
+      db,
+      config,
+      hasContentSearch,
+      topicBased: false,
+    };
+  }
+
+  if (hasTopics && hasContentSearch) {
+    // Type=3 (topic-based commentary) or type=1 (dictionary)
+    const moduleType = config.type;
+
+    if (moduleType === '1') {
+      // Dictionary module — no book map needed
+      return {
+        format: 'theword-twm',
+        filePath,
+        db,
+        config,
+        hasContentSearch: true,
+        topicBased: false,
+        isDictionary: true,
+      };
+    }
+
+    // Type=3: topic-based commentary — build book map
+    const topicBookMap = buildTopicBookMap(db);
+    return {
+      format: 'theword-twm',
+      filePath,
+      db,
+      config,
+      hasContentSearch: true,
+      topicBased: true,
+      topicBookMap,
+    };
+  }
+
+  db.close();
+  return null;
+}
+
+/**
+ * Build a map from Graphe book numbers to topic IDs for type=3 modules.
+ * Returns Map<grapheBookNumber, topicId[]>.
+ */
+function buildTopicBookMap(db) {
+  const bookMap = new Map();
+
+  // Get root topics that have content, ordered by rel_order
+  const rootTopics = db
+    .prepare(
+      'SELECT id, subject FROM topics WHERE pid = 0 AND id IN (SELECT topic_id FROM content_search) ORDER BY rel_order'
+    )
+    .all();
+
+  // Check if bible_link_search table exists
+  let hasBibleLinkSearch = false;
+  try {
+    db.prepare('SELECT 1 FROM bible_link_search LIMIT 1').get();
+    hasBibleLinkSearch = true;
+  } catch (_) {}
+
+  for (let pos = 0; pos < rootTopics.length; pos++) {
+    const topic = rootTopics[pos];
+    let grapheBook = null;
+
+    if (hasBibleLinkSearch) {
+      grapheBook = detectBookFromBibleLinks(db, topic.id);
+    }
+
+    // Fallback: sequential position → TW book number (1-based)
+    if (grapheBook == null) {
+      const twBook = pos + 1;
+      grapheBook = twBookToGraphe(twBook);
+    }
+
+    if (grapheBook != null) {
+      if (!bookMap.has(grapheBook)) {
+        bookMap.set(grapheBook, []);
+      }
+      bookMap.get(grapheBook).push(topic.id);
+    }
+  }
+
+  return bookMap;
+}
+
+/**
+ * Detect which Graphe book a topic covers by parsing its bible_link_search data.
+ * Returns the Graphe book number or null if no data.
+ */
+function detectBookFromBibleLinks(db, topicId) {
+  try {
+    const row = db.prepare('SELECT data FROM bible_link_search WHERE topic_id = ?').get(topicId);
+    if (!row || !row.data) return null;
+
+    const text = typeof row.data === 'string' ? row.data : String(row.data);
+
+    // Parse entries like ,1.2.3,4 → book=1
+    const bookCounts = new Map();
+    const entryPattern = /,(\d+)\.\d+\.\d+,/g;
+    let match;
+    while ((match = entryPattern.exec(text)) !== null) {
+      const twBook = parseInt(match[1], 10);
+      bookCounts.set(twBook, (bookCounts.get(twBook) || 0) + 1);
+    }
+
+    if (bookCounts.size === 0) return null;
+
+    // Find most frequent book
+    let maxCount = 0;
+    let maxBook = null;
+    for (const [twBook, count] of bookCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        maxBook = twBook;
+      }
+    }
+
+    return maxBook != null ? twBookToGraphe(maxBook) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getModuleInfo(handle) {
+  const moduleType = handle.config.type;
+
+  if (moduleType === '1' || handle.isDictionary) {
+    const isStrong =
+      handle.config.strong === '1' ||
+      handle.config['strong.h'] === '1' ||
+      handle.config['strong.g'] === '1';
+    return {
+      type: 'dictionary',
+      description:
+        handle.config.title || handle.config.description || path.basename(handle.filePath, '.twm'),
+      isStrongDict: isStrong,
+      language: handle.config.lang || null,
+    };
+  }
+
+  return {
+    type: 'commentary',
+    description:
+      handle.config.title || handle.config.description || path.basename(handle.filePath, '.twm'),
+  };
+}
+
+/**
+ * Convert RTF string to HTML body content.
+ * Returns a promise that resolves to the HTML string.
+ */
+function convertRtfToHtml(rtfString) {
+  return new Promise((resolve, reject) => {
+    // Fix unsupported codepage 0 → 1252
+    let rtf = rtfString.replace(/\\ansicpg0/g, '\\ansicpg1252');
+
+    rtfToHTML.fromString(rtf, (err, html) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      // Extract just the body content
+      const bodyMatch = html.match(/<body>([\s\S]*)<\/body>/);
+      const body = bodyMatch ? bodyMatch[1].trim() : html;
+
+      resolve(body);
+    });
+  });
+}
+
+/**
+ * Extract plain text from content_search table (UTF-16 LE encoded blobs).
+ * Used as fallback for RVF content type.
+ */
+function extractPlainText(handle, topicId) {
+  if (!handle.hasContentSearch) return null;
+  try {
+    const row = handle.db
+      .prepare('SELECT data FROM content_search WHERE topic_id = ?')
+      .get(topicId);
+    if (!row || !row.data) return null;
+
+    const buf = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data);
+    const text = buf.toString('utf16le');
+    // Wrap in basic HTML paragraph tags
+    return text
+      .split(/\r?\n/)
+      .filter((line) => line.trim())
+      .map((line) => `<p>${escapeHtml(line)}</p>`)
+      .join('\n');
+  } catch (_) {
+    return null;
+  }
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Get commentary entries for a book and chapter.
+ */
+async function getCommentary(handle, bookNumber, chapter) {
+  if (handle.topicBased) {
+    const topicIds = handle.topicBookMap.get(bookNumber);
+    if (!topicIds || topicIds.length === 0) return [];
+
+    const texts = topicIds.map((id) => extractPlainText(handle, id)).filter(Boolean);
+    if (texts.length === 0) return [];
+
+    return [{ verseFrom: 1, verseTo: null, chapterTo: null, text: texts.join('\n') }];
+  }
+
+  // Type=2 flow
+  const bi = grapheToTwBook(bookNumber);
+  if (bi < 0) return [];
+
+  const rows = handle.db
+    .prepare('SELECT topic_id, fvi, tvi FROM bible_refs WHERE bi = ? AND ci = ? ORDER BY fvi')
+    .all(bi, chapter);
+
+  if (rows.length === 0) return [];
+
+  const isRtf = (handle.config['content.type'] || '').toLowerCase() === 'rtf';
+  const results = [];
+
+  for (const row of rows) {
+    let text = '';
+
+    try {
+      const content = handle.db
+        .prepare('SELECT data FROM content WHERE topic_id = ?')
+        .get(row.topic_id);
+
+      if (content && content.data) {
+        if (isRtf) {
+          try {
+            text = await convertRtfToHtml(String(content.data));
+          } catch (_) {
+            // If RTF conversion fails, try plain text fallback
+            text = extractPlainText(handle, row.topic_id) || escapeHtml(String(content.data));
+          }
+        } else {
+          // RVF or unknown format — use plain text from content_search
+          text = extractPlainText(handle, row.topic_id) || '';
+        }
+      }
+    } catch (_) {}
+
+    if (text) {
+      results.push({
+        verseFrom: row.fvi,
+        verseTo: row.tvi,
+        chapterTo: null,
+        text,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Get list of book numbers that have commentary entries.
+ */
+function getCommentaryBooks(handle) {
+  if (handle.topicBased) {
+    return Array.from(handle.topicBookMap.keys());
+  }
+
+  const rows = handle.db
+    .prepare('SELECT DISTINCT bi FROM bible_refs WHERE ci > 0 ORDER BY bi')
+    .all();
+
+  return rows.map((r) => twBookToGraphe(r.bi)).filter((bn) => bn != null);
+}
+
+/**
+ * Get a dictionary entry by topic string (e.g. "H1", "G5547").
+ */
+function getDictionaryEntry(handle, topic) {
+  try {
+    const row = handle.db.prepare('SELECT id FROM topics WHERE subject = ?').get(topic);
+    if (!row) return null;
+
+    const text = extractPlainText(handle, row.id);
+    return text ? { topic, definition: text } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Search dictionary topics by prefix.
+ */
+function searchDictionaryTopics(handle, prefix, limit) {
+  try {
+    return handle.db
+      .prepare(
+        'SELECT subject AS topic FROM topics WHERE pid = 0 AND subject LIKE ? ORDER BY subject LIMIT ?'
+      )
+      .all(prefix + '%', limit || 20)
+      .map((r) => r.topic);
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Check if module is a dictionary (type=1).
+ */
+function hasDictionaryTable(handle) {
+  return handle.isDictionary === true;
+}
+
+function isValidFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== '.twm') return false;
+
+    const db = new Database(filePath, { readonly: true });
+    try {
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all()
+        .map((r) => r.name);
+
+      if (!tables.includes('config') || !tables.includes('content')) return false;
+
+      // Accept: bible_refs (type=2) OR topics + content_search (type=3 / type=1)
+      return (
+        tables.includes('bible_refs') ||
+        (tables.includes('topics') && tables.includes('content_search'))
+      );
+    } finally {
+      db.close();
+    }
+  } catch (_) {
+    return false;
+  }
+}
+
+function close(handle) {
+  try {
+    handle.db.close();
+  } catch (_) {}
+}
+
+module.exports = {
+  load,
+  getModuleInfo,
+  getCommentary,
+  getCommentaryBooks,
+  getDictionaryEntry,
+  searchDictionaryTopics,
+  hasDictionaryTable,
+  isValidFile,
+  close,
+  extractPlainText,
+  convertRtfToHtml,
+};

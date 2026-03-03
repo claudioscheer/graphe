@@ -23,7 +23,8 @@
     "make:linux": "electron-forge make --platform=linux --arch=x64",
     "make:win": "electron-forge make --platform=win32 --arch=x64",
     "make:mac": "electron-forge make --platform=darwin --arch=universal",
-    "make:desktop": "npm run make:linux && npm run make:win && npm run make:mac"
+    "make:desktop": "npm run make:linux && npm run make:win && npm run make:mac",
+    "test": "npm rebuild better-sqlite3 && vitest run && npx electron-rebuild -f -w better-sqlite3"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.0.0",
@@ -38,9 +39,11 @@
     "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "vitest": "^3"
   },
   "dependencies": {
+    "@iarna/rtf-to-html": "^1.1.0",
     "better-sqlite3": "^11.0.0",
     "lucide": "^0.575.0"
   }

@@ -108,6 +108,7 @@ const PaneManager = (() => {
         paneType: 'bible',
         moduleId,
         hasStrongs: mod ? mod.hasStrongs : false,
+        strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
         bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
         chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
         bookShortName: initial.bookShortName || '',
@@ -214,6 +215,7 @@ const PaneManager = (() => {
             paneType: 'bible',
             moduleId: fallbackModuleId,
             hasStrongs: mod ? mod.hasStrongs : false,
+            strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
             bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
             chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
             bookShortName: raw.bookShortName || '',
@@ -246,6 +248,7 @@ const PaneManager = (() => {
           paneType: 'bible',
           moduleId,
           hasStrongs: mod ? mod.hasStrongs : false,
+          strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
           bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
           chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
           bookShortName: raw.bookShortName || '',
@@ -486,6 +489,7 @@ const PaneManager = (() => {
       pane.moduleId = select.value;
       const mod = modules.find((m) => m.id === select.value);
       pane.hasStrongs = mod ? mod.hasStrongs : false;
+      pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
       pane.books = [];
       pane.verses = [];
       await loadPaneData(paneId);
@@ -935,12 +939,9 @@ const PaneManager = (() => {
 
       // Update nav label
       const navLabel = el.querySelector('.commentary-nav-label');
-      if (navLabel && allBooksCache) {
-        const book = allBooksCache.find((b) => b.bookNumber === pane.bookNumber);
-        if (book) {
-          navLabel.textContent = `${book.shortName} ${pane.chapter}`;
-          pane.bookShortName = book.shortName;
-        }
+      if (navLabel) {
+        navLabel.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter}`;
+        pane.bookShortName = I18n.bookName(pane.bookNumber).short;
       }
 
       if (scrollToVerse) {
@@ -971,12 +972,9 @@ const PaneManager = (() => {
     // Update nav label to show current book/chapter even when unavailable
     const pane = panes[paneId];
     const navLabel = el.querySelector('.commentary-nav-label');
-    if (navLabel && pane && allBooksCache) {
-      const book = allBooksCache.find((b) => b.bookNumber === pane.bookNumber);
-      if (book) {
-        navLabel.textContent = `${book.shortName} ${pane.chapter}`;
-        pane.bookShortName = book.shortName;
-      }
+    if (navLabel && pane) {
+      navLabel.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter}`;
+      pane.bookShortName = I18n.bookName(pane.bookNumber).short;
     }
   }
 
@@ -1017,16 +1015,8 @@ const PaneManager = (() => {
     return AppStateStore.getSettings().crossRefModules || null;
   }
 
-  function bookNameResolver(pane) {
-    return (bookNumber) => {
-      const b = pane.books.find((bk) => bk.bookNumber === bookNumber);
-      if (b) return b.shortName;
-      if (allBooksCache) {
-        const fb = allBooksCache.find((bk) => bk.bookNumber === bookNumber);
-        if (fb) return fb.shortName;
-      }
-      return String(bookNumber);
-    };
+  function bookNameResolver() {
+    return (bookNumber) => I18n.bookName(bookNumber).short;
   }
 
   function hasNavBackHistory(pane) {
@@ -1097,22 +1087,23 @@ const PaneManager = (() => {
 
       const content = el.querySelector('.pane-content');
       const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
-      if (book) pane.bookShortName = book.shortName;
+      pane.bookShortName = I18n.bookName(pane.bookNumber).short;
       BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
         crossRefs,
         crossRefMode: crossRefModules ? 'inline' : 'none',
-        bookNameResolver: bookNameResolver(pane),
+        bookNameResolver: bookNameResolver(),
+        strongsPrefix: pane.strongsPrefix,
       });
 
       const wrapper = content.querySelector('.verse-text');
-      if (wrapper && book) {
-        wrapper.dataset.bookShort = book.shortName;
+      if (wrapper) {
+        wrapper.dataset.bookShort = I18n.bookName(pane.bookNumber).short;
         wrapper.dataset.chapter = pane.chapter;
       }
 
       const navBtnLabel = el.querySelector('.nav-btn-label');
-      if (navBtnLabel && book) {
-        navBtnLabel.textContent = `${book.shortName} ${pane.chapter}`;
+      if (navBtnLabel) {
+        navBtnLabel.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter}`;
       }
 
       // Update prev/next navigation labels
@@ -1125,10 +1116,10 @@ const PaneManager = (() => {
 
         if (prevBtnEl && prevLabelEl) {
           if (pane.chapter > 1) {
-            prevLabelEl.textContent = `${book.shortName} ${pane.chapter - 1}`;
+            prevLabelEl.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter - 1}`;
             prevBtnEl.style.display = '';
           } else if (bookIdx > 0) {
-            prevLabelEl.textContent = pane.books[bookIdx - 1].shortName;
+            prevLabelEl.textContent = I18n.bookName(pane.books[bookIdx - 1].bookNumber).short;
             prevBtnEl.style.display = '';
           } else {
             prevLabelEl.textContent = '';
@@ -1138,10 +1129,10 @@ const PaneManager = (() => {
 
         if (nextBtnEl && nextLabelEl) {
           if (pane.chapter < chapterCount) {
-            nextLabelEl.textContent = `${book.shortName} ${pane.chapter + 1}`;
+            nextLabelEl.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter + 1}`;
             nextBtnEl.style.display = '';
           } else if (bookIdx < pane.books.length - 1) {
-            nextLabelEl.textContent = `${pane.books[bookIdx + 1].shortName} 1`;
+            nextLabelEl.textContent = `${I18n.bookName(pane.books[bookIdx + 1].bookNumber).short} 1`;
             nextBtnEl.style.display = '';
           } else {
             nextLabelEl.textContent = '';
@@ -1255,11 +1246,7 @@ const PaneManager = (() => {
 
     const navBtnLabel = el.querySelector('.nav-btn-label');
     if (navBtnLabel) {
-      const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
-      const name = book?.shortName || pane.bookShortName;
-      if (name) {
-        navBtnLabel.textContent = `${name} ${pane.chapter}`;
-      }
+      navBtnLabel.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter}`;
     }
 
     // Hide prev/next buttons and clear labels so they don't show stale data
@@ -1365,6 +1352,7 @@ const PaneManager = (() => {
     const newPane = panes[newPaneId];
     if (newPaneType === 'bible') {
       newPane.hasStrongs = orig.hasStrongs || false;
+      newPane.strongsPrefix = orig.strongsPrefix || null;
     }
 
     const parent = findParent(tree, paneId);
