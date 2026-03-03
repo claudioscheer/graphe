@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
   getChapter: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-chapter', moduleId, bookNumber, chapter),
   searchVerses: (moduleId, query) => ipcRenderer.invoke('search-verses', moduleId, query),
+  searchVersesLimited: (moduleId, query, limit) =>
+    ipcRenderer.invoke('search-verses-limited', moduleId, query, limit),
   getDictionaryEntry: (moduleId, topic) =>
     ipcRenderer.invoke('get-dictionary-entry', moduleId, topic),
   lookupAllStrongDicts: (topic, allowedModuleIds) =>
@@ -36,6 +38,21 @@ contextBridge.exposeInMainWorld('api', {
   getCommentary: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-commentary', moduleId, bookNumber, chapter),
   getCommentaryBooks: (moduleId) => ipcRenderer.invoke('get-commentary-books', moduleId),
+  getModulePath: (moduleId) => ipcRenderer.invoke('get-module-path', moduleId),
+  getEditableModuleState: (moduleId) => ipcRenderer.invoke('get-editable-module-state', moduleId),
+  saveInfoValue: (moduleId, name, value) =>
+    ipcRenderer.invoke('save-info-value', moduleId, name, value),
+  deleteInfoValue: (moduleId, name) => ipcRenderer.invoke('delete-info-value', moduleId, name),
+  saveBookNames: (moduleId, bookNumber, fields) =>
+    ipcRenderer.invoke('save-book-names', moduleId, bookNumber, fields),
+  getVerseRecord: (moduleId, bookNumber, chapter, verse) =>
+    ipcRenderer.invoke('get-verse-record', moduleId, bookNumber, chapter, verse),
+  saveVerseText: (moduleId, bookNumber, chapter, verse, text) =>
+    ipcRenderer.invoke('save-verse-text', moduleId, bookNumber, chapter, verse, text),
+  getCommentaryEntry: (moduleId, bookNumber, chapter, verseFrom) =>
+    ipcRenderer.invoke('get-commentary-entry', moduleId, bookNumber, chapter, verseFrom),
+  saveCommentaryText: (moduleId, bookNumber, chapter, verseFrom, text) =>
+    ipcRenderer.invoke('save-commentary-text', moduleId, bookNumber, chapter, verseFrom, text),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => setSingleListener('open-settings', callback),
@@ -50,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   onStrongsSearch: (callback) => setSingleListener('strongs-search', callback),
   onStrongsLookup: (callback) => setSingleListener('strongs-lookup', callback),
   onOpenAbout: (callback) => setSingleListener('open-about', callback),
+  onOpenModuleEditor: (callback) => setSingleListener('open-module-editor', callback),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   onUpdateAvailable: (callback) => setSingleListener('update-available', callback),
   getPendingUpdate: () => ipcRenderer.invoke('get-pending-update'),

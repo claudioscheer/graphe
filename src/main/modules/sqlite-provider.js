@@ -213,12 +213,156 @@ function isValidModule(filePath) {
   }
 }
 
+function tableExists(db, tableName) {
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(tableName);
+  return !!row;
+}
+
+function getEditableTableAvailability(db) {
+  return {
+    info: tableExists(db, 'info'),
+    books: tableExists(db, 'books'),
+    booksAll: tableExists(db, 'books_all'),
+    verses: tableExists(db, 'verses'),
+    commentaries: tableExists(db, 'commentaries'),
+  };
+}
+
+function getInfoRows(db) {
+  if (!tableExists(db, 'info')) return [];
+  return db.prepare('SELECT name, value FROM info ORDER BY name').all();
+}
+
+function upsertInfoValue(db, name, value) {
+  if (!tableExists(db, 'info')) throw new Error('Module does not have info table');
+  const key = String(name || '').trim();
+  if (!key) throw new Error('Info key is required');
+  const val = String(value ?? '');
+  const update = db.prepare('UPDATE info SET value = ? WHERE name = ?').run(val, key);
+  if (update.changes > 0) return { updated: true, inserted: false };
+  db.prepare('INSERT INTO info (name, value) VALUES (?, ?)').run(key, val);
+  return { updated: false, inserted: true };
+}
+
+function deleteInfoKey(db, name) {
+  if (!tableExists(db, 'info')) throw new Error('Module does not have info table');
+  const key = String(name || '').trim();
+  if (!key) throw new Error('Info key is required');
+  const result = db.prepare('DELETE FROM info WHERE name = ?').run(key);
+  return result.changes > 0;
+}
+
+function getEditableBooks(db) {
+  if (tableExists(db, 'books_all')) {
+    return db
+      .prepare(
+        'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName, title, is_present AS isPresent FROM books_all ORDER BY book_number'
+      )
+      .all()
+      .map((row) => ({ ...row, sourceTable: 'books_all' }));
+  }
+  if (tableExists(db, 'books')) {
+    return db
+      .prepare(
+        'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number'
+      )
+      .all()
+      .map((row) => ({ ...row, title: null, isPresent: 1, sourceTable: 'books' }));
+  }
+  return [];
+}
+
+function updateBookNames(db, bookNumber, fields = {}) {
+  const hasBooksAll = tableExists(db, 'books_all');
+  const hasBooks = tableExists(db, 'books');
+  const targetTable = hasBooksAll ? 'books_all' : hasBooks ? 'books' : null;
+  if (!targetTable) throw new Error('Module does not have books table');
+  if (!Number.isInteger(bookNumber)) throw new Error('Invalid book number');
+
+  const updates = [];
+  const params = [];
+
+  if (Object.prototype.hasOwnProperty.call(fields, 'shortName')) {
+    updates.push('short_name = ?');
+    params.push(String(fields.shortName ?? ''));
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, 'longName')) {
+    updates.push('long_name = ?');
+    params.push(String(fields.longName ?? ''));
+  }
+  if (targetTable === 'books_all' && Object.prototype.hasOwnProperty.call(fields, 'title')) {
+    updates.push('title = ?');
+    params.push(String(fields.title ?? ''));
+  }
+  if (targetTable === 'books_all' && Object.prototype.hasOwnProperty.call(fields, 'isPresent')) {
+    updates.push('is_present = ?');
+    params.push(fields.isPresent ? 1 : 0);
+  }
+  if (updates.length === 0) throw new Error('No allowed fields provided');
+
+  const stmt = db.prepare(
+    `UPDATE ${targetTable} SET ${updates.join(', ')} WHERE book_number = ?`
+  );
+  const res = stmt.run(...params, bookNumber);
+  if (res.changes === 0) throw new Error('Book row not found');
+  return true;
+}
+
+function getVerseRecord(db, bookNumber, chapter, verse) {
+  if (!tableExists(db, 'verses')) throw new Error('Module does not have verses table');
+  const row = db
+    .prepare(
+      'SELECT book_number AS bookNumber, chapter, verse, text FROM verses WHERE book_number = ? AND chapter = ? AND verse = ? LIMIT 1'
+    )
+    .get(bookNumber, chapter, verse);
+  return row || null;
+}
+
+function updateVerseText(db, bookNumber, chapter, verse, text) {
+  if (!tableExists(db, 'verses')) throw new Error('Module does not have verses table');
+  const res = db
+    .prepare('UPDATE verses SET text = ? WHERE book_number = ? AND chapter = ? AND verse = ?')
+    .run(String(text ?? ''), bookNumber, chapter, verse);
+  if (res.changes === 0) throw new Error('Verse row not found');
+  return true;
+}
+
+function getCommentaryEntry(db, bookNumber, chapter, verseFrom) {
+  if (!tableExists(db, 'commentaries')) throw new Error('Module does not have commentaries table');
+  const row = db
+    .prepare(
+      'SELECT book_number AS bookNumber, chapter_number_from AS chapterFrom, verse_number_from AS verseFrom, chapter_number_to AS chapterTo, verse_number_to AS verseTo, text FROM commentaries WHERE book_number = ? AND chapter_number_from = ? AND verse_number_from = ? LIMIT 1'
+    )
+    .get(bookNumber, chapter, verseFrom);
+  return row || null;
+}
+
+function updateCommentaryText(db, bookNumber, chapter, verseFrom, text) {
+  if (!tableExists(db, 'commentaries')) throw new Error('Module does not have commentaries table');
+  const res = db
+    .prepare(
+      'UPDATE commentaries SET text = ? WHERE book_number = ? AND chapter_number_from = ? AND verse_number_from = ?'
+    )
+    .run(String(text ?? ''), bookNumber, chapter, verseFrom);
+  if (res.changes === 0) throw new Error('Commentary row not found');
+  return true;
+}
+
 module.exports = {
   detectType,
   getInfo,
+  getInfoRows,
+  upsertInfoValue,
+  deleteInfoKey,
   getBooks,
+  getEditableBooks,
+  updateBookNames,
   getChapterCount,
   getChapter,
+  getVerseRecord,
+  updateVerseText,
   parseSearchQuery,
   lexicalSearch,
   getDictColumns,
@@ -228,6 +372,9 @@ module.exports = {
   getCrossReferences,
   getCommentary,
   getCommentaryBooks,
+  getCommentaryEntry,
+  updateCommentaryText,
+  getEditableTableAvailability,
   isValidModule,
   hasDictionaryTable,
   hasCrossRefTable,

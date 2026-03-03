@@ -320,6 +320,233 @@
   display: block;
 }
 
+.module-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgb(var(--ui-overlay-rgb) / 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.module-editor-overlay.hidden {
+  display: none;
+}
+
+.module-editor-modal {
+  width: min(980px, 96vw);
+  max-height: 92vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  box-shadow: 0 12px 28px rgb(var(--ui-shadow-rgb) / 0.35);
+}
+
+.module-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.module-editor-title-wrap {
+  min-width: 0;
+}
+
+.module-editor-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.module-editor-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ui-text-subtle);
+  text-transform: capitalize;
+}
+
+.module-editor-close {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-accent-bg-soft);
+  color: var(--ui-text);
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.module-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.module-editor-path {
+  font-size: 0.75rem;
+  color: var(--ui-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-editor-tabs {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.module-editor-tab {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-muted);
+  color: var(--ui-text-muted);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.module-editor-tab.is-active {
+  background: var(--ui-accent-bg);
+  color: var(--ui-accent-ink);
+  border-color: var(--ui-border-strong);
+}
+
+.module-editor-body {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.module-editor-status {
+  min-height: 2.1rem;
+  padding: 0.5rem 1rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--ui-text-subtle);
+  border-top: 1px solid var(--ui-border);
+}
+
+.module-editor-status.ok {
+  color: #1d6b2a;
+}
+
+.dark .module-editor-status.ok {
+  color: #7adf84;
+}
+
+.module-editor-status.error {
+  color: #8d2222;
+}
+
+.dark .module-editor-status.error {
+  color: #f29b9b;
+}
+
+.module-editor-input {
+  width: 100%;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.86rem;
+}
+
+.module-editor-input:focus {
+  outline: 2px solid rgb(var(--ui-link-rgb) / 0.25);
+  outline-offset: 0;
+}
+
+.module-editor-textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.86rem;
+}
+
+.module-editor-textarea.large {
+  min-height: 180px;
+}
+
+.module-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.module-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.module-editor-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ui-text-muted);
+  text-transform: uppercase;
+}
+
+.module-editor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  color: var(--ui-text-muted);
+  padding: 0.35rem 0;
+}
+
+.module-editor-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.module-editor-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-accent-bg-soft);
+  color: var(--ui-text);
+  border-radius: 8px;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.module-editor-btn.primary {
+  background: var(--ui-accent-bg);
+  border-color: var(--ui-border-strong);
+  color: var(--ui-accent-ink);
+}
+
+.module-editor-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .module-editor-modal {
+    width: 100%;
+    max-height: 96vh;
+  }
+}
+
 .verse-word-translit {
   color: var(--ui-text-subtle);
 }

@@ -33,7 +33,7 @@ function loadAll() {
 
     try {
       const db = new Database(filePath, { readonly: true });
-      handles.set(id, { format: 'sqlite3', db });
+      handles.set(id, { format: 'sqlite3', db, filePath });
     } catch (err) {
       console.error(`Failed to open module ${file}:`, err.message);
     }
@@ -44,6 +44,20 @@ function getHandle(moduleId) {
   const handle = handles.get(moduleId);
   if (!handle) throw new Error(`Module not found: ${moduleId}`);
   return handle;
+}
+
+function withWritableDb(moduleId, callback) {
+  const handle = getHandle(moduleId);
+  const db = new Database(handle.filePath);
+  try {
+    const result = callback(db);
+    loadAll();
+    return result;
+  } finally {
+    try {
+      db.close();
+    } catch (_) {}
+  }
 }
 
 const SUPPORTED_TYPES = new Set(['bible', 'dictionary', 'commentary', 'crossreference']);
@@ -128,9 +142,9 @@ function getChapter(moduleId, bookNumber, chapter) {
   return sqliteProvider.getChapter(handle.db, bookNumber, chapter);
 }
 
-function searchVerses(moduleId, query) {
+function searchVerses(moduleId, query, opts) {
   const handle = getHandle(moduleId);
-  return sqliteProvider.lexicalSearch(handle.db, query);
+  return sqliteProvider.lexicalSearch(handle.db, query, opts);
 }
 
 function getDictionaryEntry(moduleId, topic) {
@@ -201,6 +215,76 @@ function getCommentaryBooks(moduleId) {
   return sqliteProvider.getCommentaryBooks(handle.db);
 }
 
+function getModulePath(moduleId) {
+  const handle = getHandle(moduleId);
+  return handle.filePath;
+}
+
+function getEditableModuleState(moduleId) {
+  const handle = getHandle(moduleId);
+  const info = sqliteProvider.getInfo(handle.db);
+  const type = sqliteProvider.detectType(handle.db);
+  const tables = sqliteProvider.getEditableTableAvailability(handle.db);
+  const rows = sqliteProvider.getInfoRows(handle.db);
+  const books = sqliteProvider.getEditableBooks(handle.db);
+  return {
+    moduleId,
+    modulePath: handle.filePath,
+    type,
+    info,
+    tables,
+    infoRows: rows,
+    books,
+  };
+}
+
+function saveInfoValue(moduleId, name, value) {
+  return withWritableDb(moduleId, (db) => sqliteProvider.upsertInfoValue(db, name, value));
+}
+
+function deleteInfoValue(moduleId, name) {
+  return withWritableDb(moduleId, (db) => sqliteProvider.deleteInfoKey(db, name));
+}
+
+function saveBookNames(moduleId, bookNumber, fields) {
+  return withWritableDb(moduleId, (db) =>
+    sqliteProvider.updateBookNames(db, Number(bookNumber), fields || {})
+  );
+}
+
+function getVerseRecord(moduleId, bookNumber, chapter, verse) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getVerseRecord(handle.db, Number(bookNumber), Number(chapter), Number(verse));
+}
+
+function saveVerseText(moduleId, bookNumber, chapter, verse, text) {
+  return withWritableDb(moduleId, (db) =>
+    sqliteProvider.updateVerseText(db, Number(bookNumber), Number(chapter), Number(verse), text)
+  );
+}
+
+function getCommentaryEntry(moduleId, bookNumber, chapter, verseFrom) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getCommentaryEntry(
+    handle.db,
+    Number(bookNumber),
+    Number(chapter),
+    Number(verseFrom)
+  );
+}
+
+function saveCommentaryText(moduleId, bookNumber, chapter, verseFrom, text) {
+  return withWritableDb(moduleId, (db) =>
+    sqliteProvider.updateCommentaryText(
+      db,
+      Number(bookNumber),
+      Number(chapter),
+      Number(verseFrom),
+      text
+    )
+  );
+}
+
 function isValidModule(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.sqlite3') return false;
@@ -240,4 +324,13 @@ module.exports = {
   lookupAllCrossRefModules,
   getCommentary,
   getCommentaryBooks,
+  getModulePath,
+  getEditableModuleState,
+  saveInfoValue,
+  deleteInfoValue,
+  saveBookNames,
+  getVerseRecord,
+  saveVerseText,
+  getCommentaryEntry,
+  saveCommentaryText,
 };

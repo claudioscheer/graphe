@@ -495,7 +495,6 @@ const PaneManager = (() => {
       await loadPaneData(paneId);
       emitStateChange();
     });
-
     const prevBtn = document.createElement('button');
     prevBtn.className =
       'nav-prev-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
@@ -625,7 +624,6 @@ const PaneManager = (() => {
       await loadCommentaryData(paneId, selectedVerse);
       emitStateChange();
     });
-
     // Navigation label
     const navLabel = document.createElement('span');
     navLabel.className =

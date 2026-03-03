@@ -21,6 +21,10 @@ function registerIpcHandlers() {
     modules.searchVerses(moduleId, query)
   );
 
+  ipcMain.handle('search-verses-limited', (_event, moduleId, query, limit) =>
+    modules.searchVerses(moduleId, query, { limit: Number(limit) || 20 })
+  );
+
   ipcMain.handle('get-dictionary-entry', (_event, moduleId, topic) =>
     modules.getDictionaryEntry(moduleId, topic)
   );
@@ -47,6 +51,34 @@ function registerIpcHandlers() {
 
   ipcMain.handle('get-commentary-books', (_event, moduleId) =>
     modules.getCommentaryBooks(moduleId)
+  );
+
+  ipcMain.handle('get-module-path', (_event, moduleId) => modules.getModulePath(moduleId));
+  ipcMain.handle('get-editable-module-state', (_event, moduleId) =>
+    modules.getEditableModuleState(moduleId)
+  );
+  ipcMain.handle('save-info-value', (_event, moduleId, name, value) =>
+    modules.saveInfoValue(moduleId, name, value)
+  );
+  ipcMain.handle('delete-info-value', (_event, moduleId, name) =>
+    modules.deleteInfoValue(moduleId, name)
+  );
+  ipcMain.handle('save-book-names', (_event, moduleId, bookNumber, fields) =>
+    modules.saveBookNames(moduleId, bookNumber, fields)
+  );
+  ipcMain.handle('get-verse-record', (_event, moduleId, bookNumber, chapter, verse) =>
+    modules.getVerseRecord(moduleId, bookNumber, chapter, verse)
+  );
+  ipcMain.handle('save-verse-text', (_event, moduleId, bookNumber, chapter, verse, text) =>
+    modules.saveVerseText(moduleId, bookNumber, chapter, verse, text)
+  );
+  ipcMain.handle('get-commentary-entry', (_event, moduleId, bookNumber, chapter, verseFrom) =>
+    modules.getCommentaryEntry(moduleId, bookNumber, chapter, verseFrom)
+  );
+  ipcMain.handle(
+    'save-commentary-text',
+    (_event, moduleId, bookNumber, chapter, verseFrom, text) =>
+      modules.saveCommentaryText(moduleId, bookNumber, chapter, verseFrom, text)
   );
 
   ipcMain.handle('get-app-state', () => stateStore.loadState());

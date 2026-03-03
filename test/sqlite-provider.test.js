@@ -160,3 +160,91 @@ describe('parseSearchQuery', () => {
     expect(result.textTerms).toEqual([]);
   });
 });
+
+describe('editable operations', () => {
+  let tmpDir;
+  let dbPath;
+  let db;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-sqlite-edit-'));
+    dbPath = path.join(tmpDir, 'module.sqlite3');
+    db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE info (name TEXT, value TEXT);
+      CREATE TABLE books (book_number NUMERIC, short_name TEXT, long_name TEXT);
+      CREATE TABLE verses (book_number NUMERIC, chapter NUMERIC, verse NUMERIC, text TEXT);
+      CREATE TABLE commentaries (
+        book_number NUMERIC,
+        chapter_number_from NUMERIC,
+        verse_number_from NUMERIC,
+        chapter_number_to NUMERIC,
+        verse_number_to NUMERIC,
+        text TEXT
+      );
+    `);
+    db.prepare('INSERT INTO info (name, value) VALUES (?, ?)').run('description', 'Demo');
+    db.prepare('INSERT INTO books (book_number, short_name, long_name) VALUES (?, ?, ?)').run(
+      10,
+      'Gn',
+      'Genesis'
+    );
+    db.prepare('INSERT INTO verses (book_number, chapter, verse, text) VALUES (?, ?, ?, ?)').run(
+      10,
+      1,
+      1,
+      'In the beginning'
+    );
+    db.prepare(
+      'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, text) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(10, 1, 1, 1, 1, 'Commentary text');
+  });
+
+  afterAll(() => {
+    if (db) db.close();
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('upsertInfoValue updates and inserts', () => {
+    const updated = provider.upsertInfoValue(db, 'description', 'Demo 2');
+    expect(updated.updated).toBe(true);
+    const inserted = provider.upsertInfoValue(db, 'short.title', 'D');
+    expect(inserted.inserted).toBe(true);
+
+    const rows = provider.getInfoRows(db);
+    const map = Object.fromEntries(rows.map((r) => [r.name, r.value]));
+    expect(map.description).toBe('Demo 2');
+    expect(map['short.title']).toBe('D');
+  });
+
+  it('updateBookNames edits allowed columns', () => {
+    provider.updateBookNames(db, 10, { shortName: 'Gen', longName: 'Genesis Book' });
+    const row = provider.getEditableBooks(db).find((b) => b.bookNumber === 10);
+    expect(row.shortName).toBe('Gen');
+    expect(row.longName).toBe('Genesis Book');
+  });
+
+  it('get/update verse record works', () => {
+    const before = provider.getVerseRecord(db, 10, 1, 1);
+    expect(before.text).toBe('In the beginning');
+    provider.updateVerseText(db, 10, 1, 1, 'Edited verse');
+    const after = provider.getVerseRecord(db, 10, 1, 1);
+    expect(after.text).toBe('Edited verse');
+  });
+
+  it('get/update commentary entry works', () => {
+    const before = provider.getCommentaryEntry(db, 10, 1, 1);
+    expect(before.text).toBe('Commentary text');
+    provider.updateCommentaryText(db, 10, 1, 1, 'Edited commentary');
+    const after = provider.getCommentaryEntry(db, 10, 1, 1);
+    expect(after.text).toBe('Edited commentary');
+  });
+
+  it('table availability reports editable tables', () => {
+    const available = provider.getEditableTableAvailability(db);
+    expect(available.info).toBe(true);
+    expect(available.books).toBe(true);
+    expect(available.verses).toBe(true);
+    expect(available.commentaries).toBe(true);
+  });
+});

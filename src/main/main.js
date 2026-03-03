@@ -313,7 +313,28 @@ function buildMenu() {
         ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }]),
       ],
     },
-    { role: 'editMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Edit Module Data...',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('open-module-editor');
+            }
+          },
+        },
+      ],
+    },
     {
       label: 'View',
       submenu: [

@@ -689,7 +689,8 @@ document.addEventListener('keydown', (e) => {
     !document.getElementById('settings-overlay').classList.contains('hidden') ||
     !document.getElementById('nav-overlay').classList.contains('hidden') ||
     CrossRefPreview.isOpen() ||
-    AboutDialog.isOpen();
+    AboutDialog.isOpen() ||
+    (window.ModuleEditor && window.ModuleEditor.isOpen());
 
   if (e.key === 'Escape' && AboutDialog.isOpen()) {
     e.preventDefault();
@@ -826,6 +827,17 @@ window.api
     });
 
     PaneManager.init(bibleModules, AppStateStore.getPaneManager(), commentaryModulesList);
+    if (window.ModuleEditor) {
+      window.ModuleEditor.init(modules, {
+        onSaved: () => PaneManager.reloadAllChapters(),
+      });
+      window.api.onOpenModuleEditor(() => {
+        const activePane = PaneManager.getPane(PaneManager.getActivePaneId());
+        const fallbackModuleId = modules[0] ? modules[0].id : null;
+        const moduleId = activePane?.moduleId || fallbackModuleId;
+        if (moduleId) window.ModuleEditor.open(moduleId, 'info');
+      });
+    }
 
     SearchPanel.setStateChangeListener((searchState) => {
       AppStateStore.setSearchPanel(searchState);
