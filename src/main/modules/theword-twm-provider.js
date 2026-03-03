@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const Database = require('better-sqlite3');
 const rtfToHTML = require('@iarna/rtf-to-html');
 const { twBookToGraphe, grapheToTwBook } = require('./book-map');
@@ -218,6 +219,31 @@ function convertRtfToHtml(rtfString) {
  * Extract plain text from content_search table (UTF-16 LE encoded blobs).
  * Used as fallback for RVF content type.
  */
+function isLikelyZlib(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 2) return false;
+  if (buf[0] !== 0x78) return false;
+  const cmf = buf[0];
+  const flg = buf[1];
+  // RFC1950 check: deflate method + checksum
+  return (cmf & 0x0f) === 8 && ((cmf << 8) + flg) % 31 === 0;
+}
+
+function decodeContentSearchBlob(raw, compressedHint) {
+  const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+  let decoded = null;
+
+  if (compressedHint || isLikelyZlib(buf)) {
+    try {
+      decoded = zlib.inflateSync(buf);
+    } catch (_) {
+      decoded = null;
+    }
+  }
+
+  const payload = decoded || buf;
+  return payload.toString('utf16le').replace(/^\ufeff/, '');
+}
+
 function extractPlainText(handle, topicId) {
   if (!handle.hasContentSearch) return null;
   try {
@@ -226,8 +252,10 @@ function extractPlainText(handle, topicId) {
       .get(topicId);
     if (!row || !row.data) return null;
 
-    const buf = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data);
-    const text = buf.toString('utf16le');
+    const isCompressed = String(handle.config.compressed || '').trim() === '1';
+    const text = decodeContentSearchBlob(row.data, isCompressed);
+    if (!text || !text.trim()) return null;
+
     // Wrap in basic HTML paragraph tags
     return text
       .split(/\r?\n/)

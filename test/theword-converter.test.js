@@ -344,24 +344,33 @@ describe('convertDictionary integration', () => {
   let dctFile;
   let tmpDir;
 
-  function hasDctFile() {
+  function findFirstDctFile(root) {
     try {
-      const files = fs.readdirSync(MODULES_DIR);
-      return files.some((f) => f.toLowerCase().endsWith('.dct.twm'));
-    } catch (_) {
-      return false;
-    }
+      const entries = fs.readdirSync(root, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(root, entry.name);
+        if (entry.isDirectory()) {
+          const nested = findFirstDctFile(fullPath);
+          if (nested) return nested;
+          continue;
+        }
+        if (entry.isFile() && entry.name.toLowerCase().endsWith('.dct.twm')) {
+          return fullPath;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function hasDctFile() {
+    return Boolean(findFirstDctFile(MODULES_DIR));
   }
 
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-dict-'));
 
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      const dct = files.find((f) => f.toLowerCase().endsWith('.dct.twm'));
-      if (dct) dctFile = path.join(MODULES_DIR, dct);
-    } catch (_) {}
+    dctFile = findFirstDctFile(MODULES_DIR);
   });
 
   afterAll(() => {
@@ -384,6 +393,13 @@ describe('convertDictionary integration', () => {
       expect(entries.length).toBeGreaterThan(0);
       expect(entries[0]).toHaveProperty('topic');
       expect(entries[0]).toHaveProperty('definition');
+
+      const g3588 = db
+        .prepare('SELECT definition FROM dictionary WHERE topic = ? LIMIT 1')
+        .get('G3588');
+      if (g3588?.definition) {
+        expect(g3588.definition).toContain('artigo definido');
+      }
     } finally {
       db.close();
     }
