@@ -456,6 +456,9 @@ describe('convertCommentary integration', () => {
       expect(entries[0]).toHaveProperty('book_number');
       expect(entries[0]).toHaveProperty('text');
       expect(entries[0].text.length).toBeGreaterThan(0);
+
+      const books = db.prepare('SELECT book_number FROM books ORDER BY book_number').all();
+      expect(books.length).toBeGreaterThan(0);
     } finally {
       db.close();
     }

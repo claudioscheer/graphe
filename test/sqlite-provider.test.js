@@ -247,4 +247,37 @@ describe('editable operations', () => {
     expect(available.verses).toBe(true);
     expect(available.commentaries).toBe(true);
   });
+
+  it('getEditableBooks falls back to commentaries when books tables are missing', () => {
+    const fallbackDbPath = path.join(tmpDir, 'commentaries-only.sqlite3');
+    const fallbackDb = new Database(fallbackDbPath);
+    try {
+      fallbackDb.exec(`
+        CREATE TABLE commentaries (
+          book_number NUMERIC,
+          chapter_number_from NUMERIC,
+          verse_number_from NUMERIC,
+          chapter_number_to NUMERIC,
+          verse_number_to NUMERIC,
+          text TEXT
+        );
+      `);
+      fallbackDb
+        .prepare(
+          'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, text) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        .run(10, 1, 1, null, null, 'A');
+      fallbackDb
+        .prepare(
+          'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, text) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        .run(470, 1, 1, null, null, 'B');
+
+      const books = provider.getEditableBooks(fallbackDb);
+      expect(books.map((b) => b.bookNumber)).toEqual([10, 470]);
+      expect(books[0].sourceTable).toBe('commentaries');
+    } finally {
+      fallbackDb.close();
+    }
+  });
 });

@@ -57,11 +57,30 @@ function getBooks(db) {
     if (rows.length > 0) return rows;
   } catch (_) {}
 
-  return db
-    .prepare(
-      'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number'
-    )
-    .all();
+  try {
+    const rows = db
+      .prepare(
+        'SELECT book_number AS bookNumber, short_name AS shortName, long_name AS longName FROM books ORDER BY book_number'
+      )
+      .all();
+    if (rows.length > 0) return rows;
+  } catch (_) {}
+
+  // Fallback for commentary modules that do not include BOOKS/BOOKS_ALL.
+  // This keeps navigation/editor usable by deriving available books from commentaries rows.
+  // short_name/long_name can be resolved in renderer via I18n.bookName(bookNumber).
+  try {
+    return db
+      .prepare('SELECT DISTINCT book_number AS bookNumber FROM commentaries ORDER BY book_number')
+      .all()
+      .map((row) => ({
+        bookNumber: row.bookNumber,
+        shortName: null,
+        longName: null,
+      }));
+  } catch (_) {
+    return [];
+  }
 }
 
 function getChapterCount(db, bookNumber) {
@@ -270,6 +289,19 @@ function getEditableBooks(db) {
       )
       .all()
       .map((row) => ({ ...row, title: null, isPresent: 1, sourceTable: 'books' }));
+  }
+  if (tableExists(db, 'commentaries')) {
+    return db
+      .prepare('SELECT DISTINCT book_number AS bookNumber FROM commentaries ORDER BY book_number')
+      .all()
+      .map((row) => ({
+        bookNumber: row.bookNumber,
+        shortName: null,
+        longName: null,
+        title: null,
+        isPresent: 1,
+        sourceTable: 'commentaries',
+      }));
   }
   return [];
 }

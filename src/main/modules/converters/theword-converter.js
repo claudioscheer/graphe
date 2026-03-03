@@ -300,6 +300,9 @@ async function convertCommentaryType2(handle, inputPath, outputDir, onProgress) 
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS info (name TEXT, value TEXT);
+      CREATE TABLE IF NOT EXISTS books (
+        book_number INTEGER, short_name TEXT, long_name TEXT
+      );
       CREATE TABLE IF NOT EXISTS commentaries (
         book_number INTEGER,
         chapter_number_from INTEGER,
@@ -330,9 +333,13 @@ async function convertCommentaryType2(handle, inputPath, outputDir, onProgress) 
     const insertComm = db.prepare(
       'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, is_preceding, marker, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    const insertBook = db.prepare(
+      'INSERT INTO books (book_number, short_name, long_name) VALUES (?, ?, ?)'
+    );
 
     let count = 0;
     const total = rows.length;
+    const insertedBooks = new Set();
 
     const batch = [];
     for (const row of rows) {
@@ -369,12 +376,16 @@ async function convertCommentaryType2(handle, inputPath, outputDir, onProgress) 
       });
 
       count++;
+      insertedBooks.add(bookNumber);
       if (onProgress && count % 100 === 0) {
         onProgress(count, total);
       }
     }
 
     db.transaction(() => {
+      for (const bookNumber of insertedBooks) {
+        insertBook.run(bookNumber, null, null);
+      }
       for (const entry of batch) {
         insertComm.run(
           entry.bookNumber,
@@ -410,6 +421,9 @@ async function convertCommentaryType3(handle, inputPath, outputDir, onProgress) 
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS info (name TEXT, value TEXT);
+      CREATE TABLE IF NOT EXISTS books (
+        book_number INTEGER, short_name TEXT, long_name TEXT
+      );
       CREATE TABLE IF NOT EXISTS commentaries (
         book_number INTEGER,
         chapter_number_from INTEGER,
@@ -433,6 +447,9 @@ async function convertCommentaryType3(handle, inputPath, outputDir, onProgress) 
     const insertComm = db.prepare(
       'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, is_preceding, marker, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    const insertBook = db.prepare(
+      'INSERT INTO books (book_number, short_name, long_name) VALUES (?, ?, ?)'
+    );
 
     const books = Array.from(handle.topicBookMap.entries());
     let count = 0;
@@ -445,6 +462,7 @@ async function convertCommentaryType3(handle, inputPath, outputDir, onProgress) 
         if (texts.length === 0) continue;
 
         const text = texts.join('\n');
+        insertBook.run(bookNumber, null, null);
         insertComm.run(bookNumber, 1, 1, null, null, null, null, text);
 
         count++;

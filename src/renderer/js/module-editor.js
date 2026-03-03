@@ -112,7 +112,7 @@ const ModuleEditor = (() => {
     try {
       state = await window.api.getEditableModuleState(moduleId);
       moduleTypeEl.textContent = `${state.type} module`;
-      modulePathEl.textContent = state.modulePath || '';
+      modulePathEl.textContent = `\u2066${state.modulePath || ''}\u2069`;
       renderTabs();
       renderActiveTab();
       clearStatus();
@@ -138,7 +138,7 @@ const ModuleEditor = (() => {
     state = await window.api.getEditableModuleState(moduleId);
     if (!keepTab) activeTab = 'info';
     moduleTypeEl.textContent = `${state.type} module`;
-    modulePathEl.textContent = state.modulePath || '';
+    modulePathEl.textContent = `\u2066${state.modulePath || ''}\u2069`;
     renderTabs();
     renderActiveTab();
   }
