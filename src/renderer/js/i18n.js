@@ -490,5 +490,5 @@ const I18n = (() => {
     return null;
   }
 
-  return { getCurrentLang, setLang, t, updateAll, bookName, findBookByAbbrev };
+  return { getCurrentLang, setLang, t, updateAll, bookName, findBookByAbbrev, _bookNames: bookNames, _BOOK_NUMBERS: BOOK_NUMBERS };
 })();

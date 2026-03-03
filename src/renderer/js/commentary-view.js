@@ -2,6 +2,51 @@
  * commentary-view.js — Commentary rendering for commentary panes
  */
 const CommentaryView = (() => {
+  // --- Plain-text bible reference detection ---
+  // Build abbreviation → book number lookup from all languages in I18n
+  const _refAbbrToBookNum = new Map();
+  const _refBaseSet = new Set();
+  {
+    const names = I18n._bookNames;
+    const nums = I18n._BOOK_NUMBERS;
+    for (const lang of Object.keys(names)) {
+      for (let i = 0; i < names[lang].length; i++) {
+        const bookNum = nums[i];
+        for (const form of [names[lang][i].short, names[lang][i].long]) {
+          const lower = form.toLowerCase();
+          if (!_refAbbrToBookNum.has(lower)) _refAbbrToBookNum.set(lower, bookNum);
+          // Register without spaces for numbered books: "1 samuel" → "1samuel"
+          const compact = lower.replace(/\s+/g, '');
+          if (compact !== lower && !_refAbbrToBookNum.has(compact))
+            _refAbbrToBookNum.set(compact, bookNum);
+          // Extract base abbreviation (strip leading digit + optional space)
+          const m = lower.match(/^[123]\s*(.*)/);
+          _refBaseSet.add(m ? m[1] : lower);
+        }
+      }
+    }
+  }
+  // Build regex — sort longest first to avoid partial matches
+  const _refBases = [..._refBaseSet].sort((a, b) => b.length - a.length);
+  const _refPattern = _refBases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const _refRegex = new RegExp(
+    `([123])?\\s*(${_refPattern})\\s+(\\d{1,3})[.:](\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?`,
+    'gi'
+  );
+
+  function _resolveRefBook(prefix, abbrev) {
+    const base = abbrev.toLowerCase();
+    if (prefix) {
+      return (
+        _refAbbrToBookNum.get(prefix + base) ||
+        _refAbbrToBookNum.get(prefix + ' ' + base) ||
+        null
+      );
+    }
+    return _refAbbrToBookNum.get(base) || null;
+  }
+  // --- end plain-text bible reference detection ---
+
   function parseLeadingReference(text) {
     if (!text) return null;
     const plain = new DOMParser().parseFromString(String(text), 'text/html').body.textContent || '';
@@ -134,6 +179,47 @@ const CommentaryView = (() => {
         a.replaceWith(span);
       }
     }
+
+    // Detect plain-text bible references in text nodes
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+    for (const node of textNodes) {
+      if (node.parentElement && node.parentElement.closest('.commentary-ref')) continue;
+      const text = node.textContent;
+      _refRegex.lastIndex = 0;
+      if (!_refRegex.test(text)) continue;
+      _refRegex.lastIndex = 0;
+
+      const frag = doc.createDocumentFragment();
+      let lastIdx = 0;
+      let m;
+      while ((m = _refRegex.exec(text)) !== null) {
+        const prefix = m[1] || '';
+        const abbrev = m[2];
+        const ch = m[3];
+        const vs = m[4];
+        const bookNum = _resolveRefBook(prefix, abbrev);
+        if (!bookNum) continue;
+        if (m.index > lastIdx) {
+          frag.appendChild(doc.createTextNode(text.slice(lastIdx, m.index)));
+        }
+        const span = doc.createElement('span');
+        span.className = 'commentary-ref';
+        span.dataset.bhref = `B:${bookNum} ${ch}:${vs}`;
+        span.textContent = m[0];
+        frag.appendChild(span);
+        lastIdx = m.index + m[0].length;
+      }
+      if (lastIdx > 0) {
+        if (lastIdx < text.length) {
+          frag.appendChild(doc.createTextNode(text.slice(lastIdx)));
+        }
+        node.parentNode.replaceChild(frag, node);
+      }
+    }
+
     return doc.body.innerHTML;
   }
 
