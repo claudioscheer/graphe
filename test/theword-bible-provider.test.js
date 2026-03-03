@@ -142,6 +142,26 @@ describe('encrypted module handling', () => {
 });
 
 describe('legacy encoding handling', () => {
+  it('loads utf8 BOM .nt modules without mojibake', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-utf8bom-'));
+    const inputPath = path.join(tmpDir, 'sample-utf8-bom.nt');
+    const verses = Array.from({ length: NT_VERSES }, () => '');
+    verses[0] = 'No princípio criou Deus o céu e a terra.';
+    const content = `${verses.join('\n')}\n`;
+    fs.writeFileSync(inputPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(content, 'utf8')]));
+
+    try {
+      const handle = provider.load(inputPath);
+      const chapter = provider.getChapter(handle, 470, 1);
+      expect(chapter[0].text).toBe('No princípio criou Deus o céu e a terra.');
+      expect(chapter[0].text).not.toContain('Ã');
+      expect(chapter[0].text).not.toContain('ï»¿');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('loads latin1 .nt modules without mojibake', () => {
     const provider = require('../src/main/modules/theword-bible-provider');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-latin1-'));

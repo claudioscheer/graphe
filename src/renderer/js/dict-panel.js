@@ -19,7 +19,6 @@ const DictPanel = (() => {
 
   function init(modules, savedState) {
     dictModules = modules;
-    if (dictModules.length === 0) return;
     if (savedState && Number.isFinite(savedState.dictHeightRatio)) {
       dictHeightRatio = Math.min(0.9, Math.max(0.1, Number(savedState.dictHeightRatio)));
     }
@@ -230,9 +229,7 @@ const DictPanel = (() => {
         e.preventDefault();
         const val = searchInput.value.trim();
         if (!val) return;
-        if (dictModules.length > 0) {
-          lookupWord(val);
-        }
+        lookupWord(val);
       }
       return;
     }
@@ -254,9 +251,7 @@ const DictPanel = (() => {
         hideAutocomplete();
         const val = searchInput.value.trim();
         if (!val) return;
-        if (dictModules.length > 0) {
-          lookupWord(val);
-        }
+        lookupWord(val);
       }
     } else if (e.key === 'Escape') {
       hideAutocomplete();
@@ -368,7 +363,7 @@ const DictPanel = (() => {
   // --- Strong's lookup (multi-dictionary) ---
 
   async function lookup(strongsNumber, skipHistory) {
-    if (!panel || dictModules.length === 0) return;
+    if (!panel) return;
 
     searchInput.value = strongsNumber;
     if (dictClearBtn) dictClearBtn.style.display = strongsNumber ? '' : 'none';
@@ -378,6 +373,13 @@ const DictPanel = (() => {
     if (!skipHistory) pushHistory({ type: 'strong', topic: strongsNumber });
 
     try {
+      if (dictModules.length === 0) {
+        contentEl.innerHTML =
+          '<div class="dict-placeholder">' +
+          Utils.escapeHtml(I18n.t('dictNoModulesInstalled')) +
+          '</div>';
+        return;
+      }
       const strongsDicts = AppStateStore.getSettings().strongsDicts;
       if (!strongsDicts || strongsDicts.length === 0) {
         const placeholder = document.createElement('div');
@@ -445,7 +447,13 @@ const DictPanel = (() => {
       }
 
       // No specific module — search across all dicts
-      if (dictModules.length === 0) return;
+      if (dictModules.length === 0) {
+        contentEl.innerHTML =
+          '<div class="dict-placeholder">' +
+          Utils.escapeHtml(I18n.t('dictNoModulesInstalled')) +
+          '</div>';
+        return;
+      }
 
       const promises = dictModules.map((m) =>
         window.api

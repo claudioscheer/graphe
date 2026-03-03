@@ -1,6 +1,6 @@
 # Graphe
 
-Uma alternativa moderna e muito simplificada ao [theWord](https://www.theword.net/) para estudo bíblico.
+Um aplicativo moderno para estudo bíblico, com foco em leitura, comparação e pesquisa das Escrituras.
 
 O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.
 
@@ -41,18 +41,22 @@ Baixe a versão mais recente para o seu sistema operacional na página de [relea
 - Abertura em painel dividido (horizontal ou vertical)
 - Vinculação flexível: escolha qual painel bíblico atualiza cada comentário
 
-### Compatibilidade com Módulos do theWord
+### Compatibilidade com Módulos MyBible (SQLite3)
 
-- Importa e utiliza módulos no formato SQLite3 do theWord
-- Suporte a módulos de Bíblias, Dicionários, Referências Cruzadas e Comentários
+- Utiliza módulos no formato **MyBible SQLite3**
+- Suporte a módulos de **Bíblias, Dicionários, Referências Cruzadas e Comentários**
 - O tipo do módulo é detectado automaticamente a partir da estrutura do banco de dados
+- Suporte estendido para anotações interlineares por palavra (quando presentes no módulo):
+  - número de Strong
+  - palavra original
+  - transcrição
 
 #### Instalando módulos
 
 Use o instalador de módulos do próprio Graphe:
 
 1. Abra o menu **File > Install Modules...** (ou clique em **Instalar Módulos** quando o app não encontrar módulos bíblicos).
-2. Selecione um ou mais arquivos de módulo do theWord (`.SQLite3`/SQLite válidos).
+2. Selecione um ou mais arquivos de módulo MyBible (`.SQLite3`/SQLite válidos).
 3. O Graphe instala os módulos automaticamente e recarrega a interface quando a instalação for concluída.
 
 Os arquivos selecionados são copiados automaticamente para a pasta de módulos do Graphe:
@@ -64,6 +68,17 @@ Os arquivos selecionados são copiados automaticamente para a pasta de módulos 
 | Windows  | `%USERPROFILE%\\.graphe\\modules\\` |
 
 O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
+
+### Conversão de módulos theWord para MyBible
+
+- O Graphe converte módulos do theWord para módulos MyBible SQLite3
+- Entrada suportada no conversor:
+  - Bíblias do theWord: `.ont`, `.nt`, `.ot`
+  - Comentários e dicionários do theWord: `.twm`
+- Saída do conversor:
+  - Bíblia: `.SQLite3`
+  - Comentário: `.commentaries.SQLite3`
+  - Dicionário: `.dictionary.SQLite3`
 
 Após a instalação, acesse as **Configurações** para verificar e organizar os módulos instalados.
 

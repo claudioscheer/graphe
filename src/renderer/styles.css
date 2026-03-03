@@ -320,6 +320,19 @@
   display: block;
 }
 
+.verse-word-strong {
+  display: block;
+  font-weight: 600;
+  color: var(--ui-link);
+}
+
+.verse-word-strong .strongs {
+  font-size: 1.05em;
+  vertical-align: baseline;
+  margin-left: 0;
+  line-height: 1.2;
+}
+
 .module-editor-overlay {
   position: fixed;
   inset: 0;
@@ -549,6 +562,10 @@
 
 .verse-word-translit {
   color: var(--ui-text-subtle);
+}
+
+.dark .verse-word-strong {
+  color: var(--ui-link-soft);
 }
 
 .dark .verse-annotation {

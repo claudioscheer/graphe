@@ -106,7 +106,7 @@ describe('convertTagsToMyBible', () => {
     expect(sMatches).toBeTruthy();
     for (const m of sMatches) {
       const content = m.replace(/<\/?S>/g, '');
-      expect(content).toMatch(/^\d+\w*$/);
+      expect(content).toMatch(/^\d+$/);
     }
   });
 
@@ -153,6 +153,27 @@ describe('convertTagsToMyBible', () => {
     expect(result).not.toContain('<TS>');
     expect(result).not.toContain('<FR>');
     expect(result).not.toContain('H1234');
+  });
+
+  it('strips unsupported tags while preserving text', () => {
+    const input = 'A<font color=red>B</font><sup>C</sup><v>D</v><pb/>E';
+    const result = convertTagsToMyBible(input);
+    expect(result).toBe('ABCD<pb/>E');
+  });
+
+  it('normalizes malformed Strong values to digits only', () => {
+    const input = 'one<WG1161x> two<WH5555(> three<WG3156>';
+    const result = convertTagsToMyBible(input);
+    expect(result).toBe('one<S>1161</S> two<S>5555</S> three<S>3156</S>');
+  });
+
+  it('preserves case-paired interlinear tags for renderer layout', () => {
+    const input = '<wt><E>Word<e><O>Λόγος<o><T>lógos<t><WG3056><WTN-NSM l="λόγος">';
+    const result = convertTagsToMyBible(input);
+    expect(result).toContain('<E>Word<e>');
+    expect(result).toContain('<O>Λόγος<o>');
+    expect(result).toContain('<T>lógos<t>');
+    expect(result).toContain('<S>3056</S>');
   });
 });
 
@@ -254,7 +275,7 @@ describe('convertBible integration', () => {
         const sMatches = strongVerse.text.match(/<S>(.*?)<\/S>/g);
         for (const m of sMatches) {
           const content = m.replace(/<\/?S>/g, '');
-          expect(content).toMatch(/^\d+\w*$/);
+          expect(content).toMatch(/^\d+$/);
         }
       }
     } finally {
@@ -262,7 +283,7 @@ describe('convertBible integration', () => {
     }
   });
 
-  it('drops empty verses/books when converting sparse full-length .ot files', async () => {
+  it('keeps contiguous verse rows for sparse full-length .ot files', async () => {
     const sparseTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-sparse-ot-'));
     const inputPath = path.join(sparseTmp, 'sparse.ot');
     const verses = Array(TOTAL_VERSES).fill('');
@@ -280,13 +301,20 @@ describe('convertBible integration', () => {
             "SELECT COUNT(*) AS c FROM verses WHERE trim(replace(replace(text, char(13), ''), char(10), '')) = ''"
           )
           .get().c;
-        expect(emptyVerseRows).toBe(0);
+        expect(emptyVerseRows).toBeGreaterThan(0);
 
         const books = db.prepare('SELECT book_number FROM books ORDER BY book_number').all();
-        expect(books.map((b) => b.book_number)).toEqual([10]);
+        expect(books.length).toBeGreaterThan(0);
+        expect(books.some((b) => b.book_number === 10)).toBe(true);
+
+        const otRows = db.prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number < 470').get().c;
+        expect(otRows).toBe(OT_VERSES);
+
+        const totalRows = db.prepare('SELECT COUNT(*) AS c FROM verses').get().c;
+        expect(totalRows).toBe(TOTAL_VERSES);
 
         const ntRows = db.prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number >= 470').get().c;
-        expect(ntRows).toBe(0);
+        expect(ntRows).toBe(TOTAL_VERSES - OT_VERSES);
       } finally {
         db.close();
       }

@@ -8,6 +8,62 @@ const thewordBible = require('../theword-bible-provider');
 const thewordTwm = require('../theword-twm-provider');
 const { twBookToGraphe } = require('../book-map');
 
+function normalizeStrongNumber(value) {
+  const match = String(value || '').match(/\d+/);
+  return match ? match[0] : '';
+}
+
+function sanitizeStrongTags(text) {
+  let tokenIndex = 0;
+  const tokens = [];
+
+  let result = String(text || '').replace(/<S[^>]*>[\s\S]*?<\/S>/gi, (pair) => {
+    const contentMatch = pair.match(/^<S[^>]*>([\s\S]*?)<\/S>$/i);
+    const rawInner = contentMatch ? contentMatch[1] : '';
+    const innerText = rawInner.replace(/<[^>]+>/g, '');
+    const number = normalizeStrongNumber(innerText);
+    if (!number) return '';
+    const token = `__GRAPHE_S_TOKEN_${tokenIndex++}__`;
+    tokens.push({ token, value: `<S>${number}</S>` });
+    return token;
+  });
+
+  result = result.replace(/<S[^>]*>/gi, '');
+  result = result.replace(/<\/S>/gi, '');
+
+  for (const { token, value } of tokens) {
+    result = result.replaceAll(token, value);
+  }
+
+  return result;
+}
+
+function sanitizeSupportedTags(text) {
+  const allowedOpenClose = new Set(['i', 'f', 'j', 'h', 'm', 'l']);
+  const canonicalTag = (name) => (name === 'j' ? 'J' : name);
+  return String(text || '').replace(/<[^>]*>/g, (tag) => {
+    if (/^<pb\s*\/?>$/i.test(tag)) return '<pb/>';
+    if (/^<(E|O|T|OG|OH|TG|TH)>$/.test(tag)) return tag;
+    if (/^<(e|o|t|og|oh|tg|th)>$/.test(tag)) return tag;
+
+    const closeMatch = tag.match(/^<\/\s*([a-z0-9]+)\s*>$/i);
+    if (closeMatch) {
+      const name = closeMatch[1].toLowerCase();
+      if (name === 's') return '</S>';
+      if (allowedOpenClose.has(name)) return `</${canonicalTag(name)}>`;
+      return '';
+    }
+
+    const openMatch = tag.match(/^<\s*([a-z0-9]+)(?:\s+[^>]*)?\s*>$/i);
+    if (!openMatch) return '';
+
+    const name = openMatch[1].toLowerCase();
+    if (name === 's') return '<S>';
+    if (allowedOpenClose.has(name)) return `<${canonicalTag(name)}>`;
+    return '';
+  });
+}
+
 /**
  * Convert TheWord inline tags to MyBible format.
  *
@@ -48,19 +104,20 @@ function convertTagsToMyBible(line) {
   result = result.replace(/<CM>/gi, '<pb/>');
   result = result.replace(/<CL>/gi, '<pb/>');
 
-  // Convert <wt>word<WH/G####><WTmorph l="lemma"> → word<S>####</S><m>morph</m>
+  // Convert <wt>word<WH/G####><WTmorph ...> → word<S>####</S><m>morph</m><l>lemma</l>
   result = result.replace(
-    /<wt>([^<]*)((?:<W[HG]\d+\w*>(?:<WT[^>]*>)?)+)/gi,
+    /<wt>([^<]*)((?:<W[HG][^>]*>(?:<WT[^>]*>)?)+)/gi,
     (_, word, strongsBlock) => {
-      const strongsPattern = /<W[HG](\d+\w*)>(?:<WT([^ >]*?)(?:\s+l="([^"]*)")?>)?/gi;
+      const strongsPattern = /<W[HG]([^>]*)>(?:<WT([^ >]*?)(?:\s+l="([^"]*)")?>)?/gi;
       let match;
       let tags = '';
 
       while ((match = strongsPattern.exec(strongsBlock)) !== null) {
-        const number = match[1];
+        const number = normalizeStrongNumber(match[1]);
         const morph = match[2] || '';
         const lemma = match[3] || '';
 
+        if (!number) continue;
         tags += `<S>${number}</S>`;
         if (morph) tags += `<m>${morph}</m>`;
         if (lemma) tags += `<l>${lemma}</l>`;
@@ -72,8 +129,9 @@ function convertTagsToMyBible(line) {
 
   // Handle bare Strong's tags (modules without <wt> wrappers, e.g. ARA+)
   // <WH/G####> = Strong's number → <S>####</S>
-  result = result.replace(/<W([HG])(\d+\w*)>/gi, (_, _prefix, number) => {
-    return `<S>${number}</S>`;
+  result = result.replace(/<W([HG])([^>]*)>/gi, (_, _prefix, raw) => {
+    const number = normalizeStrongNumber(raw);
+    return number ? `<S>${number}</S>` : '';
   });
 
   // Strip bare <H####> morphology codes (TheWord tense/voice/mood markers)
@@ -89,6 +147,9 @@ function convertTagsToMyBible(line) {
   // Strip NB (no-break) tags
   result = result.replace(/<\/?NB>/gi, '');
   result = result.replace(/<\/?Nb>/gi, '');
+
+  result = sanitizeSupportedTags(result);
+  result = sanitizeStrongTags(result);
 
   return result;
 }
@@ -181,30 +242,32 @@ function convertBible(inputPath, outputDir, onProgress) {
     const insertedBooks = new Set();
     let scanned = 0;
     let inserted = 0;
-    const total = handle.lines.length;
+    let nonEmptyVerseCount = 0;
+    let total = 0;
+    for (const [, chapterMap] of handle.verseIndex) {
+      for (const [, info] of chapterMap) {
+        total += info.verseCount;
+      }
+    }
 
     db.transaction(() => {
       for (const [bookNumber, chapterMap] of handle.verseIndex) {
         for (const [chapter, info] of chapterMap) {
           for (let v = 0; v < info.verseCount; v++) {
             const lineIdx = info.startLine + v;
-            if (lineIdx >= handle.lines.length) break;
             scanned++;
-            const rawText = handle.lines[lineIdx];
+            const rawText = lineIdx < handle.lines.length ? handle.lines[lineIdx] : '';
             const converted = convertTagsToMyBible(rawText);
-            if (!normalizeConvertedVerse(converted)) {
-              if (onProgress && scanned % 1000 === 0) onProgress(scanned, total);
-              continue;
-            }
             insertVerse.run(bookNumber, chapter, v + 1, converted);
             inserted++;
+            if (normalizeConvertedVerse(converted)) nonEmptyVerseCount++;
             insertedBooks.add(bookNumber);
             if (onProgress && scanned % 1000 === 0) onProgress(scanned, total);
           }
         }
       }
 
-      if (inserted === 0) {
+      if (inserted === 0 || nonEmptyVerseCount === 0) {
         throw new Error(
           `TheWord module has no non-empty verse text: ${path.basename(inputPath)}`
         );

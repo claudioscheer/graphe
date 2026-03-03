@@ -18,10 +18,17 @@ const OT_VERSES = TOTAL_VERSES - NT_VERSES;
 const ENCRYPTED_MAGIC = 'TWENCBMOD';
 
 function decodeTheWordText(rawBuf) {
-  // Most modules are UTF-8, but many legacy modules are ANSI/Latin-1.
-  const utf8Text = rawBuf.toString('utf-8');
-  if (!utf8Text.includes('\ufffd')) return utf8Text;
-  return rawBuf.toString('latin1');
+  // UTF-8 BOM is authoritative for TheWord plain-text modules.
+  if (rawBuf.length >= 3 && rawBuf[0] === 0xef && rawBuf[1] === 0xbb && rawBuf[2] === 0xbf) {
+    return rawBuf.slice(3).toString('utf-8');
+  }
+
+  // Prefer strict UTF-8. If bytes are not valid UTF-8, fall back to latin1 for legacy modules.
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(rawBuf);
+  } catch (_) {
+    return rawBuf.toString('latin1');
+  }
 }
 
 function getBibleModuleKind(ext) {

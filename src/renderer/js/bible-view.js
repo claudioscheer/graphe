@@ -25,9 +25,46 @@ const BibleView = (() => {
     return null;
   }
 
+  function normalizeStrongNumber(value) {
+    const match = String(value || '').match(/\d+/);
+    return match ? match[0] : '';
+  }
+
+  function collectStrongDisplays(segment, defaultPrefix) {
+    const displays = [];
+
+    segment.replace(/<S[^>]*>([GH]?\d+\w*)<\/S>/gi, (_, rawNum) => {
+      const num = String(rawNum || '').trim();
+      if (!num) return _;
+      if (/^[GH]/i.test(num)) {
+        displays.push(num.toUpperCase());
+      } else {
+        const normalized = normalizeStrongNumber(num);
+        if (normalized) displays.push(`${defaultPrefix}${normalized}`);
+      }
+      return _;
+    });
+
+    segment.replace(/<W([HG])([^>]*)>/gi, (_, rawPrefix, rawNum) => {
+      const num = normalizeStrongNumber(rawNum);
+      if (!num) return _;
+      displays.push(`${String(rawPrefix || '').toUpperCase()}${num}`);
+      return _;
+    });
+
+    return displays;
+  }
+
+  function buildInterlinearStrongHtml(strongDisplays) {
+    if (!strongDisplays || strongDisplays.length === 0) return '';
+    return strongDisplays
+      .map((display) => `<span class="strongs">${escapeHtml(display)}</span>`)
+      .join(' ');
+  }
+
   // Converts theWord case-paired tags (<E>...<e>, <O>/<OG>...<o>/<og>, <T>/<TG>...<t>/<tg>)
   // into safe HTML spans before the browser parses them as malformed markup.
-  function normalizeTheWordWordAnnotations(text) {
+  function normalizeTheWordWordAnnotations(text, strongsPrefix) {
     let input = String(text || '');
     let output = '';
     let pos = 0;
@@ -61,15 +98,21 @@ const BibleView = (() => {
 
       const nextWordMatch = input.slice(cursor).match(/<E>/i);
       const nextWordStart = nextWordMatch ? cursor + nextWordMatch.index : input.length;
+      const segment = input.slice(cursor, nextWordStart);
+      const strongDisplays = collectStrongDisplays(segment, strongsPrefix || 'H');
 
-      const trailing = input
-        .slice(cursor, nextWordStart)
+      const trailing = segment
         .replace(/<RX[^>]*>/gi, '')
         .replace(/<wt>/gi, '')
+        .replace(/<S[^>]*>[\s\S]*?<\/S>/gi, '')
+        .replace(/<W[HG][^>]*>/gi, '')
+        .replace(/<m>[\s\S]*?<\/m>/gi, '')
+        .replace(/<l>[\s\S]*?<\/l>/gi, '')
+        .replace(/<WT[^>]*>/gi, '')
         .replace(/<(?:E|e|O|o|T|t|OG|og|OH|oh|TG|tg|TH|th)>/g, '');
 
       const top = `${translated}${trailing}`;
-      const hasAnnotations = Boolean(original || transliteration);
+      const hasAnnotations = strongDisplays.length > 0 || Boolean(original || transliteration);
       if (!hasAnnotations) {
         output += top;
       } else {
@@ -80,6 +123,9 @@ const BibleView = (() => {
           output += top;
         } else {
           let annotation = '';
+          if (strongDisplays.length > 0) {
+            annotation += `<span class="verse-word-strong">${buildInterlinearStrongHtml(strongDisplays)}</span>`;
+          }
           if (original) {
             annotation += `<span class="verse-word-original">${escapeHtml(original.trim())}</span>`;
           }
@@ -116,7 +162,7 @@ const BibleView = (() => {
     let html = text.replace(/<f>[\s\S]*?<\/f>/gi, '');
 
     // Normalize theWord case-paired original-language word tags before HTML parsing.
-    html = normalizeTheWordWordAnnotations(html);
+    html = normalizeTheWordWordAnnotations(html, strongsPrefix);
 
     // Strip leading <pb/> so it doesn't push the first line away from the verse number
     html = html.replace(/^\s*(<pb\s*\/?>)+/i, '');
