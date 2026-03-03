@@ -1,3 +1,4 @@
 - onboarding first time the user opens the app
 - show original text below
 - don't copy unsupported files to modules folder
+- show progress when converting modules

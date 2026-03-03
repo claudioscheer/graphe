@@ -260,7 +260,7 @@ const Settings = (() => {
       });
       const text = document.createElement('span');
       text.className = 'settings-checkbox-text';
-      text.textContent = mod.description;
+      text.textContent = Utils.getModuleDisplayName(mod);
       label.appendChild(cb);
       label.appendChild(text);
       list.appendChild(label);
@@ -293,7 +293,7 @@ const Settings = (() => {
       });
       const text = document.createElement('span');
       text.className = 'settings-checkbox-text';
-      text.textContent = mod.description;
+      text.textContent = Utils.getModuleDisplayName(mod);
       label.appendChild(cb);
       label.appendChild(text);
       list.appendChild(label);

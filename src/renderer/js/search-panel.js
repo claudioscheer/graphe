@@ -15,6 +15,7 @@ const SearchPanel = (() => {
   const MIN_WIDTH = 200;
   const MAX_WIDTH_RATIO = 0.6;
   const DEFAULT_WIDTH = 280;
+  const PREVIEW_MAX_CHARS = 160;
 
   function init(moduleList, savedState) {
     modules = moduleList;
@@ -95,7 +96,7 @@ const SearchPanel = (() => {
     for (const m of sortedModules) {
       const opt = document.createElement('option');
       opt.value = m.id;
-      opt.textContent = m.id;
+      opt.textContent = Utils.getModuleDisplayName(m);
       opt.title = m.description;
       if (m.id === selectedModuleId) opt.selected = true;
       select.appendChild(opt);
@@ -242,11 +243,7 @@ const SearchPanel = (() => {
     }
 
     const hasStrong = /strong:[HhGg]?\d+\w*/i.test(query);
-    const textTerms = query
-      .replace(/strong:[HhGg]?\d+\w*/gi, '')
-      .trim()
-      .split(/\s+/)
-      .filter((t) => t.length >= 2);
+    const textTerms = extractSearchTerms(query);
     if (!hasStrong && textTerms.length === 0) {
       statusEl.textContent = I18n.t('searchMinChars');
       return;
@@ -269,19 +266,14 @@ const SearchPanel = (() => {
 
       statusEl.textContent = I18n.t('searchResultCount').replace('{count}', results.length);
 
-      renderResults(results, query);
+      renderResults(results, textTerms);
     } catch (err) {
       statusEl.textContent = err.message;
     }
   }
 
-  function renderResults(results, query) {
+  function renderResults(results, terms) {
     const frag = document.createDocumentFragment();
-    const terms = query
-      .replace(/strong:[HhGg]?\d+\w*/gi, '')
-      .trim()
-      .split(/\s+/)
-      .filter((t) => t.length >= 2);
 
     for (const row of sortResultsCanonical(results)) {
       const item = createResultItem(row, terms);
@@ -320,20 +312,111 @@ const SearchPanel = (() => {
     ref.textContent = `${getBookShortName(row.bookNumber)} ${row.chapter}:${row.verse}`;
 
     top.appendChild(ref);
+    item.appendChild(top);
+
+    const meta = document.createElement('div');
+    meta.className = 'search-result-meta';
+
+    if (terms.length > 0) {
+      const wordsLine = document.createElement('div');
+      wordsLine.className = 'search-result-meta-line';
+      wordsLine.textContent = `${I18n.t('searchWordsLabel')}: ${terms.join(', ')}`;
+      meta.appendChild(wordsLine);
+    }
+
+    const workLine = document.createElement('div');
+    workLine.className = 'search-result-meta-line';
+    workLine.textContent = `${I18n.t('searchWorkLabel')}: ${getSelectedWorkLabel()}`;
+    meta.appendChild(workLine);
+
+    item.appendChild(meta);
 
     const preview = document.createElement('div');
     preview.className = 'search-result-text';
-    preview.innerHTML = highlightText(VerseUtils.cleanText(row.text), terms);
+    preview.innerHTML = highlightText(
+      buildPreviewSnippet(VerseUtils.cleanText(row.text), terms, PREVIEW_MAX_CHARS),
+      terms
+    );
 
-    item.appendChild(top);
     item.appendChild(preview);
     return item;
+  }
+
+  function extractSearchTerms(query) {
+    const seen = new Set();
+    const terms = [];
+    const rawTerms = query
+      .replace(/strong:[HhGg]?\d+\w*/gi, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+    for (const term of rawTerms) {
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      terms.push(term);
+    }
+    return terms;
+  }
+
+  function getSelectedWorkLabel() {
+    const mod = modules.find((m) => m.id === selectedModuleId);
+    if (!mod) return selectedModuleId || '';
+    const description = (mod.description || '').trim();
+    if (!description || description === mod.id) return mod.id;
+    return `${mod.id} - ${description}`;
+  }
+
+  function buildPreviewSnippet(text, terms, maxChars) {
+    const compact = (text || '').replace(/\s+/g, ' ').trim();
+    if (!compact) return '';
+    if (compact.length <= maxChars) return compact;
+
+    const firstMatch = findFirstMatchIndex(compact, terms);
+    if (firstMatch < 0) return compact.slice(0, maxChars).trimEnd() + '...';
+
+    let start = Math.max(0, firstMatch - Math.floor(maxChars / 2));
+    let end = Math.min(compact.length, start + maxChars);
+    if (end - start < maxChars && start > 0) {
+      start = Math.max(0, end - maxChars);
+    }
+
+    start = moveToWordBoundary(compact, start, -1);
+    end = moveToWordBoundary(compact, end, 1);
+
+    let snippet = compact.slice(start, end).trim();
+    if (start > 0) snippet = '...' + snippet;
+    if (end < compact.length) snippet = snippet + '...';
+    return snippet;
+  }
+
+  function findFirstMatchIndex(text, terms) {
+    if (!terms || terms.length === 0) return -1;
+    const lowerText = text.toLowerCase();
+    let first = -1;
+    for (const term of terms) {
+      const idx = lowerText.indexOf(term.toLowerCase());
+      if (idx === -1) continue;
+      if (first === -1 || idx < first) first = idx;
+    }
+    return first;
+  }
+
+  function moveToWordBoundary(text, pos, direction) {
+    if (direction < 0) {
+      let i = Math.max(0, pos);
+      while (i > 0 && !/\s/.test(text[i - 1])) i--;
+      return i;
+    }
+    let i = Math.min(text.length, pos);
+    while (i < text.length && !/\s/.test(text[i])) i++;
+    return i;
   }
 
   function highlightText(text, terms) {
     let result = Utils.escapeHtml(text);
     for (const term of terms) {
-      const escapedTerm = Utils.escapeHtml(term.toLowerCase());
+      const escapedTerm = Utils.escapeHtml(term);
       const regex = new RegExp(`(${escapeRegex(escapedTerm)})`, 'gi');
       result = result.replace(regex, '<mark>$1</mark>');
     }

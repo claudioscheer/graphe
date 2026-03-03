@@ -101,12 +101,13 @@ const BibleView = (() => {
    * Handles: <S>number</S>, <pb/>, <f>...</f>, <i>...</i>
    */
   /**
-   * Extract <n>X-Y</n> verse-range tag from the beginning of text.
+   * Extract a verse-range marker from the beginning of text.
+   * Supports legacy <n> and footnote-style <f> markers used by some modules.
    * Returns { range: 'X-Y' | null, text: remaining text }
    */
   function extractVerseRange(text) {
-    const match = text.match(/^<n>([\d]+-[\d]+)<\/n>\s*/i);
-    if (match) return { range: match[1], text: text.slice(match[0].length) };
+    const match = text.match(/^<(n|f)>\s*([\d]+(?:\s*[-–]\s*[\d]+)+)\s*<\/\1>\s*/i);
+    if (match) return { range: match[2], text: text.slice(match[0].length) };
     return { range: null, text };
   }
 

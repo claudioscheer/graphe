@@ -7,6 +7,23 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { convertTags } = require('../src/main/modules/theword-bible-provider');
 
+const TOTAL_VERSES = 31102;
+const OT_VERSES = 23145;
+const NT_VERSES = TOTAL_VERSES - OT_VERSES;
+
+function createTheWordModuleFile(tmpDir, name, verseCount, metadataLines = []) {
+  const filePath = path.join(tmpDir, name);
+  const verses = Array.from({ length: verseCount }, (_v, idx) => `Verse ${idx + 1}`);
+  fs.writeFileSync(filePath, `${verses.join('\n')}\n${metadataLines.join('\n')}\n`);
+  return filePath;
+}
+
+function createSparseTheWordModuleFile(tmpDir, name, verseLines, metadataLines = []) {
+  const filePath = path.join(tmpDir, name);
+  fs.writeFileSync(filePath, `${verseLines.join('\n')}\n${metadataLines.join('\n')}\n`);
+  return filePath;
+}
+
 // --- Pure function tests (no file needed) ---
 
 describe('convertTags', () => {
@@ -118,6 +135,129 @@ describe('encrypted module handling', () => {
     try {
       expect(() => provider.load(inputPath)).toThrow(/Encrypted TheWord Bible/);
       expect(provider.isValidFile(inputPath)).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('legacy encoding handling', () => {
+  it('loads latin1 .nt modules without mojibake', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-latin1-'));
+    const inputPath = path.join(tmpDir, 'sample-latin1.nt');
+    const verses = Array.from({ length: NT_VERSES }, () => '');
+    verses[0] = 'Estes últimos se haviam concentrado no vale de Sidim (que agora é o mar Morto).';
+    const content = `${verses.join('\n')}\n`;
+    fs.writeFileSync(inputPath, Buffer.from(content, 'latin1'));
+
+    try {
+      const handle = provider.load(inputPath);
+      const chapter = provider.getChapter(handle, 470, 1);
+      expect(chapter[0].text).toBe(
+        'Estes últimos se haviam concentrado no vale de Sidim (que agora é o mar Morto).'
+      );
+      expect(chapter[0].text).not.toContain('\ufffd');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('OT module handling', () => {
+  it('loads OT-only .ot modules and exposes only OT books', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-'));
+    const inputPath = createTheWordModuleFile(tmpDir, 'sample.ot', OT_VERSES, [
+      'description=Sample OT',
+    ]);
+
+    try {
+      const handle = provider.load(inputPath);
+      expect(handle.scope).toBe('ot');
+      expect(handle.isOtOnly).toBe(true);
+      expect(handle.isNtOnly).toBe(false);
+
+      const books = provider.getBooks(handle);
+      expect(books.length).toBe(39);
+      expect(books[0].bookNumber).toBe(10); // Genesis
+      expect(books[books.length - 1].bookNumber).toBe(460); // Malachi
+
+      const gen1 = provider.getChapter(handle, 10, 1);
+      expect(gen1.length).toBe(31);
+      expect(gen1[0].verse).toBe(1);
+      expect(gen1[0].text).toBe('Verse 1');
+
+      // No NT in OT-only module
+      const mat1 = provider.getChapter(handle, 470, 1);
+      expect(mat1).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads .ot files with full-bible verse count as full scope', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-full-'));
+    const inputPath = createTheWordModuleFile(tmpDir, 'sample-full.ot', TOTAL_VERSES, [
+      'description=Sample Full',
+    ]);
+
+    try {
+      const handle = provider.load(inputPath);
+      expect(handle.scope).toBe('full');
+      expect(handle.isOtOnly).toBe(false);
+      expect(handle.isNtOnly).toBe(false);
+
+      const books = provider.getBooks(handle);
+      expect(books.length).toBe(66);
+      expect(provider.getChapter(handle, 470, 1).length).toBeGreaterThan(0); // Matthew 1 exists
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts .ot files in isValidFile()', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-valid-'));
+    const inputPath = createTheWordModuleFile(tmpDir, 'valid.ot', OT_VERSES, ['description=OT']);
+
+    try {
+      expect(provider.isValidFile(inputPath)).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats full-length sparse .ot files as effective OT and hides empty placeholders', () => {
+    const provider = require('../src/main/modules/theword-bible-provider');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-sparse-'));
+    const verses = Array(TOTAL_VERSES).fill('');
+    verses[0] = 'Verse 1';
+    verses[1] = 'Verse 2';
+    verses[OT_VERSES] = ''; // NT first verse placeholder remains empty
+    const inputPath = createSparseTheWordModuleFile(tmpDir, 'sparse-full.ot', verses, [
+      'description=Sparse OT-like',
+    ]);
+
+    try {
+      const handle = provider.load(inputPath);
+      expect(handle.scope).toBe('full');
+      expect(handle.effectiveScope).toBe('ot');
+      expect(handle.isOtOnly).toBe(true);
+      expect(handle.isNtOnly).toBe(false);
+      expect(handle.nonEmptyVerseCount).toBe(2);
+
+      const books = provider.getBooks(handle);
+      expect(books.map((b) => b.bookNumber)).toEqual([10]);
+
+      const gen1 = provider.getChapter(handle, 10, 1);
+      expect(gen1.map((v) => v.verse)).toEqual([1, 2]);
+      expect(gen1.every((v) => v.text.trim().length > 0)).toBe(true);
+
+      const mat1 = provider.getChapter(handle, 470, 1);
+      expect(mat1).toEqual([]);
+      expect(provider.getChapterCount(handle, 470)).toBe(0);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

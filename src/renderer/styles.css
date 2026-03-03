@@ -804,6 +804,23 @@
   line-height: 1.25;
 }
 
+.search-result-meta {
+  margin-bottom: 4px;
+}
+
+.search-result-meta-line {
+  font-size: 11px;
+  color: var(--ui-text-subtle);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark .search-result-meta-line {
+  color: var(--ui-text-subtle);
+}
+
 .search-result-text {
   font-size: 12px;
   color: var(--ui-text-muted);

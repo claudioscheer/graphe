@@ -1,20 +1,104 @@
 /**
- * TheWord Bible provider — handles plain-text .ont/.nt files.
+ * TheWord Bible provider — handles plain-text .ont/.nt/.ot files.
  * Encrypted .ontx/.ntx/.otx files are detected and rejected with a clear error.
  */
 const fs = require('fs');
 const path = require('path');
-const { GRAPHE_BOOK_NUMBERS, BOOK_NAMES, NT_BOOK_OFFSET, buildVerseIndex } = require('./book-map');
+const {
+  GRAPHE_BOOK_NUMBERS,
+  VERSES_PER_CHAPTER,
+  BOOK_NAMES,
+  NT_BOOK_OFFSET,
+  buildVerseIndex,
+} = require('./book-map');
 
 const TOTAL_VERSES = 31102;
 const NT_VERSES = 7957;
+const OT_VERSES = TOTAL_VERSES - NT_VERSES;
 const ENCRYPTED_MAGIC = 'TWENCBMOD';
+
+function decodeTheWordText(rawBuf) {
+  // Most modules are UTF-8, but many legacy modules are ANSI/Latin-1.
+  const utf8Text = rawBuf.toString('utf-8');
+  if (!utf8Text.includes('\ufffd')) return utf8Text;
+  return rawBuf.toString('latin1');
+}
 
 function getBibleModuleKind(ext) {
   if (ext === '.nt' || ext === '.ntx') return 'nt';
   if (ext === '.ot' || ext === '.otx') return 'ot';
   if (ext === '.ont' || ext === '.ontx') return 'full';
   return null;
+}
+
+function inferScope(kind, totalLines) {
+  const canNt = totalLines >= NT_VERSES;
+  const canOt = totalLines >= OT_VERSES;
+  const canFull = totalLines >= TOTAL_VERSES;
+
+  if (kind === 'nt') {
+    if (canNt) return 'nt';
+    return null;
+  }
+
+  if (kind === 'ot') {
+    if (canFull) return 'full';
+    if (canOt) return 'ot';
+    if (canNt) return 'nt';
+    return null;
+  }
+
+  if (kind === 'full') {
+    if (canFull) return 'full';
+    if (canOt) return 'ot';
+    if (canNt) return 'nt';
+    return null;
+  }
+
+  return null;
+}
+
+function buildOtVerseIndex() {
+  const index = new Map();
+  let line = 0;
+  for (let i = 0; i < NT_BOOK_OFFSET; i++) {
+    const bookNumber = GRAPHE_BOOK_NUMBERS[i];
+    const chapters = VERSES_PER_CHAPTER[i];
+    const chapterMap = new Map();
+
+    for (let ch = 0; ch < chapters.length; ch++) {
+      chapterMap.set(ch + 1, { startLine: line, verseCount: chapters[ch] });
+      line += chapters[ch];
+    }
+
+    index.set(bookNumber, chapterMap);
+  }
+  return index;
+}
+
+function getExpectedVerseCount(scope) {
+  if (scope === 'nt') return NT_VERSES;
+  if (scope === 'ot') return OT_VERSES;
+  return TOTAL_VERSES;
+}
+
+function getVerseIndex(scope) {
+  if (scope === 'nt') return buildVerseIndex(true);
+  if (scope === 'ot') return buildOtVerseIndex();
+  return buildVerseIndex(false);
+}
+
+function normalizeForPresenceCheck(text) {
+  return String(text || '')
+    .replace(/\r/g, '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .trim();
+}
+
+function hasVisibleVerseText(rawLine) {
+  const converted = convertTags(String(rawLine || ''));
+  return normalizeForPresenceCheck(converted).length > 0;
 }
 
 /**
@@ -114,9 +198,6 @@ function load(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const kind = getBibleModuleKind(ext);
   if (!kind) throw new Error(`Unsupported TheWord Bible extension: ${ext}`);
-  if (kind === 'ot') {
-    throw new Error('OT-only TheWord Bible modules (.ot/.otx) are not supported yet');
-  }
 
   const rawBuf = fs.readFileSync(filePath);
   const magic = rawBuf.slice(0, ENCRYPTED_MAGIC.length).toString('ascii');
@@ -126,7 +207,7 @@ function load(filePath) {
     );
   }
 
-  let raw = rawBuf.toString('utf-8');
+  let raw = decodeTheWordText(rawBuf);
   // Strip BOM
   if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
 
@@ -134,8 +215,13 @@ function load(filePath) {
   // Remove trailing empty line if present
   if (allLines.length > 0 && allLines[allLines.length - 1] === '') allLines.pop();
 
-  const isNtOnly = kind === 'nt';
-  const expectedVerseCount = isNtOnly ? NT_VERSES : TOTAL_VERSES;
+  const scope = inferScope(kind, allLines.length);
+  if (!scope) {
+    throw new Error(
+      `Invalid or truncated TheWord Bible module: expected at least ${NT_VERSES} verse lines, got ${allLines.length}`
+    );
+  }
+  const expectedVerseCount = getExpectedVerseCount(scope);
 
   // Separate verse lines from metadata trailer
   const lines = allLines.slice(0, expectedVerseCount);
@@ -152,7 +238,32 @@ function load(filePath) {
     }
   }
 
-  const verseIndex = buildVerseIndex(isNtOnly);
+  const verseIndex = getVerseIndex(scope);
+
+  let nonEmptyVerseCount = 0;
+  const presentBooks = new Set();
+  const presentChapters = new Map();
+  let hasOtText = false;
+  let hasNtText = false;
+
+  for (const [bookNumber, chapterMap] of verseIndex) {
+    for (const [chapter, info] of chapterMap) {
+      for (let v = 0; v < info.verseCount; v++) {
+        const lineIdx = info.startLine + v;
+        if (lineIdx >= lines.length) break;
+        const rawText = lines[lineIdx];
+        if (!hasVisibleVerseText(rawText)) continue;
+        nonEmptyVerseCount++;
+        presentBooks.add(bookNumber);
+        if (bookNumber >= 470) hasNtText = true;
+        else hasOtText = true;
+        if (!presentChapters.has(bookNumber)) presentChapters.set(bookNumber, new Set());
+        presentChapters.get(bookNumber).add(chapter);
+      }
+    }
+  }
+
+  const effectiveScope = hasOtText && hasNtText ? 'full' : hasOtText ? 'ot' : hasNtText ? 'nt' : scope;
 
   // Detect Strong's by checking a sample of lines for <WH or <WG patterns
   let hasStrongs = false;
@@ -170,16 +281,26 @@ function load(filePath) {
     lines,
     metadata,
     verseIndex,
-    isNtOnly,
+    scope,
+    effectiveScope,
+    isNtOnly: effectiveScope === 'nt',
+    isOtOnly: effectiveScope === 'ot',
+    presentBooks,
+    presentChapters,
+    nonEmptyVerseCount,
     hasStrongs,
   };
 }
 
 function getBooks(handle) {
+  const presentBooks = handle.presentBooks || new Set();
+  const filterByPresence = presentBooks.size > 0;
   const start = handle.isNtOnly ? NT_BOOK_OFFSET : 0;
+  const end = handle.isOtOnly ? NT_BOOK_OFFSET : 66;
   const books = [];
-  for (let i = start; i < 66; i++) {
+  for (let i = start; i < end; i++) {
     const bn = GRAPHE_BOOK_NUMBERS[i];
+    if (filterByPresence && !presentBooks.has(bn)) continue;
     books.push({
       bookNumber: bn,
       shortName: BOOK_NAMES[i].short,
@@ -190,12 +311,17 @@ function getBooks(handle) {
 }
 
 function getChapterCount(handle, bookNumber) {
+  if (handle.presentBooks && !handle.presentBooks.has(bookNumber)) return 0;
+  if (handle.presentChapters && handle.presentChapters.has(bookNumber)) {
+    return handle.presentChapters.get(bookNumber).size;
+  }
   const chapterMap = handle.verseIndex.get(bookNumber);
   if (!chapterMap) return 0;
   return chapterMap.size;
 }
 
 function getChapter(handle, bookNumber, chapter) {
+  if (handle.presentBooks && !handle.presentBooks.has(bookNumber)) return [];
   const chapterMap = handle.verseIndex.get(bookNumber);
   if (!chapterMap) return [];
   const info = chapterMap.get(chapter);
@@ -206,9 +332,11 @@ function getChapter(handle, bookNumber, chapter) {
     const lineIdx = info.startLine + v;
     if (lineIdx >= handle.lines.length) break;
     const rawText = handle.lines[lineIdx];
+    const converted = convertTags(rawText);
+    if (!normalizeForPresenceCheck(converted)) continue;
     verses.push({
       verse: v + 1,
-      text: convertTags(rawText),
+      text: converted,
     });
   }
   return verses;
@@ -226,6 +354,7 @@ function searchVerses(handle, query) {
         const lineIdx = info.startLine + v;
         if (lineIdx >= handle.lines.length) continue;
         const rawLine = handle.lines[lineIdx];
+        if (!hasVisibleVerseText(rawLine)) continue;
 
         // Check Strong's matches on raw line (before tag conversion)
         let allMatch = true;
@@ -259,6 +388,7 @@ function searchVerses(handle, query) {
         }
 
         const converted = convertTags(rawLine);
+        if (!normalizeForPresenceCheck(converted)) continue;
         results.push({
           bookNumber,
           chapter,
@@ -277,7 +407,7 @@ function isValidFile(filePath) {
     if (!fs.existsSync(filePath)) return false;
     const ext = path.extname(filePath).toLowerCase();
     const kind = getBibleModuleKind(ext);
-    if (!kind || kind === 'ot') return false;
+    if (!kind) return false;
 
     // Read first few bytes to verify it looks like a TheWord file
     const fd = fs.openSync(filePath, 'r');
@@ -285,7 +415,7 @@ function isValidFile(filePath) {
     const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
     fs.closeSync(fd);
 
-    const head = buf.slice(0, bytesRead).toString('utf-8');
+    const head = decodeTheWordText(buf.slice(0, bytesRead));
     // Encrypted modules are valid files, but not supported by this provider.
     if (head.slice(0, ENCRYPTED_MAGIC.length) === ENCRYPTED_MAGIC) return true;
 

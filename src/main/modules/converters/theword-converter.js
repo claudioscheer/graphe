@@ -19,7 +19,10 @@ const { twBookToGraphe } = require('../book-map');
 function convertTagsToMyBible(line) {
   let result = line;
 
-  // Strip section titles: <TS>...<Ts>
+  // Convert TheWord ts2 titles to MyBible inline subheadings.
+  result = result.replace(/<TS2>([\s\S]*?)<Ts>/gi, '<h>$1</h>');
+
+  // Strip regular section titles: <TS>...<Ts>
   result = result.replace(/<TS>[\s\S]*?<Ts>/gi, '');
 
   // Red letter: <FR>...<Fr> → <J>...</J> (case-sensitive to distinguish open/close)
@@ -90,6 +93,14 @@ function convertTagsToMyBible(line) {
   return result;
 }
 
+function normalizeConvertedVerse(text) {
+  return String(text || '')
+    .replace(/\r/g, '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .trim();
+}
+
 /**
  * Main entry point — dispatches based on file extension and module type.
  */
@@ -146,32 +157,30 @@ function convertBible(inputPath, outputDir, onProgress) {
 
     // Insert info
     const insertInfo = db.prepare('INSERT INTO info (name, value) VALUES (?, ?)');
-    const description = handle.metadata.description || handle.metadata['short.title'] || basename;
+    const shortTitle = handle.metadata['short.title'] || handle.metadata.short_title || '';
+    const description = handle.metadata.description || '';
+    const displayName = shortTitle || description || basename;
     const language = handle.metadata.lang || '';
     const hasStrongs = handle.hasStrongs ? 'true' : 'false';
 
     db.transaction(() => {
-      insertInfo.run('description', description);
+      insertInfo.run('description', description || displayName);
+      if (shortTitle) insertInfo.run('short.title', shortTitle);
       insertInfo.run('language', language);
       insertInfo.run('strong_numbers', hasStrongs);
     })();
 
-    // Insert books
+    // Insert verses
     const books = thewordBible.getBooks(handle);
     const insertBook = db.prepare(
       'INSERT INTO books (book_number, book_color, short_name, long_name, sorting_order) VALUES (?, ?, ?, ?, ?)'
     );
-    db.transaction(() => {
-      for (const book of books) {
-        insertBook.run(book.bookNumber, null, book.shortName, book.longName, null);
-      }
-    })();
-
-    // Insert verses
     const insertVerse = db.prepare(
       'INSERT INTO verses (book_number, chapter, verse, text) VALUES (?, ?, ?, ?)'
     );
-    let count = 0;
+    const insertedBooks = new Set();
+    let scanned = 0;
+    let inserted = 0;
     const total = handle.lines.length;
 
     db.transaction(() => {
@@ -180,15 +189,30 @@ function convertBible(inputPath, outputDir, onProgress) {
           for (let v = 0; v < info.verseCount; v++) {
             const lineIdx = info.startLine + v;
             if (lineIdx >= handle.lines.length) break;
+            scanned++;
             const rawText = handle.lines[lineIdx];
             const converted = convertTagsToMyBible(rawText);
-            insertVerse.run(bookNumber, chapter, v + 1, converted);
-            count++;
-            if (onProgress && count % 1000 === 0) {
-              onProgress(count, total);
+            if (!normalizeConvertedVerse(converted)) {
+              if (onProgress && scanned % 1000 === 0) onProgress(scanned, total);
+              continue;
             }
+            insertVerse.run(bookNumber, chapter, v + 1, converted);
+            inserted++;
+            insertedBooks.add(bookNumber);
+            if (onProgress && scanned % 1000 === 0) onProgress(scanned, total);
           }
         }
+      }
+
+      if (inserted === 0) {
+        throw new Error(
+          `TheWord module has no non-empty verse text: ${path.basename(inputPath)}`
+        );
+      }
+
+      for (const book of books) {
+        if (!insertedBooks.has(book.bookNumber)) continue;
+        insertBook.run(book.bookNumber, null, book.shortName, book.longName, null);
       }
     })();
 

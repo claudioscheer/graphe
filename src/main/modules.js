@@ -55,11 +55,16 @@ function getModules() {
     const info = sqliteProvider.getInfo(handle.db);
     const type = sqliteProvider.detectType(handle.db);
     if (!SUPPORTED_TYPES.has(type)) continue;
+    const shortTitle = (info['short.title'] || info.short_title || '').trim();
+    const description = (info.description || '').trim();
+    const displayName = shortTitle || description || id;
 
     const mod = {
       id,
       type,
-      description: info.description || id,
+      displayName,
+      shortTitle: shortTitle || null,
+      description: description || id,
       hasStrongs: (info.strong_numbers || '').toLowerCase() === 'true',
     };
 
@@ -75,7 +80,21 @@ function getModules() {
     result.push(mod);
   }
 
-  result.sort((a, b) => a.description.localeCompare(b.description));
+  const displayNameCounts = new Map();
+  for (const mod of result) {
+    const key = mod.displayName.toLocaleLowerCase();
+    displayNameCounts.set(key, (displayNameCounts.get(key) || 0) + 1);
+  }
+
+  for (const mod of result) {
+    const key = mod.displayName.toLocaleLowerCase();
+    const count = displayNameCounts.get(key) || 0;
+    mod.listLabel = count > 1 ? `${mod.displayName} (${mod.id})` : mod.displayName;
+  }
+
+  result.sort((a, b) =>
+    a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: 'base' })
+  );
   return result;
 }
 

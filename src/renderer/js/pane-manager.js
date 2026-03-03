@@ -480,7 +480,7 @@ const PaneManager = (() => {
     for (const m of sortedModules) {
       const opt = document.createElement('option');
       opt.value = m.id;
-      opt.textContent = m.id;
+      opt.textContent = Utils.getModuleDisplayName(m);
       opt.title = m.description;
       if (m.id === pane.moduleId) opt.selected = true;
       select.appendChild(opt);
@@ -612,7 +612,7 @@ const PaneManager = (() => {
     for (const m of sorted) {
       const opt = document.createElement('option');
       opt.value = m.id;
-      opt.textContent = m.id;
+      opt.textContent = Utils.getModuleDisplayName(m);
       opt.title = m.description;
       if (m.id === pane.moduleId) opt.selected = true;
       select.appendChild(opt);

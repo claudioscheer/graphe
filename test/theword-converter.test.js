@@ -7,6 +7,8 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { convertTagsToMyBible } = require('../src/main/modules/converters/theword-converter');
 const converterRegistry = require('../src/main/modules/converters');
+const TOTAL_VERSES = 31102;
+const OT_VERSES = 23145;
 
 // --- Pure function tests (no file needed) ---
 
@@ -70,6 +72,18 @@ describe('convertTagsToMyBible', () => {
     const input = '<TS>Title Text<Ts>verse content';
     const result = convertTagsToMyBible(input);
     expect(result).toBe('verse content');
+  });
+
+  it('converts TS2 titles to inline subheadings', () => {
+    const input = '<TS2>O CÉU E A TERRA<Ts>verse content';
+    const result = convertTagsToMyBible(input);
+    expect(result).toBe('<h>O CÉU E A TERRA</h>verse content');
+  });
+
+  it('keeps multiple TS2 titles in one verse line', () => {
+    const input = 'text<TS2>Heading 1<Ts>middle<TS2>Heading 2<Ts>end';
+    const result = convertTagsToMyBible(input);
+    expect(result).toBe('text<h>Heading 1</h>middle<h>Heading 2</h>end');
   });
 
   it('strips OT quotation tags', () => {
@@ -147,6 +161,8 @@ describe('converter registry', () => {
     const exts = converterRegistry.getSupportedExtensions();
     expect(exts).toContain('.ontx');
     expect(exts).toContain('.ntx');
+    expect(exts).toContain('.otx');
+    expect(exts).toContain('.ot');
   });
 });
 
@@ -243,6 +259,52 @@ describe('convertBible integration', () => {
       }
     } finally {
       db.close();
+    }
+  });
+
+  it('drops empty verses/books when converting sparse full-length .ot files', async () => {
+    const sparseTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-sparse-ot-'));
+    const inputPath = path.join(sparseTmp, 'sparse.ot');
+    const verses = Array(TOTAL_VERSES).fill('');
+    verses[0] = '1 In the beginning';
+    verses[1] = '2 And the earth was without form';
+    verses[OT_VERSES] = ''; // Matthew 1:1 placeholder
+    fs.writeFileSync(inputPath, `${verses.join('\n')}\ndescription=Sparse OT\n`);
+
+    try {
+      const outputPath = await converter.convert(inputPath, sparseTmp);
+      const db = new Database(outputPath, { readonly: true });
+      try {
+        const emptyVerseRows = db
+          .prepare(
+            "SELECT COUNT(*) AS c FROM verses WHERE trim(replace(replace(text, char(13), ''), char(10), '')) = ''"
+          )
+          .get().c;
+        expect(emptyVerseRows).toBe(0);
+
+        const books = db.prepare('SELECT book_number FROM books ORDER BY book_number').all();
+        expect(books.map((b) => b.book_number)).toEqual([10]);
+
+        const ntRows = db.prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number >= 470').get().c;
+        expect(ntRows).toBe(0);
+      } finally {
+        db.close();
+      }
+    } finally {
+      fs.rmSync(sparseTmp, { recursive: true, force: true });
+    }
+  });
+
+  it('fails conversion when module has no non-empty verse text', async () => {
+    const sparseTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-empty-ot-'));
+    const inputPath = path.join(sparseTmp, 'empty.ot');
+    const verses = Array(TOTAL_VERSES).fill('');
+    fs.writeFileSync(inputPath, `${verses.join('\n')}\ndescription=Empty\n`);
+
+    try {
+      await expect(converter.convert(inputPath, sparseTmp)).rejects.toThrow(/no non-empty verse text/i);
+    } finally {
+      fs.rmSync(sparseTmp, { recursive: true, force: true });
     }
   });
 });
