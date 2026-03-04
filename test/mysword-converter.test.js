@@ -97,13 +97,13 @@ describe('convertMySwordTags', () => {
     expect(result).toContain('<l>Ἰούδας</l>');
   });
 
-  it('strips language section label tags but keeps text with non-breaking space', () => {
+  it('converts language section labels to <h> subheading tags', () => {
     const input = '<HEB>HEB </HEB>some hebrew text<br><TRA>TRA </TRA>transliteration';
     const result = convertMySwordTags(input);
     expect(result).not.toMatch(/<\/?HEB>/i);
     expect(result).not.toMatch(/<\/?TRA>/i);
-    expect(result).toContain('HEB\u00a0');
-    expect(result).toContain('TRA\u00a0');
+    expect(result).toContain('<h>HEB</h>');
+    expect(result).toContain('<h>TRA</h>');
   });
 
   it('converts bracketed <G> with <T> to <E>greek<e><T>translit<t>', () => {

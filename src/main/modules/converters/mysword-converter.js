@@ -6,66 +6,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const myswordProvider = require('../mysword-provider');
 const { twBookToGraphe, GRAPHE_BOOK_NUMBERS, BOOK_NAMES } = require('../book-map');
-
-// ---------------------------------------------------------------------------
-// Tag sanitization (same logic as theword-converter, kept independent)
-// ---------------------------------------------------------------------------
-
-function normalizeStrongNumber(value) {
-  const match = String(value || '').match(/\d+/);
-  return match ? match[0] : '';
-}
-
-function sanitizeStrongTags(text) {
-  let tokenIndex = 0;
-  const tokens = [];
-
-  let result = String(text || '').replace(/<S[^>]*>[\s\S]*?<\/S>/gi, (pair) => {
-    const contentMatch = pair.match(/^<S[^>]*>([\s\S]*?)<\/S>$/i);
-    const rawInner = contentMatch ? contentMatch[1] : '';
-    const innerText = rawInner.replace(/<[^>]+>/g, '');
-    const number = normalizeStrongNumber(innerText);
-    if (!number) return '';
-    const token = `__GRAPHE_S_TOKEN_${tokenIndex++}__`;
-    tokens.push({ token, value: `<S>${number}</S>` });
-    return token;
-  });
-
-  result = result.replace(/<S[^>]*>/gi, '');
-  result = result.replace(/<\/S>/gi, '');
-
-  for (const { token, value } of tokens) {
-    result = result.replaceAll(token, value);
-  }
-
-  return result;
-}
-
-function sanitizeSupportedTags(text) {
-  const allowedOpenClose = new Set(['i', 'f', 'j', 'h', 'm', 'l']);
-  const canonicalTag = (name) => (name === 'j' ? 'J' : name);
-  return String(text || '').replace(/<[^>]*>/g, (tag) => {
-    if (/^<pb\s*\/?>$/i.test(tag)) return '<pb/>';
-    if (/^<(E|O|T|OG|OH|TG|TH|X)>$/.test(tag)) return tag;
-    if (/^<(e|o|t|og|oh|tg|th|x)>$/.test(tag)) return tag;
-
-    const closeMatch = tag.match(/^<\/\s*([a-z0-9]+)\s*>$/i);
-    if (closeMatch) {
-      const name = closeMatch[1].toLowerCase();
-      if (name === 's') return '</S>';
-      if (allowedOpenClose.has(name)) return `</${canonicalTag(name)}>`;
-      return '';
-    }
-
-    const openMatch = tag.match(/^<\s*([a-z0-9]+)(?:\s+[^>]*)?\s*>$/i);
-    if (!openMatch) return '';
-
-    const name = openMatch[1].toLowerCase();
-    if (name === 's') return '<S>';
-    if (allowedOpenClose.has(name)) return `<${canonicalTag(name)}>`;
-    return '';
-  });
-}
+const { normalizeStrongNumber, sanitizeStrongTags, sanitizeSupportedTags } = require('./tag-sanitizer');
 
 function normalizeConvertedVerse(text) {
   return String(text || '')
@@ -167,9 +108,10 @@ function convertMySwordTags(text) {
   result = result.replace(/<W>\d+<w>/gi, '');
   result = result.replace(/<W>\d+<\/w>/gi, '');
 
-  // 4. Convert section labels to use non-breaking space (prevents line break after label)
+  // 4. Convert section labels to inline subheadings
   result = result.replace(/<(HEB|TRA|SEP|ACF|SBL|GRC)>([^<]*)<\/\1>/gi, (_, _tag, inner) => {
-    return inner.replace(/\s+$/, '\u00a0');
+    const label = inner.trim();
+    return label ? `<h>${label}</h>` : '';
   });
   // Strip remaining interlinear sub-tags, keep inner text
   result = result.replace(/<\/?(HEB|TRA|SEP|ACF|SBL|GRC|Tr|Cla|Mn|Wn|Ko|LN|GN|Pbr|Es|Og)>/gi, '');

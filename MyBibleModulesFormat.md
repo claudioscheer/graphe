@@ -1663,3 +1663,96 @@ CREATE UNIQUE INDEX devotions\_index ON devotions (day ASC)
 | day | Devotions series day number, starting from 1\. |
 | devotion | A devotion article, in HTML form, as defined by the "HTML Content" section above.  |
 
+# **Graphe Extensions to the MyBible Format**
+
+Graphe uses the MyBible SQLite3 format as its internal verse storage. During import (from MySword, theWord, or other sources), Graphe converts module-specific markup into the standard MyBible tags listed above plus the additional tags documented below. These extensions are **only present in Graphe's converted modules** and are not part of the upstream MyBible specification.
+
+## **Tag Format Conventions**
+
+Graphe modules use two closing-tag styles:
+
+- **HTML-style** `</tag>` — used by standard MyBible tags and some Graphe tags: `<S>…</S>`, `<i>…</i>`, `<f>…</f>`, `<m>…</m>`, `<l>…</l>`, `<J>…</J>`, `<h>…</h>`.
+- **Case-paired** `<Tag>…<tag>` — uppercase opens, lowercase closes. Used for interlinear extensions originating from the theWord format: `<E>…<e>`, `<O>…<o>`, `<T>…<t>`, `<X>…<x>`, and their language-specific variants.
+
+Case-paired `<e>` (closing `<E>`) is consumed **before** standard `<e>…</e>` emphasis processing, so there is no conflict between the two styles. The self-closing `<pb/>` tag is also supported for paragraph breaks.
+
+## **Interlinear Word Unit Grammar**
+
+A complete interlinear word unit has the following structure:
+
+```
+WordUnit       = <E>text<e> [OrigTag] [TranslitTag] [StrongsTags] [ExtAnnotations]
+OrigTag        = <O>text<o> | <OG>text<og> | <OH>text<oh>
+TranslitTag    = <T>text<t> | <TG>text<tg> | <TH>text<th>
+StrongsTags    = (<S>number</S> [<m>morph</m>] [<l>lemma</l>])+
+ExtAnnotations = <X>key=val|key=val|…<x>
+```
+
+All components after `<E>…<e>` are optional. A minimal word unit is just `<E>word<e>`. A typical annotated unit:
+
+```
+<E>Βίβλος<e><T>Biblos<t><S>976</S><m>N-NSF</m><l>βίβλος</l>
+```
+
+## **Case-Paired Interlinear Tags**
+
+| Tag | Description |
+| :---- | :---- |
+| \<E\>…\<e\> | The main word form displayed at the top of a stacked interlinear annotation. For Greek interlinear modules this is the Greek word; for reverse interlinear modules it is the translation. |
+| \<O\>…\<o\> | Original-language word associated with the preceding \<E\> word. Displayed below the main word in the annotation stack. Variants \<OG\>…\<og\> and \<OH\>…\<oh\> may be used to indicate Greek or Hebrew origin explicitly. |
+| \<T\>…\<t\> | Transliteration of the original-language word. Displayed below the original word in the annotation stack. Variants \<TG\>…\<tg\> and \<TH\>…\<th\> may be used for Greek or Hebrew. **Note:** this is distinct from the standard MyBible \<t\>…\</t\> poetry/indent tag, which uses an HTML-style closing tag with a forward slash. |
+
+## **Strong's Number Format**
+
+The `<S>…</S>` tag carries a Strong's reference number. Its content format varies by source:
+
+- **Converted modules** (MyBible SQLite3 produced by the theWord or MySword converters): `<S>` content is **digits only** (no H/G prefix). The Hebrew/Greek prefix is inferred at render time from the book number (OT books \< 470 → H, NT books ≥ 470 → G), or overridden by the `strong_numbers_prefix` field in the `info` table.
+- **Directly-loaded theWord modules** (via `theword-bible-provider`): `<S>` content may include the H/G prefix (e.g. `H1234`, `G5678`), along with `morph` and `lemma` attributes on the tag itself: `<S morph="V-AAI-3S" lemma="λέγω">G3004</S>`. The renderer normalizes both formats.
+
+## **Lemma Tag**
+
+| Tag | Description |
+| :---- | :---- |
+| \<l\>…\</l\> | Lemma (dictionary form) associated with a preceding Strong's number. Always follows the \<m\> morphology tag (if present), which always follows \<S\>…\</S\>. Contains the dictionary/lemma form (e.g. `βίβλος` for the inflected `Βίβλος`). Not part of the upstream MyBible spec. Example: \<S\>976\</S\>\<m\>N-NSF\</m\>\<l\>βίβλος\</l\> |
+
+## **Extended Annotations Tag**
+
+| Tag | Description |
+| :---- | :---- |
+| \<X\>…\<x\> | Extended annotation data for an interlinear word, encoded as pipe-delimited key=value pairs. Placed after all other tags for a word unit. This tag is produced during import of modules that carry richer linguistic data (e.g. OGNTe). |
+
+### Supported keys
+
+| Key | Description | Example |
+| :---- | :---- | :---- |
+| pr | Pronunciation (phonetic transcription) | pr=viyvlos |
+| pbr | Portuguese translation/gloss | pbr=Livro |
+| og | English translation/gloss | og=book |
+| es | Spanish translation/gloss | es=Libro |
+| ln | Louw-Nida lexical domain reference(s), comma-separated | ln=33.38 |
+| gk | Goodrick-Kohlenberger number | gk=1047 |
+
+### Example
+
+A fully annotated word unit from the OGNTe module (Matthew 1:1, "Βίβλος"):
+
+```
+<E>Βίβλος<e><T>Biblos<t><S>976</S><m>N-NSF</m><l>βίβλος</l><X>pr=viyvlos|pbr=Livro|es=Libro|og=book|ln=33.38|gk=1047<x>
+```
+
+Graphe renders this as a stacked annotation:
+
+```
+Βίβλος           ← main Greek word (from <E>)
+  G976           ← Strong's number
+  Biblos         ← transliteration (from <T>)
+  viyvlos        ← pronunciation (pr)
+  Livro          ← Portuguese gloss (pbr)
+  book           ← English gloss (og)
+  Libro          ← Spanish gloss (es)
+  LN 33.38       ← Louw-Nida reference (ln)
+  GK 1047        ← Goodrick-Kohlenberger number (gk)
+```
+
+The \<X\> key set is open-ended — additional keys may be added in future imports without requiring renderer changes (unknown keys are silently ignored).
+

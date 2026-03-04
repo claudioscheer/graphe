@@ -175,6 +175,12 @@ describe('convertTagsToMyBible', () => {
     expect(result).toContain('<T>lógos<t>');
     expect(result).toContain('<S>3056</S>');
   });
+
+  it('preserves <X>...<x> extended annotation tags', () => {
+    const input = '<E>Word<e><X>pr=test<x>';
+    const result = convertTagsToMyBible(input);
+    expect(result).toContain('<X>pr=test<x>');
+  });
 });
 
 describe('converter registry', () => {
