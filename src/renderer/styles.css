@@ -575,6 +575,24 @@
   color: var(--ui-text-subtle);
 }
 
+.verse-word-pronunciation {
+  display: block;
+  font-style: italic;
+}
+
+.verse-word-gloss {
+  display: block;
+}
+
+.verse-word-gloss-secondary {
+  opacity: 0.7;
+}
+
+.verse-word-ref {
+  display: block;
+  font-weight: 500;
+}
+
 .dark .verse-word-strong {
   color: var(--ui-link-soft);
 }

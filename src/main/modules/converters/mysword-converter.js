@@ -46,8 +46,8 @@ function sanitizeSupportedTags(text) {
   const canonicalTag = (name) => (name === 'j' ? 'J' : name);
   return String(text || '').replace(/<[^>]*>/g, (tag) => {
     if (/^<pb\s*\/?>$/i.test(tag)) return '<pb/>';
-    if (/^<(E|O|T|OG|OH|TG|TH)>$/.test(tag)) return tag;
-    if (/^<(e|o|t|og|oh|tg|th)>$/.test(tag)) return tag;
+    if (/^<(E|O|T|OG|OH|TG|TH|X)>$/.test(tag)) return tag;
+    if (/^<(e|o|t|og|oh|tg|th|x)>$/.test(tag)) return tag;
 
     const closeMatch = tag.match(/^<\/\s*([a-z0-9]+)\s*>$/i);
     if (closeMatch) {
@@ -106,6 +106,58 @@ function convertMySwordTags(text) {
       return tags;
     }
   );
+
+  // 1a. Strip variant readings (OGNTe: ＊<Vr>...</vr>)
+  result = result.replace(/＊<Vr>[\s\S]*?<\/vr>/gi, '');
+  result = result.replace(/＊/g, '');
+
+  // 1b. Convert OGNTe brackets (discriminated by <Mn> inside)
+  result = result.replace(/「([\s\S]*?)」/g, (match, inner) => {
+    if (!/<Mn>/i.test(inner)) return match;
+
+    const extractField = (tag) => {
+      const m = inner.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i'));
+      return m ? m[1].replace(/<[^>]+>/g, '').trim() : '';
+    };
+
+    const greek = extractField('Mn');
+    const translit = extractField('Tr');
+
+    // Collect already-converted Strong's/morph/lemma from step 1
+    const sMatch = inner.match(/<S>\d+<\/S>(?:<m>[^<]*<\/m>)?(?:<l>[^<]*<\/l>)?/);
+    const strongs = sMatch ? sMatch[0] : '';
+
+    // Build extended annotation fields
+    const xParts = [];
+    const pr = extractField('Cla');
+    if (pr) xParts.push(`pr=${pr}`);
+    const pbr = extractField('Pbr');
+    if (pbr) xParts.push(`pbr=${pbr}`);
+    const es = extractField('Es');
+    if (es) xParts.push(`es=${es}`);
+    const og = extractField('Og');
+    if (og) xParts.push(`og=${og}`);
+
+    // Louw-Nida: strip <a> tags, replace fullwidth comma
+    const lnMatch = inner.match(/<LN>([\s\S]*?)<\/LN>/i);
+    if (lnMatch) {
+      const ln = lnMatch[1].replace(/<[^>]+>/g, '').replace(/，/g, ', ').trim();
+      if (ln) xParts.push(`ln=${ln}`);
+    }
+
+    const gk = extractField('GN');
+    if (gk) xParts.push(`gk=${gk}`);
+
+    let out = '';
+    if (greek) out += `<E>${greek}<e>`;
+    if (translit) out += `<T>${translit}<t>`;
+    out += strongs;
+    if (xParts.length > 0) out += `<X>${xParts.join('|')}<x>`;
+    return out;
+  });
+
+  // 1c. Clean inter-word separators before <E> tags
+  result = result.replace(/,&?\s*(?=<E>)/g, ' ');
 
   // 2. Insert space at word boundaries: <q> closes a Hebrew word, <Q> opens one
   result = result.replace(/<q>/g, ' ');

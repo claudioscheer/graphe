@@ -1,3 +1,8 @@
 - onboarding first time the user opens the app
 - custom formating rules for translations (???)
     - you define a pattern and apply a css to it. then on each verse of that translation we apply that style
+- improve to see info about dictionaries available
+    - i want to see how to use the dictionary
+    - which words are present, etc
+- better mophology
+    - allow to click it and open a dictionary

@@ -166,6 +166,73 @@ describe('convertMySwordTags', () => {
     expect(result).not.toMatch(/<\/?Tr>/i);
     expect(result).not.toMatch(/<\/?Mn>/i);
   });
+
+  it('converts OGNTe bracket with all fields to structured tags', () => {
+    const input =
+      '「<Tr>Biblos</Tr><Cla><a class="d" href="d-OGNTd 000001">viyvlos</a></Cla>' +
+      '<Mn>Βίβλος</Mn><Wn>1</wn><Ko>Βιβλος</ko>' +
+      '<WG976><WTN-NSF l="βίβλος">' +
+      '<LN><a class="Lw" href="d-LouwNida 33.38">33.38</a></LN>' +
+      '<GN>1047</Gn><Pbr>Livro</Pbr><Es>Libro</es><Og>book</og>」';
+    const result = convertMySwordTags(input);
+    expect(result).toContain('<E>Βίβλος<e>');
+    expect(result).toContain('<T>Biblos<t>');
+    expect(result).toContain('<S>976</S>');
+    expect(result).toContain('<m>N-NSF</m>');
+    expect(result).toContain('<l>βίβλος</l>');
+    expect(result).toContain('<X>');
+    expect(result).toContain('pr=viyvlos');
+    expect(result).toContain('pbr=Livro');
+    expect(result).toContain('es=Libro');
+    expect(result).toContain('og=book');
+    expect(result).toContain('ln=33.38');
+    expect(result).toContain('gk=1047');
+    // Noise stripped
+    expect(result).not.toMatch(/<Wn>/i);
+    expect(result).not.toMatch(/<Ko>/i);
+    expect(result).not.toContain('「');
+    expect(result).not.toContain('」');
+  });
+
+  it('strips variant readings ＊<Vr>...</vr>', () => {
+    const input = 'word＊<Vr><b>IMNW: </b><Vg>Χριστοῦ</Vg></vr>next';
+    const result = convertMySwordTags(input);
+    expect(result).not.toContain('IMNW');
+    expect(result).not.toContain('＊');
+    expect(result).not.toMatch(/<\/?Vr>/i);
+    expect(result).toContain('word');
+    expect(result).toContain('next');
+  });
+
+  it('handles multiple OGNTe brackets with comma and ampersand separators', () => {
+    const input =
+      '「<Tr>Biblos</Tr><Mn>Βίβλος</Mn><WG976><WTN-NSF l="βίβλος">」,' +
+      '「<Tr>geneseōs</Tr><Mn>γενέσεως</Mn><WG1078><WTN-GSF l="γένεσις">」,&' +
+      '「<Tr>Iēsou</Tr><Mn>Ἰησοῦ</Mn><WG2424><WTN-GSM-P l="Ἰησοῦς">」';
+    const result = convertMySwordTags(input);
+    expect(result).toContain('<E>Βίβλος<e>');
+    expect(result).toContain('<E>γενέσεως<e>');
+    expect(result).toContain('<E>Ἰησοῦ<e>');
+    // Separators cleaned
+    expect(result).not.toMatch(/,&/);
+    expect(result).not.toMatch(/,(?=\s*<E>)/);
+  });
+
+  it('does not interfere with NA28 brackets (no <Mn>)', () => {
+    const input = '「<T>biblos<t><G>βιβλοσ<g><W>1<w>」';
+    const result = convertMySwordTags(input);
+    // NA28 handler should still produce <E>
+    expect(result.trim()).toBe('<E>βιβλοσ<e><T>biblos<t>');
+  });
+
+  it('handles OGNTe bracket with multi-value Louw-Nida', () => {
+    const input =
+      '「<Tr>geneseōs</Tr><Mn>γενέσεως</Mn><WG1078><WTN-GSF l="γένεσις">' +
+      '<LN><a class="Lw" href="d-LouwNida 10.24">10.24</a>，<a class="Lw" href="d-LouwNida 33.19">33.19</a></LN>' +
+      '<GN>1161</Gn>」';
+    const result = convertMySwordTags(input);
+    expect(result).toContain('ln=10.24, 33.19');
+  });
 });
 
 // --- Converter registry tests ---
@@ -282,17 +349,25 @@ describe('convertBible integration', () => {
 
     const db = new Database(outputPath, { readonly: true });
     try {
-      // Check Matthew 1:1 has Strong's + morphology + lemma
+      // Check Matthew 1:1 has structured interlinear output
       const mat11 = db
         .prepare('SELECT text FROM verses WHERE book_number = 470 AND chapter = 1 AND verse = 1')
         .get();
+      expect(mat11.text).toContain('<E>Βίβλος<e>');
+      expect(mat11.text).toContain('<T>Biblos<t>');
       expect(mat11.text).toContain('<S>976</S>');
       expect(mat11.text).toContain('<m>N-NSF</m>');
       expect(mat11.text).toContain('<l>βίβλος</l>');
+      expect(mat11.text).toContain('<X>');
 
-      // No raw MySword tags
+      // No raw MySword tags or noise
       expect(mat11.text).not.toMatch(/<WG\d/i);
       expect(mat11.text).not.toMatch(/<WT[^>]*>/i);
+      expect(mat11.text).not.toMatch(/<Mn>/i);
+      expect(mat11.text).not.toMatch(/<Tr>/i);
+      expect(mat11.text).not.toContain('＊');
+      expect(mat11.text).not.toContain('「');
+      expect(mat11.text).not.toContain('」');
     } finally {
       db.close();
     }

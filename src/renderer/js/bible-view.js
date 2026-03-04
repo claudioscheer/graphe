@@ -62,6 +62,15 @@ const BibleView = (() => {
       .join(' ');
   }
 
+  function parseExtendedAnnotations(text) {
+    const result = {};
+    for (const pair of text.split('|')) {
+      const idx = pair.indexOf('=');
+      if (idx > 0) result[pair.slice(0, idx)] = pair.slice(idx + 1);
+    }
+    return result;
+  }
+
   // Converts theWord case-paired tags (<E>...<e>, <O>/<OG>...<o>/<og>, <T>/<TG>...<t>/<tg>)
   // into safe HTML spans before the browser parses them as malformed markup.
   function normalizeTheWordWordAnnotations(text, strongsPrefix) {
@@ -101,6 +110,9 @@ const BibleView = (() => {
       const segment = input.slice(cursor, nextWordStart);
       const strongDisplays = collectStrongDisplays(segment, strongsPrefix || 'H');
 
+      const xMatch = segment.match(/<X>([\s\S]*?)<x>/i);
+      const extAnnotations = xMatch ? parseExtendedAnnotations(xMatch[1]) : null;
+
       const trailing = segment
         .replace(/<RX[^>]*>/gi, '')
         .replace(/<wt>/gi, '')
@@ -109,10 +121,11 @@ const BibleView = (() => {
         .replace(/<m>[\s\S]*?<\/m>/gi, '')
         .replace(/<l>[\s\S]*?<\/l>/gi, '')
         .replace(/<WT[^>]*>/gi, '')
+        .replace(/<X>[\s\S]*?<x>/gi, '')
         .replace(/<(?:E|e|O|o|T|t|OG|og|OH|oh|TG|tg|TH|th)>/g, '');
 
       const top = `${translated}${trailing}`;
-      const hasAnnotations = strongDisplays.length > 0 || Boolean(original || transliteration);
+      const hasAnnotations = strongDisplays.length > 0 || Boolean(original || transliteration) || Boolean(extAnnotations);
       if (!hasAnnotations) {
         output += top;
       } else {
@@ -132,6 +145,20 @@ const BibleView = (() => {
           }
           if (transliteration) {
             annotation += `<span class="verse-word-translit">${escapeHtml(transliteration.trim())}</span>`;
+          }
+          if (extAnnotations) {
+            if (extAnnotations.pr)
+              annotation += `<span class="verse-word-pronunciation">${escapeHtml(extAnnotations.pr)}</span>`;
+            if (extAnnotations.pbr)
+              annotation += `<span class="verse-word-gloss">${escapeHtml(extAnnotations.pbr)}</span>`;
+            if (extAnnotations.og)
+              annotation += `<span class="verse-word-gloss verse-word-gloss-secondary">${escapeHtml(extAnnotations.og)}</span>`;
+            if (extAnnotations.es)
+              annotation += `<span class="verse-word-gloss verse-word-gloss-secondary">${escapeHtml(extAnnotations.es)}</span>`;
+            if (extAnnotations.ln)
+              annotation += `<span class="verse-word-ref">${escapeHtml('LN ' + extAnnotations.ln)}</span>`;
+            if (extAnnotations.gk)
+              annotation += `<span class="verse-word-ref">${escapeHtml('GK ' + extAnnotations.gk)}</span>`;
           }
           output += `${leadingWs}<span class="verse-word">${topCore}<span class="verse-annotation">${annotation}</span></span>${trailingWs}`;
         }
@@ -164,6 +191,9 @@ const BibleView = (() => {
 
     // Normalize theWord case-paired original-language word tags before HTML parsing.
     html = normalizeTheWordWordAnnotations(html, strongsPrefix);
+
+    // Strip unprocessed extended annotation tags
+    html = html.replace(/<X>[\s\S]*?<x>/gi, '');
 
     // Strip leading <pb/> so it doesn't push the first line away from the verse number
     html = html.replace(/^\s*(<pb\s*\/?>)+/i, '');
