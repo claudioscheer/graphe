@@ -267,6 +267,20 @@ function isLikelyZlib(buf) {
   return (cmf & 0x0f) === 8 && ((cmf << 8) + flg) % 31 === 0;
 }
 
+function isLikelyUtf16LE(buf) {
+  if (buf.length < 2) return false;
+  // UTF-16LE BOM
+  if (buf[0] === 0xff && buf[1] === 0xfe) return true;
+  // Sample first ~20 byte-pairs; if ≥50% have a null high byte, it's UTF-16LE
+  const pairs = Math.min(20, Math.floor(buf.length / 2));
+  if (pairs === 0) return false;
+  let nullHigh = 0;
+  for (let i = 0; i < pairs; i++) {
+    if (buf[i * 2 + 1] === 0x00) nullHigh++;
+  }
+  return nullHigh / pairs >= 0.5;
+}
+
 function decodeContentSearchBlob(raw, compressedHint) {
   const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   let decoded = null;
@@ -280,14 +294,24 @@ function decodeContentSearchBlob(raw, compressedHint) {
   }
 
   const payload = decoded || buf;
-  return payload.toString('utf16le').replace(/^\ufeff/, '');
+
+  if (isLikelyUtf16LE(payload)) {
+    return payload.toString('utf16le').replace(/^\ufeff/, '');
+  }
+
+  // Try UTF-8, fall back to Latin1 for legacy modules
+  const text = payload.toString('utf8');
+  if (text.includes('\ufffd')) {
+    return payload.toString('latin1');
+  }
+  return text;
 }
 
 function extractPlainText(handle, topicId) {
   if (!handle.hasContentSearch) return null;
   try {
     const row = handle.db
-      .prepare('SELECT data FROM content_search WHERE topic_id = ?')
+      .prepare('SELECT CAST(data AS BLOB) AS data FROM content_search WHERE topic_id = ?')
       .get(topicId);
     if (!row || !row.data) return null;
 
