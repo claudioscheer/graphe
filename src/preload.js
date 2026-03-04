@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('search-dictionary-topics', moduleId, prefix, limit),
   getDictionaryCognates: (moduleId, strongsNumber) =>
     ipcRenderer.invoke('get-dictionary-cognates', moduleId, strongsNumber),
+  getDictionaryMeta: (moduleId) => ipcRenderer.invoke('get-dictionary-meta', moduleId),
+  getDictionaryTopicCount: (moduleId) => ipcRenderer.invoke('get-dictionary-topic-count', moduleId),
+  getDictionaryTopicsByPrefix: (moduleId, prefix, limit, offset) =>
+    ipcRenderer.invoke('get-dictionary-topics-by-prefix', moduleId, prefix, limit, offset),
+  getDictionaryRandomTopics: (moduleId, limit) =>
+    ipcRenderer.invoke('get-dictionary-random-topics', moduleId, limit),
   getCrossReferences: (book, chapter, allowedModuleIds) =>
     ipcRenderer.invoke('get-cross-references', book, chapter, allowedModuleIds),
   getCommentary: (moduleId, bookNumber, chapter) =>

@@ -5,6 +5,13 @@
   }
   root.CommentaryRefParser = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
+  function foldDiacritics(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  }
+
   function registerAlias(map, alias, bookNum) {
     if (!alias) return;
     const lower = String(alias).toLowerCase();
@@ -16,46 +23,81 @@
   function maybeRegisterCommonAliases(map, baseSet, shortName, longName, bookNum) {
     const shortLower = String(shortName || '').toLowerCase();
     const longLower = String(longName || '').toLowerCase();
+    const shortFold = foldDiacritics(shortName);
+    const longFold = foldDiacritics(longName);
+    const numberedPrefix =
+      (shortLower.match(/^([123])\s*/) || longLower.match(/^([123])\s*/) || longFold.match(/^([123])\s*/))?.[1] ||
+      '';
+    const registerBookAlias = (alias, { numberedOnly = false } = {}) => {
+      if (!alias) return;
+      if (numberedOnly && numberedPrefix) {
+        registerAlias(map, `${numberedPrefix}${alias}`, bookNum);
+        registerAlias(map, `${numberedPrefix} ${alias}`, bookNum);
+      } else {
+        registerAlias(map, alias, bookNum);
+      }
+      baseSet.add(alias);
+    };
     // Common aliases found in legacy commentary modules.
-    if (shortLower === 'mt' || /mateus|matthew/.test(longLower)) {
-      registerAlias(map, 'mat', bookNum);
-      registerAlias(map, 'matt', bookNum);
-      baseSet.add('mat');
-      baseSet.add('matt');
+    if (shortLower === 'mt' || /mateus|matthew/.test(longLower) || /mateus|matthew/.test(longFold)) {
+      registerBookAlias('mat');
+      registerBookAlias('matt');
     }
-    if (/exodus/.test(longLower)) {
-      registerAlias(map, 'exod', bookNum);
-      baseSet.add('exod');
+    if (/exodus/.test(longLower) || /exodus/.test(longFold)) {
+      registerBookAlias('exod');
     }
-    if (/deuteronomy/.test(longLower)) {
-      registerAlias(map, 'deut', bookNum);
-      baseSet.add('deut');
+    if (/deuteronomy/.test(longLower) || /deuteronomy/.test(longFold)) {
+      registerBookAlias('deut');
     }
-    if (/joshua/.test(longLower)) {
-      registerAlias(map, 'josh', bookNum);
-      baseSet.add('josh');
+    if (/joshua/.test(longLower) || /joshua/.test(longFold)) {
+      registerBookAlias('josh');
     }
-    if (/judges/.test(longLower)) {
-      registerAlias(map, 'judg', bookNum);
-      baseSet.add('judg');
+    if (/judges/.test(longLower) || /judges/.test(longFold)) {
+      registerBookAlias('judg');
     }
-    if (/zechariah/.test(longLower)) {
-      registerAlias(map, 'zech', bookNum);
-      baseSet.add('zech');
+    if (/zechariah/.test(longLower) || /zechariah/.test(longFold)) {
+      registerBookAlias('zech');
     }
-    if (/proverbs/.test(longLower)) {
-      registerAlias(map, 'prov', bookNum);
-      registerAlias(map, 'prv', bookNum);
-      baseSet.add('prov');
-      baseSet.add('prv');
+    if (/isaiah|isaias/.test(longLower) || /isaiah|isaias/.test(longFold)) {
+      registerBookAlias('isa');
     }
-    if (/song of solomon|song of songs|cantares/.test(longLower)) {
-      registerAlias(map, 'song', bookNum);
-      baseSet.add('song');
+    if (/jeremiah|jeremias/.test(longLower) || /jeremiah|jeremias/.test(longFold)) {
+      registerBookAlias('jer');
     }
-    if (/philippians/.test(longLower)) {
-      registerAlias(map, 'phil', bookNum);
-      baseSet.add('phil');
+    if (
+      /proverbs/.test(longLower) ||
+      /proverb/.test(longFold) ||
+      shortFold === 'pv' ||
+      shortFold === 'pr'
+    ) {
+      registerBookAlias('prov');
+      registerBookAlias('prv');
+      registerBookAlias('pro');
+      registerBookAlias('pró');
+    }
+    if (
+      /song of solomon|song of songs|cantares/.test(longLower) ||
+      /song of solomon|song of songs|cantares/.test(longFold)
+    ) {
+      registerBookAlias('song');
+    }
+    if (/philippians|filipenses/.test(longLower) || /philippians|filipenses/.test(longFold)) {
+      registerBookAlias('phil');
+    }
+    if (/corinthians|corintios/.test(longLower) || /corinthians|corintios/.test(longFold)) {
+      registerBookAlias('cor', { numberedOnly: true });
+      registerBookAlias('corinth', { numberedOnly: true });
+    }
+    if (/philemon|filemom|filemon/.test(longLower) || /philemon|filemom|filemon/.test(longFold)) {
+      registerBookAlias('philem');
+    }
+    if (/samuel/.test(longLower) || /samuel/.test(longFold)) {
+      registerBookAlias('sam', { numberedOnly: true });
+    }
+    if (/psalm|psalms|salmo|salmos/.test(longLower) || /psalm|psalms|salmo|salmos/.test(longFold)) {
+      registerBookAlias('psalm');
+      registerBookAlias('salmo');
+      registerBookAlias('ps');
     }
   }
 
@@ -85,7 +127,7 @@
     const bases = [...baseSet].sort((a, b) => b.length - a.length);
     const pattern = bases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     const refRegex = new RegExp(
-      `\\b([123])?\\s*(${pattern})(?:\\s+|\\s*\\.\\s*)(\\d{1,3})(?:[.:](\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?)?`,
+      `\\b(?:([123])(?:\\1)?\\s*\\.?\\s*)?(${pattern})(?:\\s+|\\s*\\.\\s*)(\\d{1,3})(?:\\s*[.:]\\s*(?:[.:]\\s*)*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?)?`,
       'gi'
     );
 
@@ -107,6 +149,12 @@
       const chapter = parseInt(context?.chapter, 10);
       if (!Number.isFinite(bookNum) || !Number.isFinite(chapter)) return [];
       const requireSeparator = options.requireSeparator === true;
+      const hasVerseContext =
+        context != null &&
+        (Object.prototype.hasOwnProperty.call(context, 'verseFrom') ||
+          Object.prototype.hasOwnProperty.call(context, 'verseTo'));
+      const chapterOnlyContext =
+        hasVerseContext && context?.verseFrom == null && context?.verseTo == null;
 
       const out = [];
       let lastChapter = chapter;
@@ -115,8 +163,8 @@
         const tail = input.slice(cursor);
         const continuationMatch = tail.match(
           requireSeparator
-            ? /^(\s*[;,]\s*)(\d{1,3})(?:(?:[.:](\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
-            : /^(\s*(?:[;,]\s*)?)(\d{1,3})(?:(?:[.:](\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
+            ? /^(\s*[;,]\s*(?:\.+\s*)?)(\d{1,3})(?:(?:\s*[.:]\s*(?:[.:]\s*)*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
+            : /^(\s*(?:[;,]\s*(?:\.+\s*)?)?)(\d{1,3})(?:(?:\s*[.:]\s*(?:[.:]\s*)*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
         );
         if (!continuationMatch) break;
 
@@ -126,17 +174,29 @@
         const start = cursor + leading.length;
         const end = cursor + continuationMatch[0].length;
         if (start >= end) break;
+        const trailing = tail.slice(continuationMatch[0].length);
+        if (
+          explicitVerseFrom == null &&
+          rangeVerseTo == null &&
+          (/^\s+[A-ZÀ-ÖØ-Þ]/.test(trailing) || /^\s*(?:\.\s*)+[A-ZÀ-ÖØ-Þ]/.test(trailing))
+        ) {
+          break;
+        }
 
         const n1 = parseInt(firstNum, 10);
-        let refChapter = lastChapter;
-        let verseFrom = n1;
-        let verseTo = n1;
+        let refChapter = chapterOnlyContext ? n1 : lastChapter;
+        let verseFrom = chapterOnlyContext ? null : n1;
+        let verseTo = chapterOnlyContext ? null : n1;
         if (explicitVerseFrom != null) {
           refChapter = n1;
           verseFrom = parseInt(explicitVerseFrom, 10);
           verseTo = explicitVerseTo != null ? parseInt(explicitVerseTo, 10) : verseFrom;
         } else if (rangeVerseTo != null) {
-          verseTo = parseInt(rangeVerseTo, 10);
+          if (chapterOnlyContext) {
+            refChapter = n1;
+          } else {
+            verseTo = parseInt(rangeVerseTo, 10);
+          }
         }
 
         out.push({
@@ -188,7 +248,7 @@
         const continuationStart = m.index + m[0].length;
         const continuationRefs = findContinuations(
           input.slice(continuationStart),
-          { bookNum, chapter },
+          { bookNum, chapter, verseFrom, verseTo },
           { requireSeparator: true }
         );
         for (const c of continuationRefs) {

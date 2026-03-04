@@ -6,3 +6,4 @@
     - which words are present, etc
 - better mophology
     - allow to click it and open a dictionary
+- see LTT gn 1:1. support <f>

@@ -2,6 +2,12 @@
  * utils.js — Shared utility functions
  */
 const Utils = (() => {
+  function truncateText(text, maxLength = 50) {
+    const value = String(text ?? '');
+    if (maxLength <= 0) return '';
+    return value.slice(0, maxLength);
+  }
+
   function getModuleDisplayName(module) {
     return module.listLabel || module.displayName || module.shortTitle || module.description || module.id;
   }
@@ -34,5 +40,11 @@ const Utils = (() => {
     );
   }
 
-  return { escapeHtml, getModuleDisplayName, sortBibleModules, sortCommentaryModules };
+  return {
+    escapeHtml,
+    getModuleDisplayName,
+    sortBibleModules,
+    sortCommentaryModules,
+    truncateText,
+  };
 })();

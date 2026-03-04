@@ -200,6 +200,17 @@ function openConvertModal() {
   }
 }
 
+function reloadModulesAndRefresh(targetWindow = mainWindow) {
+  try {
+    modules.reload();
+  } catch (err) {
+    console.error('Failed to reload modules:', err);
+  }
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    targetWindow.webContents.reloadIgnoringCache();
+  }
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const openAboutDialog = () => {
@@ -256,6 +267,11 @@ function buildMenu() {
           label: 'Convert Modules...',
           click: () => openConvertModal(),
         },
+        {
+          label: 'Reload Modules',
+          click: () => reloadModulesAndRefresh(),
+        },
+        { type: 'separator' },
         settingsMenuItem,
         { type: 'separator' },
         ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }]),
@@ -368,6 +384,7 @@ function buildMenu() {
 }
 
 ipcMain.on('show-verse-context-menu', (event, { hasSelection }) => {
+  const targetWindow = BrowserWindow.fromWebContents(event.sender);
   const menu = Menu.buildFromTemplate([
     {
       label: 'Copy',
@@ -375,11 +392,17 @@ ipcMain.on('show-verse-context-menu', (event, { hasSelection }) => {
       enabled: hasSelection,
       click: () => event.sender.send('context-menu-copy'),
     },
+    { type: 'separator' },
+    {
+      label: 'Reload Modules',
+      click: () => reloadModulesAndRefresh(targetWindow),
+    },
   ]);
-  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+  menu.popup({ window: targetWindow });
 });
 
 ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels }) => {
+  const targetWindow = BrowserWindow.fromWebContents(event.sender);
   const menu = Menu.buildFromTemplate([
     {
       label: labels.search,
@@ -389,8 +412,13 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
       label: labels.lookup,
       click: () => event.sender.send('strongs-lookup', { strongsNumber, paneId }),
     },
+    { type: 'separator' },
+    {
+      label: 'Reload Modules',
+      click: () => reloadModulesAndRefresh(targetWindow),
+    },
   ]);
-  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+  menu.popup({ window: targetWindow });
 });
 
 ipcMain.on('install-modules', () => installModulesFromDialog());

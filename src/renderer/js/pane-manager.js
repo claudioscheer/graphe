@@ -461,9 +461,10 @@ const PaneManager = (() => {
     const sortedModules = Utils.sortBibleModules(modules);
     for (const m of sortedModules) {
       const opt = document.createElement('option');
+      const displayName = Utils.getModuleDisplayName(m);
       opt.value = m.id;
-      opt.textContent = Utils.getModuleDisplayName(m);
-      opt.title = m.description;
+      opt.textContent = Utils.truncateText(displayName, 80);
+      opt.title = displayName;
       if (m.id === pane.moduleId) opt.selected = true;
       select.appendChild(opt);
     }
@@ -592,9 +593,10 @@ const PaneManager = (() => {
     const sorted = Utils.sortCommentaryModules(commentaryModules);
     for (const m of sorted) {
       const opt = document.createElement('option');
+      const displayName = Utils.getModuleDisplayName(m);
       opt.value = m.id;
-      opt.textContent = Utils.getModuleDisplayName(m);
-      opt.title = m.description;
+      opt.textContent = Utils.truncateText(displayName, 80);
+      opt.title = displayName;
       if (m.id === pane.moduleId) opt.selected = true;
       select.appendChild(opt);
     }

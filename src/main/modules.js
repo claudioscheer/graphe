@@ -40,6 +40,10 @@ function loadAll() {
   }
 }
 
+function reload() {
+  loadAll();
+}
+
 function getHandle(moduleId) {
   const handle = handles.get(moduleId);
   if (!handle) throw new Error(`Module not found: ${moduleId}`);
@@ -180,6 +184,41 @@ function getDictionaryCognates(moduleId, strongsNumber) {
   return sqliteProvider.getDictionaryCognates(handle.db, strongsNumber);
 }
 
+function getDictionaryMeta(moduleId) {
+  const handle = getHandle(moduleId);
+  const type = sqliteProvider.detectType(handle.db);
+  if (type !== 'dictionary') throw new Error(`Module is not a dictionary: ${moduleId}`);
+  const info = sqliteProvider.getInfo(handle.db);
+  const shortTitle = (info['short.title'] || info.short_title || '').trim();
+  const description = (info.description || '').trim();
+  const displayName = shortTitle || description || moduleId;
+  return {
+    id: moduleId,
+    type: 'dictionary',
+    displayName,
+    shortTitle: shortTitle || null,
+    description: description || moduleId,
+    language: info.language || null,
+    isStrongDict: (info.is_strong || '').toLowerCase() === 'true',
+    info,
+  };
+}
+
+function getDictionaryTopicCount(moduleId) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getDictionaryTopicCount(handle.db);
+}
+
+function getDictionaryTopicsByPrefix(moduleId, prefix, limit, offset) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getDictionaryTopicsByPrefix(handle.db, prefix, limit, offset);
+}
+
+function getDictionaryRandomTopics(moduleId, limit) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getDictionaryRandomTopics(handle.db, limit);
+}
+
 function getCrossReferences(moduleId, book, chapter) {
   const handle = getHandle(moduleId);
   return sqliteProvider.getCrossReferences(handle.db, book, chapter);
@@ -314,6 +353,7 @@ function installFiles(filePaths) {
 
 module.exports = {
   init,
+  reload,
   installFiles,
   getModules,
   getBooks,
@@ -325,6 +365,10 @@ module.exports = {
   lookupAllStrongDicts,
   searchDictionaryTopics,
   getDictionaryCognates,
+  getDictionaryMeta,
+  getDictionaryTopicCount,
+  getDictionaryTopicsByPrefix,
+  getDictionaryRandomTopics,
   getCrossReferences,
   lookupAllCrossRefModules,
   getCommentary,

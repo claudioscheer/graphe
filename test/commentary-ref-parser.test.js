@@ -45,6 +45,105 @@ describe('commentary reference matcher', () => {
     expect(refs[0]).toMatchObject({ bookNum: 540, chapter: 2, verseFrom: 1, verseTo: 1 });
   });
 
+  it('parses "1 Cor" and "Philem" aliases', () => {
+    const names = {
+      en: [
+        { short: '1Co', long: '1 Corinthians' },
+        { short: 'Phm', long: 'Philemon' },
+      ],
+    };
+    const nums = [540, 570];
+    const m = parser.buildReferenceMatcher(names, nums);
+    const refs = m.findMatches('1 Cor 1:1-9 Philem 4');
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toMatchObject({ bookNum: 540, chapter: 1, verseFrom: 1, verseTo: 9 });
+    expect(refs[1]).toMatchObject({ bookNum: 570, chapter: 4, verseFrom: null, verseTo: null });
+  });
+
+  it('does not match "Cor" without numeric prefix', () => {
+    const names = {
+      pt: [{ short: '1Co', long: '1 Coríntios' }],
+    };
+    const nums = [540];
+    const m = parser.buildReferenceMatcher(names, nums);
+    expect(m.findMatches('Cor 1:1-9')).toHaveLength(0);
+    expect(m.findMatches('1 Cor 1:1-9')).toHaveLength(1);
+  });
+
+  it('parses noisy chained legacy references with duplicated numbered prefix', () => {
+    const names = {
+      pt: [
+        { short: '1Co', long: '1 Coríntios' },
+        { short: 'Fp', long: 'Filipenses' },
+        { short: 'Cl', long: 'Colossenses' },
+        { short: '1Ts', long: '1 Tessalonicenses' },
+        { short: '2Ts', long: '2 Tessalonicenses' },
+        { short: '2Tm', long: '2 Timóteo' },
+        { short: 'Fm', long: 'Filemom' },
+      ],
+    };
+    const nums = [540, 610, 620, 630, 640, 660, 570];
+    const m = parser.buildReferenceMatcher(names, nums);
+    const text =
+      'f. 1 Cor 1:1-9;.. Phil 1:1-8; Colossenses 1:1-8;. 1 Tessalonicenses 1:2; 22 Ts 1. :. 3, 2 Tm 1:3; Philem 4';
+    const refs = m.findMatches(text);
+    expect(refs).toHaveLength(7);
+    expect(refs[0]).toMatchObject({ bookNum: 540, chapter: 1, verseFrom: 1, verseTo: 9 });
+    expect(refs[1]).toMatchObject({ bookNum: 610, chapter: 1, verseFrom: 1, verseTo: 8 });
+    expect(refs[2]).toMatchObject({ bookNum: 620, chapter: 1, verseFrom: 1, verseTo: 8 });
+    expect(refs[3]).toMatchObject({ bookNum: 630, chapter: 1, verseFrom: 2, verseTo: 2 });
+    expect(refs[4]).toMatchObject({ bookNum: 640, chapter: 1, verseFrom: 3, verseTo: 3 });
+    expect(refs[5]).toMatchObject({ bookNum: 660, chapter: 1, verseFrom: 3, verseTo: 3 });
+    expect(refs[6]).toMatchObject({ bookNum: 570, chapter: 4, verseFrom: null, verseTo: null });
+  });
+
+  it('parses chained refs with "2 Sam", chapter-only Salmo continuation and dotted spacing', () => {
+    const names = {
+      pt: [
+        { short: '2Sm', long: '2 Samuel' },
+        { short: 'Sl', long: 'Salmos' },
+        { short: 'Is', long: 'Isaías' },
+        { short: 'Jr', long: 'Jeremias' },
+        { short: 'Ez', long: 'Ezequiel' },
+      ],
+    };
+    const nums = [100, 230, 290, 300, 260];
+    const m = parser.buildReferenceMatcher(names, nums);
+    const text = 'er 2 Sam 7:12-16;. Salmo 89; 132;. Isa 11:1-5; Jer . 23:5-6;. Ez 34:23-24).';
+    const refs = m.findMatches(text);
+    expect(refs).toHaveLength(6);
+    expect(refs[0]).toMatchObject({ bookNum: 100, chapter: 7, verseFrom: 12, verseTo: 16 });
+    expect(refs[1]).toMatchObject({ bookNum: 230, chapter: 89, verseFrom: null, verseTo: null });
+    expect(refs[2]).toMatchObject({ bookNum: 230, chapter: 132, verseFrom: null, verseTo: null });
+    expect(refs[3]).toMatchObject({ bookNum: 290, chapter: 11, verseFrom: 1, verseTo: 5 });
+    expect(refs[4]).toMatchObject({ bookNum: 300, chapter: 23, verseFrom: 5, verseTo: 6 });
+    expect(refs[5]).toMatchObject({ bookNum: 260, chapter: 34, verseFrom: 23, verseTo: 24 });
+  });
+
+  it('parses mixed dotted-number prefix and Psalm/Isaiah continuations', () => {
+    const names = {
+      pt: [
+        { short: 'Dt', long: 'Deuteronômio' },
+        { short: '1Sm', long: '1 Samuel' },
+        { short: 'Sl', long: 'Salmos' },
+        { short: 'Is', long: 'Isaías' },
+        { short: 'Lm', long: 'Lamentações' },
+        { short: 'Lam', long: 'Lamentations' },
+      ],
+    };
+    const nums = [50, 90, 230, 290, 310, 310];
+    const m = parser.buildReferenceMatcher(names, nums);
+    const text = 'g, Dt 30:3;. 1. Sam 23:21;. Ps 103 : 13; Isa 49:15; 54:8; Lam 4:10)';
+    const refs = m.findMatches(text);
+    expect(refs).toHaveLength(6);
+    expect(refs[0]).toMatchObject({ bookNum: 50, chapter: 30, verseFrom: 3, verseTo: 3 });
+    expect(refs[1]).toMatchObject({ bookNum: 90, chapter: 23, verseFrom: 21, verseTo: 21 });
+    expect(refs[2]).toMatchObject({ bookNum: 230, chapter: 103, verseFrom: 13, verseTo: 13 });
+    expect(refs[3]).toMatchObject({ bookNum: 290, chapter: 49, verseFrom: 15, verseTo: 15 });
+    expect(refs[4]).toMatchObject({ bookNum: 290, chapter: 54, verseFrom: 8, verseTo: 8 });
+    expect(refs[5]).toMatchObject({ bookNum: 310, chapter: 4, verseFrom: 10, verseTo: 10 });
+  });
+
   it('parses ranges', () => {
     const refs = matcher.findMatches('Leia Mt.5:3-10.');
     expect(refs).toHaveLength(1);
@@ -191,6 +290,21 @@ describe('commentary reference matcher - broader abbreviations', () => {
     expect(refs[3]).toMatchObject({ bookNum: 70, chapter: 7, verseFrom: 9, verseTo: 9 });
     expect(refs[4]).toMatchObject({ bookNum: 200, chapter: 8, verseFrom: 6, verseTo: 6 });
     expect(refs[5]).toMatchObject({ bookNum: 220, chapter: 1, verseFrom: 3, verseTo: 3 });
+  });
+
+  it('parses legacy Portuguese-like aliases and chapter-only chained refs', () => {
+    const refs = broadMatcher.findMatches('2 Sam 7:12-16;. Salmo 89; 132;');
+    expect(refs).toHaveLength(3);
+    expect(refs[0]).toMatchObject({ bookNum: 100, chapter: 7, verseFrom: 12, verseTo: 16 });
+    expect(refs[1]).toMatchObject({ bookNum: 230, chapter: 89, verseFrom: null, verseTo: null });
+    expect(refs[2]).toMatchObject({ bookNum: 230, chapter: 132, verseFrom: null, verseTo: null });
+  });
+
+  it('requires explicit separator for continuation-only chunks when requested', () => {
+    const refs = broadMatcher.findContinuations('01:05 A missão de Paulo', { bookNum: 470, chapter: 28 }, {
+      requireSeparator: true,
+    });
+    expect(refs).toHaveLength(0);
   });
 });
 

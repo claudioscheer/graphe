@@ -188,6 +188,37 @@ function getDictionaryCognates(db, strongsNumber) {
   }
 }
 
+function getDictionaryTopicCount(db) {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM dictionary').get();
+  return Number(row?.count || 0);
+}
+
+function getDictionaryTopicsByPrefix(db, prefix, limit, offset) {
+  const normalizedPrefix = String(prefix || '').trim();
+  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 50));
+  const safeOffset = Math.max(0, Number(offset) || 0);
+
+  if (!normalizedPrefix) {
+    return db
+      .prepare('SELECT topic FROM dictionary ORDER BY topic LIMIT ? OFFSET ?')
+      .all(safeLimit, safeOffset)
+      .map((r) => r.topic);
+  }
+
+  return db
+    .prepare('SELECT topic FROM dictionary WHERE topic LIKE ? ORDER BY topic LIMIT ? OFFSET ?')
+    .all(normalizedPrefix + '%', safeLimit, safeOffset)
+    .map((r) => r.topic);
+}
+
+function getDictionaryRandomTopics(db, limit) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 20));
+  return db
+    .prepare('SELECT topic FROM dictionary ORDER BY RANDOM() LIMIT ?')
+    .all(safeLimit)
+    .map((r) => r.topic);
+}
+
 function getCrossReferences(db, book, chapter) {
   return db
     .prepare(
@@ -415,6 +446,9 @@ module.exports = {
   getDictionaryEntry,
   searchDictionaryTopics,
   getDictionaryCognates,
+  getDictionaryTopicCount,
+  getDictionaryTopicsByPrefix,
+  getDictionaryRandomTopics,
   getCrossReferences,
   getCommentary,
   getCommentaryBooks,

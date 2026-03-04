@@ -148,7 +148,7 @@ const CommentaryView = (() => {
       const text = node.textContent;
       let matches = _refMatcher.findMatches(text);
       if (matches.length === 0 && lastRefContext) {
-        matches = _refMatcher.findContinuations(text, lastRefContext);
+        matches = _refMatcher.findContinuations(text, lastRefContext, { requireSeparator: true });
       }
       if (matches.length === 0) continue;
 
@@ -175,7 +175,12 @@ const CommentaryView = (() => {
         node.parentNode.replaceChild(frag, node);
         const last = matches[matches.length - 1];
         if (last && Number.isFinite(last.bookNum) && Number.isFinite(last.chapter)) {
-          lastRefContext = { bookNum: last.bookNum, chapter: last.chapter };
+          lastRefContext = {
+            bookNum: last.bookNum,
+            chapter: last.chapter,
+            verseFrom: last.verseFrom,
+            verseTo: last.verseTo,
+          };
         }
       }
     }

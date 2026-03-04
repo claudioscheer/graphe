@@ -95,9 +95,10 @@ const SearchPanel = (() => {
     const sortedModules = Utils.sortBibleModules(modules);
     for (const m of sortedModules) {
       const opt = document.createElement('option');
+      const displayName = Utils.getModuleDisplayName(m);
       opt.value = m.id;
-      opt.textContent = Utils.getModuleDisplayName(m);
-      opt.title = m.description;
+      opt.textContent = Utils.truncateText(displayName, 80);
+      opt.title = displayName;
       if (m.id === selectedModuleId) opt.selected = true;
       select.appendChild(opt);
     }

@@ -41,6 +41,20 @@ function registerIpcHandlers() {
     modules.getDictionaryCognates(moduleId, strongsNumber)
   );
 
+  ipcMain.handle('get-dictionary-meta', (_event, moduleId) => modules.getDictionaryMeta(moduleId));
+
+  ipcMain.handle('get-dictionary-topic-count', (_event, moduleId) =>
+    modules.getDictionaryTopicCount(moduleId)
+  );
+
+  ipcMain.handle('get-dictionary-topics-by-prefix', (_event, moduleId, prefix, limit, offset) =>
+    modules.getDictionaryTopicsByPrefix(moduleId, prefix, limit, offset)
+  );
+
+  ipcMain.handle('get-dictionary-random-topics', (_event, moduleId, limit) =>
+    modules.getDictionaryRandomTopics(moduleId, limit)
+  );
+
   ipcMain.handle('get-cross-references', (_event, book, chapter, allowedModuleIds) =>
     modules.lookupAllCrossRefModules(book, chapter, allowedModuleIds)
   );
