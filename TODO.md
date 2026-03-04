@@ -1,5 +1,3 @@
 - onboarding first time the user opens the app
-- show original text below
-- don't copy unsupported files to modules folder
-- show progress when converting modules
-- os evangelhos comentados nos showing link for references
+- custom formating rules for translations (???)
+    - you define a pattern and apply a css to it. then on each verse of that translation we apply that style

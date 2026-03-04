@@ -205,39 +205,18 @@ const PaneManager = (() => {
 
       if (paneType === 'commentary') {
         const moduleId = resolveCommentaryModuleId(raw.moduleId);
-        if (!moduleId) {
-          // No commentary modules available — fall back to a bible pane
-          const fallbackModuleId = resolveModuleId(null);
-          const mod = modules.find((m) => m.id === fallbackModuleId) || modules[0] || null;
-          nextPanes[paneId] = {
-            id: paneId,
-            windowLabel: normalizeWindowLabel(raw.windowLabel),
-            paneType: 'bible',
-            moduleId: fallbackModuleId,
-            hasStrongs: mod ? mod.hasStrongs : false,
-            strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
-            bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
-            chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
-            bookShortName: raw.bookShortName || '',
-            books: [],
-            verses: [],
-            navHistory: [],
-            navHistoryIdx: -1,
-          };
-        } else {
-          nextPanes[paneId] = {
-            id: paneId,
-            windowLabel: normalizeWindowLabel(raw.windowLabel),
-            paneType: 'commentary',
-            moduleId,
-            bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
-            chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
-            bookShortName: raw.bookShortName || '',
-            commentaryBooks: [],
-            entries: [],
-            syncedToPaneId: raw.syncedToPaneId || null,
-          };
-        }
+        nextPanes[paneId] = {
+          id: paneId,
+          windowLabel: normalizeWindowLabel(raw.windowLabel),
+          paneType: 'commentary',
+          moduleId,
+          bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
+          chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
+          bookShortName: raw.bookShortName || '',
+          commentaryBooks: [],
+          entries: [],
+          syncedToPaneId: raw.syncedToPaneId || null,
+        };
       } else {
         const moduleId = resolveModuleId(raw.moduleId);
         const mod = modules.find((m) => m.id === moduleId) || modules[0] || null;
@@ -419,9 +398,12 @@ const PaneManager = (() => {
 
     for (const pane of Object.values(panes)) {
       if (pane.paneType === 'commentary') {
-        if (pane.commentaryBooks.length === 0 && pane.moduleId) {
+        if (!pane.moduleId) {
+          renderCommentaryUnavailable(pane.id);
+          markInitialLoaded(pane.id);
+        } else if (pane.commentaryBooks.length === 0) {
           loadCommentaryData(pane.id);
-        } else if (pane.commentaryBooks.length > 0) {
+        } else {
           loadCommentaryChapter(pane.id);
         }
       } else {

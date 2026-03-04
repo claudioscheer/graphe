@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const modules = require('./modules');
 const { registerIpcHandlers } = require('./ipc-handlers');
+const stateStore = require('./state-store');
 
 let mainWindow;
 let reloadTimer = null;
@@ -444,14 +445,13 @@ ipcMain.handle('convert-single-file', async (_event, filePath) => {
 });
 
 ipcMain.handle('finish-convert', (_event, convertedFiles, mode) => {
-  const modulesDir = path.join(os.homedir(), '.graphe', 'modules');
+  const successfulFiles = Array.isArray(convertedFiles)
+    ? convertedFiles.filter((c) => c && c.ok !== false && typeof c.tmpPath === 'string')
+    : [];
   if (mode === 'install') {
-    for (const c of convertedFiles) {
-      fs.copyFileSync(c.tmpPath, path.join(modulesDir, c.name));
-    }
-    modules.init();
+    modules.installFiles(successfulFiles.map((c) => c.tmpPath));
   } else {
-    for (const c of convertedFiles) {
+    for (const c of successfulFiles) {
       fs.copyFileSync(c.tmpPath, path.join(c.sourceDir, c.name));
     }
   }
@@ -524,4 +524,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   clearTimeout(updateCheckTimer);
+  stateStore.saveStateSync();
 });

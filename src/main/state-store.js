@@ -47,10 +47,10 @@ function loadState() {
   }
 }
 
-async function saveState(nextState) {
-  ensureDir();
+let cachedState = null;
 
-  const state = {
+function mergeState(nextState) {
+  return {
     ...getDefaultState(),
     ...(nextState || {}),
     settings: {
@@ -58,9 +58,22 @@ async function saveState(nextState) {
       ...((nextState && nextState.settings) || {}),
     },
   };
+}
+
+async function saveState(nextState) {
+  ensureDir();
+
+  const state = mergeState(nextState);
+  cachedState = state;
 
   await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
   return state;
 }
 
-module.exports = { loadState, saveState, STATE_FILE };
+function saveStateSync() {
+  if (!cachedState) return;
+  ensureDir();
+  fs.writeFileSync(STATE_FILE, JSON.stringify(cachedState, null, 2), 'utf8');
+}
+
+module.exports = { loadState, saveState, saveStateSync, STATE_FILE };

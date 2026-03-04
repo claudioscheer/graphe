@@ -110,6 +110,12 @@ const CommentaryView = (() => {
    * Sanitize commentary HTML — full sanitization then convert bible reference links.
    */
   function sanitizeCommentaryHtml(html) {
+    function contextFromBhref(href) {
+      const m = String(href || '').match(/^B:(\d+)\s+(\d+)/i);
+      if (!m) return null;
+      return { bookNum: parseInt(m[1], 10), chapter: parseInt(m[2], 10) };
+    }
+
     const safe = Sanitize.sanitizeHtml(html);
     // Convert bible reference <a> tags to <span> using DOM manipulation
     // to avoid attribute-injection risks from string interpolation.
@@ -130,10 +136,20 @@ const CommentaryView = (() => {
     const textNodes = [];
     while (walker.nextNode()) textNodes.push(walker.currentNode);
 
+    let lastRefContext = null;
     for (const node of textNodes) {
-      if (node.parentElement && node.parentElement.closest('.commentary-ref')) continue;
+      const refAncestor = node.parentElement && node.parentElement.closest('.commentary-ref');
+      if (refAncestor) {
+        const refContext = contextFromBhref(refAncestor.dataset.bhref);
+        if (refContext) lastRefContext = refContext;
+        continue;
+      }
+
       const text = node.textContent;
-      const matches = _refMatcher.findMatches(text);
+      let matches = _refMatcher.findMatches(text);
+      if (matches.length === 0 && lastRefContext) {
+        matches = _refMatcher.findContinuations(text, lastRefContext);
+      }
       if (matches.length === 0) continue;
 
       const frag = doc.createDocumentFragment();
@@ -157,6 +173,10 @@ const CommentaryView = (() => {
           frag.appendChild(doc.createTextNode(text.slice(lastIdx)));
         }
         node.parentNode.replaceChild(frag, node);
+        const last = matches[matches.length - 1];
+        if (last && Number.isFinite(last.bookNum) && Number.isFinite(last.chapter)) {
+          lastRefContext = { bookNum: last.bookNum, chapter: last.chapter };
+        }
       }
     }
 

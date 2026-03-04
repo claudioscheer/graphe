@@ -77,7 +77,7 @@ const I18n = (() => {
       coverageChapters: 'cap.',
       convertModules: 'Converter Módulos',
       convertModulesDesc:
-        'Selecione arquivos de módulos TheWord (.ont, .nt, .ot, .twm) para converter ao formato Graphe (.sqlite3).',
+        'Selecione arquivos de módulos TheWord (.ont, .nt, .ot, .twm) ou MySword (.bbl.mybible, .dct.mybible) para converter ao formato Graphe (.sqlite3).',
       selectFiles: 'Selecionar Arquivos',
       selectFolder: 'Selecionar Pasta',
       convert: 'Converter',
@@ -169,7 +169,7 @@ const I18n = (() => {
       coverageChapters: 'ch.',
       convertModules: 'Convert Modules',
       convertModulesDesc:
-        'Select TheWord module files (.ont, .nt, .ot, .twm) to convert to Graphe format (.sqlite3).',
+        'Select TheWord (.ont, .nt, .ot, .twm) or MySword (.bbl.mybible, .dct.mybible) module files to convert to Graphe format (.sqlite3).',
       selectFiles: 'Select Files',
       selectFolder: 'Select Folder',
       convert: 'Convert',
@@ -261,7 +261,7 @@ const I18n = (() => {
       coverageChapters: 'cap.',
       convertModules: 'Convertir Módulos',
       convertModulesDesc:
-        'Seleccione archivos de módulos TheWord (.ont, .nt, .ot, .twm) para convertir al formato Graphe (.sqlite3).',
+        'Seleccione archivos de módulos TheWord (.ont, .nt, .ot, .twm) o MySword (.bbl.mybible, .dct.mybible) para convertir al formato Graphe (.sqlite3).',
       selectFiles: 'Seleccionar Archivos',
       selectFolder: 'Seleccionar Carpeta',
       convert: 'Convertir',

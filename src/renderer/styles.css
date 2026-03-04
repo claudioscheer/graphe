@@ -242,6 +242,10 @@
   color: var(--ui-verse-num-dark);
 }
 
+.verse-content {
+  overflow-wrap: break-word;
+}
+
 .strongs {
   font-size: 0.55em;
   vertical-align: super;

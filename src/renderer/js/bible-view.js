@@ -117,7 +117,8 @@ const BibleView = (() => {
         output += top;
       } else {
         const leadingWs = (top.match(/^\s*/) || [''])[0];
-        const topCore = top.slice(leadingWs.length);
+        const trailingWs = (top.match(/\s*$/) || [''])[0];
+        const topCore = top.slice(leadingWs.length, top.length - trailingWs.length);
 
         if (!topCore) {
           output += top;
@@ -132,7 +133,7 @@ const BibleView = (() => {
           if (transliteration) {
             annotation += `<span class="verse-word-translit">${escapeHtml(transliteration.trim())}</span>`;
           }
-          output += `${leadingWs}<span class="verse-word">${topCore}<span class="verse-annotation">${annotation}</span></span>`;
+          output += `${leadingWs}<span class="verse-word">${topCore}<span class="verse-annotation">${annotation}</span></span>${trailingWs}`;
         }
       }
 
