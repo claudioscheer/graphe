@@ -609,8 +609,8 @@ document.addEventListener('click', (e) => {
   if (commentaryRef) {
     e.preventDefault();
     const raw = decodeURIComponent(commentaryRef.dataset.bhref.trim());
-    // Parse "B:<book> <ch>:<vs>" or "#b<book>.<ch>.<vs>" formats
-    const bMatch = raw.match(/^B:(\d+)\s+(\d+):(\d+)/i);
+    // Parse "B:<book> <ch>[:<vs>]" or "#b<book>.<ch>.<vs>" formats
+    const bMatch = raw.match(/^B:(\d+)\s+(\d+)(?::(\d+))?/i);
     const hashMatch = raw.match(/^#b(\d+)\.(\d+)\.(\d+)/i);
     const m = bMatch || hashMatch;
     if (!m) return;
@@ -628,7 +628,8 @@ document.addEventListener('click', (e) => {
       if (!bookNumber) return;
     }
     const chapter = parseInt(m[2], 10);
-    const verse = parseInt(m[3], 10);
+    const verse = m[3] ? parseInt(m[3], 10) : null;
+    if (verse !== null && Number.isNaN(verse)) return;
     const paneId = PaneManager.getActivePaneId();
     const target = PaneManager.getNavigationTarget(paneId);
     PaneManager.navigatePane(target, bookNumber, chapter, verse)

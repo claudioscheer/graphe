@@ -2,67 +2,12 @@
  * commentary-view.js — Commentary rendering for commentary panes
  */
 const CommentaryView = (() => {
-  // --- Plain-text bible reference detection ---
-  // Build abbreviation → book number lookup from all languages in I18n
-  const _refAbbrToBookNum = new Map();
-  const _refBaseSet = new Set();
-  {
-    const names = I18n._bookNames;
-    const nums = I18n._BOOK_NUMBERS;
-    for (const lang of Object.keys(names)) {
-      for (let i = 0; i < names[lang].length; i++) {
-        const bookNum = nums[i];
-        for (const form of [names[lang][i].short, names[lang][i].long]) {
-          const lower = form.toLowerCase();
-          if (!_refAbbrToBookNum.has(lower)) _refAbbrToBookNum.set(lower, bookNum);
-          // Register without spaces for numbered books: "1 samuel" → "1samuel"
-          const compact = lower.replace(/\s+/g, '');
-          if (compact !== lower && !_refAbbrToBookNum.has(compact))
-            _refAbbrToBookNum.set(compact, bookNum);
-          // Extract base abbreviation (strip leading digit + optional space)
-          const m = lower.match(/^[123]\s*(.*)/);
-          _refBaseSet.add(m ? m[1] : lower);
-        }
-      }
-    }
-  }
-  // Build regex — sort longest first to avoid partial matches
-  const _refBases = [..._refBaseSet].sort((a, b) => b.length - a.length);
-  const _refPattern = _refBases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const _refRegex = new RegExp(
-    `([123])?\\s*(${_refPattern})\\s+(\\d{1,3})[.:](\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?`,
-    'gi'
-  );
-
-  function _resolveRefBook(prefix, abbrev) {
-    const base = abbrev.toLowerCase();
-    if (prefix) {
-      return (
-        _refAbbrToBookNum.get(prefix + base) ||
-        _refAbbrToBookNum.get(prefix + ' ' + base) ||
-        null
-      );
-    }
-    return _refAbbrToBookNum.get(base) || null;
-  }
-  // --- end plain-text bible reference detection ---
+  const _refMatcher = CommentaryRefParser.buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
 
   function parseLeadingReference(text) {
     if (!text) return null;
     const plain = new DOMParser().parseFromString(String(text), 'text/html').body.textContent || '';
-    const firstLine = plain.trimStart().split(/\r?\n/, 1)[0].trim();
-    const match = firstLine.match(
-      /^(?:[\[({]\s*)?(?:(?:[1-3]\s*)?[A-Za-zÀ-ÖØ-öø-ÿ.]+\s+)?(\d{1,3})\s*[:.]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?\b/
-    );
-    if (!match) return null;
-
-    const chapter = parseInt(match[1], 10);
-    const verseFrom = parseInt(match[2], 10);
-    const verseTo = match[3] ? parseInt(match[3], 10) : verseFrom;
-    if (!Number.isFinite(chapter) || !Number.isFinite(verseFrom) || !Number.isFinite(verseTo)) {
-      return null;
-    }
-    return { chapter, verseFrom, verseTo };
+    return CommentaryRefParser.parseLeadingReferenceFromPlainText(plain);
   }
 
   function parseVerseNumber(value) {
@@ -188,29 +133,24 @@ const CommentaryView = (() => {
     for (const node of textNodes) {
       if (node.parentElement && node.parentElement.closest('.commentary-ref')) continue;
       const text = node.textContent;
-      _refRegex.lastIndex = 0;
-      if (!_refRegex.test(text)) continue;
-      _refRegex.lastIndex = 0;
+      const matches = _refMatcher.findMatches(text);
+      if (matches.length === 0) continue;
 
       const frag = doc.createDocumentFragment();
       let lastIdx = 0;
-      let m;
-      while ((m = _refRegex.exec(text)) !== null) {
-        const prefix = m[1] || '';
-        const abbrev = m[2];
-        const ch = m[3];
-        const vs = m[4];
-        const bookNum = _resolveRefBook(prefix, abbrev);
-        if (!bookNum) continue;
-        if (m.index > lastIdx) {
-          frag.appendChild(doc.createTextNode(text.slice(lastIdx, m.index)));
+      for (const match of matches) {
+        if (match.index > lastIdx) {
+          frag.appendChild(doc.createTextNode(text.slice(lastIdx, match.index)));
         }
         const span = doc.createElement('span');
         span.className = 'commentary-ref';
-        span.dataset.bhref = `B:${bookNum} ${ch}:${vs}`;
-        span.textContent = m[0];
+        span.dataset.bhref =
+          match.verseFrom == null
+            ? `B:${match.bookNum} ${match.chapter}`
+            : `B:${match.bookNum} ${match.chapter}:${match.verseFrom}`;
+        span.textContent = match.raw;
         frag.appendChild(span);
-        lastIdx = m.index + m[0].length;
+        lastIdx = match.endIndex;
       }
       if (lastIdx > 0) {
         if (lastIdx < text.length) {
