@@ -215,6 +215,11 @@ function getCommentaryBooks(moduleId) {
   return sqliteProvider.getCommentaryBooks(handle.db);
 }
 
+function getCommentaryCoverage(moduleId) {
+  const handle = getHandle(moduleId);
+  return sqliteProvider.getCommentaryCoverage(handle.db);
+}
+
 function getModulePath(moduleId) {
   const handle = getHandle(moduleId);
   return handle.filePath;
@@ -324,6 +329,7 @@ module.exports = {
   lookupAllCrossRefModules,
   getCommentary,
   getCommentaryBooks,
+  getCommentaryCoverage,
   getModulePath,
   getEditableModuleState,
   saveInfoValue,

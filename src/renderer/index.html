@@ -33,7 +33,7 @@
       class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
     >
       <div
-        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[560px] max-h-[80vh] flex flex-col overflow-hidden"
+        class="bg-brand-50 dark:bg-night-800 shadow-2xl w-[560px] max-h-[80vh] flex flex-col overflow-hidden"
       >
         <!-- Quick input -->
         <div class="p-4 border-b border-brand-300 dark:border-night-600">
@@ -42,7 +42,7 @@
             type="text"
             data-i18n-placeholder="navPlaceholder"
             placeholder="Type a reference, e.g. Gn 1:3 or Mt 5"
-            class="w-full px-4 py-3 text-lg rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            class="w-full px-4 py-3 text-lg rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-brand-900 dark:text-night-50 focus:outline-none focus:ring-2 focus:ring-brand-500"
             autocomplete="off"
           />
         </div>
@@ -54,7 +54,7 @@
         <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-between">
           <button
             id="nav-back"
-            class="hidden px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
+            class="hidden px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center gap-2"
             type="button"
           >
             <svg
@@ -74,7 +74,7 @@
           </button>
           <button
             id="nav-close"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
+            class="px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer ml-auto transition-colors"
             data-i18n="close"
           >
             Close
@@ -89,7 +89,7 @@
       class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
     >
       <div
-        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden"
+        class="bg-brand-50 dark:bg-night-800 shadow-2xl w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden"
       >
         <div class="p-4 border-b border-brand-300 dark:border-night-600">
           <h2 class="text-lg font-semibold" data-i18n="settings">Settings</h2>
@@ -105,7 +105,7 @@
               </div>
               <button
                 id="settings-theme-toggle"
-                class="px-4 py-1.5 rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium"
+                class="px-4 py-1.5 rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium"
               >
                 <span id="settings-theme-label" data-i18n="light">Light</span>
               </button>
@@ -119,7 +119,7 @@
               </div>
               <select
                 id="settings-font-size"
-                class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
+                class="app-select pl-3 pr-8 py-1.5 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
               >
                 <option value="14">14px</option>
                 <option value="16">16px</option>
@@ -139,7 +139,7 @@
               </div>
               <select
                 id="settings-lang-select"
-                class="app-select pl-3 pr-8 py-1.5 rounded-lg border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
+                class="app-select pl-3 pr-8 py-1.5 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer"
               >
                 <option value="pt">PT</option>
                 <option value="en">EN</option>
@@ -192,7 +192,7 @@
         <div class="p-3 border-t border-brand-300 dark:border-night-600 flex justify-end">
           <button
             id="settings-close"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            class="px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
             data-i18n="close"
           >
             Close
@@ -214,7 +214,7 @@
           </div>
           <button
             id="crossref-preview-close"
-            class="px-3 py-1.5 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            class="px-3 py-1.5 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
             data-i18n="close"
             type="button"
           >
@@ -231,7 +231,7 @@
       class="hidden fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
     >
       <div
-        class="bg-brand-50 dark:bg-night-800 rounded-xl shadow-2xl w-[380px] max-w-[92vw] flex flex-col overflow-hidden items-center text-center p-8"
+        class="bg-brand-50 dark:bg-night-800 shadow-2xl w-[380px] max-w-[92vw] flex flex-col overflow-hidden items-center text-center p-8"
       >
         <img src="../../assets/graphe-full.png" alt="Graphe" class="h-20 mb-4" />
         <p id="about-version" class="text-sm text-brand-600 dark:text-night-300 mt-1"></p>
@@ -242,14 +242,14 @@
         <div class="flex gap-4 mt-5">
           <button
             id="about-link-repo"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            class="px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
             type="button"
           >
             GitHub
           </button>
           <button
             id="about-link-issues"
-            class="px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+            class="px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
             data-i18n="reportIssue"
             type="button"
           >
@@ -258,7 +258,7 @@
         </div>
         <button
           id="about-close"
-          class="mt-5 px-4 py-2 text-sm rounded-lg bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
+          class="mt-5 px-4 py-2 text-sm rounded-sm bg-brand-200 dark:bg-night-700 text-brand-800 dark:text-night-100 hover:bg-brand-300 dark:hover:bg-night-600 cursor-pointer transition-colors"
           data-i18n="close"
           type="button"
         >

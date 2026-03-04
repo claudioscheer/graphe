@@ -56,7 +56,7 @@ const ModuleEditor = (() => {
 
     moduleSelect = document.createElement('select');
     moduleSelect.className =
-      'app-select pl-2 pr-8 py-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+      'app-select pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
     for (const mod of modules) {
       const opt = document.createElement('option');
       opt.value = mod.id;

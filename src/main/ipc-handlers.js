@@ -53,6 +53,10 @@ function registerIpcHandlers() {
     modules.getCommentaryBooks(moduleId)
   );
 
+  ipcMain.handle('get-commentary-coverage', (_event, moduleId) =>
+    modules.getCommentaryCoverage(moduleId)
+  );
+
   ipcMain.handle('get-module-path', (_event, moduleId) => modules.getModulePath(moduleId));
   ipcMain.handle('get-editable-module-state', (_event, moduleId) =>
     modules.getEditableModuleState(moduleId)

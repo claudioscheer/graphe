@@ -213,6 +213,20 @@ function getCommentaryBooks(db) {
     .map((r) => r.bookNumber);
 }
 
+function getCommentaryCoverage(db) {
+  const rows = db
+    .prepare(
+      'SELECT book_number AS bookNumber, chapter_number_from AS chapter FROM commentaries GROUP BY book_number, chapter_number_from ORDER BY book_number, chapter_number_from'
+    )
+    .all();
+  const map = {};
+  for (const row of rows) {
+    if (!map[row.bookNumber]) map[row.bookNumber] = [];
+    map[row.bookNumber].push(row.chapter);
+  }
+  return map;
+}
+
 function isValidModule(filePath) {
   const Database = require('better-sqlite3');
   try {
@@ -404,6 +418,7 @@ module.exports = {
   getCrossReferences,
   getCommentary,
   getCommentaryBooks,
+  getCommentaryCoverage,
   getCommentaryEntry,
   updateCommentaryText,
   getEditableTableAvailability,

@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   getCommentary: (moduleId, bookNumber, chapter) =>
     ipcRenderer.invoke('get-commentary', moduleId, bookNumber, chapter),
   getCommentaryBooks: (moduleId) => ipcRenderer.invoke('get-commentary-books', moduleId),
+  getCommentaryCoverage: (moduleId) => ipcRenderer.invoke('get-commentary-coverage', moduleId),
   getModulePath: (moduleId) => ipcRenderer.invoke('get-module-path', moduleId),
   getEditableModuleState: (moduleId) => ipcRenderer.invoke('get-editable-module-state', moduleId),
   saveInfoValue: (moduleId, name, value) =>
@@ -73,4 +74,11 @@ contextBridge.exposeInMainWorld('api', {
   getPendingUpdate: () => ipcRenderer.invoke('get-pending-update'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   installModules: () => ipcRenderer.send('install-modules'),
+  onOpenConvertModules: (callback) => setSingleListener('open-convert-modules', callback),
+  selectConvertFiles: () => ipcRenderer.invoke('select-convert-files'),
+  selectConvertFolder: () => ipcRenderer.invoke('select-convert-folder'),
+  convertSingleFile: (filePath) => ipcRenderer.invoke('convert-single-file', filePath),
+  finishConvert: (convertedFiles, mode) =>
+    ipcRenderer.invoke('finish-convert', convertedFiles, mode),
+  cleanupConvert: () => ipcRenderer.invoke('cleanup-convert'),
 });

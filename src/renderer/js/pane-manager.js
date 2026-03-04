@@ -475,7 +475,7 @@ const PaneManager = (() => {
 
     const select = document.createElement('select');
     select.className =
-      'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+      'app-select pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
     const sortedModules = Utils.sortBibleModules(modules);
     for (const m of sortedModules) {
       const opt = document.createElement('option');
@@ -497,7 +497,7 @@ const PaneManager = (() => {
     });
     const prevBtn = document.createElement('button');
     prevBtn.className =
-      'nav-prev-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+      'nav-prev-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const prevIcon = Icons.create('chevron-left');
     prevIcon.setAttribute('width', '16');
     prevIcon.setAttribute('height', '16');
@@ -511,7 +511,7 @@ const PaneManager = (() => {
 
     const navBtn = document.createElement('button');
     navBtn.className =
-      'nav-btn px-3 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
+      'nav-btn px-3 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
     navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-brand-600 dark:text-night-300'));
     const navBtnLabel = document.createElement('span');
     navBtnLabel.className = 'nav-btn-label';
@@ -528,7 +528,7 @@ const PaneManager = (() => {
 
     const nextBtn = document.createElement('button');
     nextBtn.className =
-      'nav-next-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+      'nav-next-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const nextBtnLabel = document.createElement('span');
     nextBtnLabel.className = 'nav-next-label';
     nextBtn.appendChild(nextBtnLabel);
@@ -546,7 +546,7 @@ const PaneManager = (() => {
 
     const backBtn = document.createElement('button');
     backBtn.className =
-      'pane-back-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors items-center justify-center';
+      'pane-back-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors items-center justify-center';
     backBtn.hidden = true;
     backBtn.appendChild(Icons.create('arrow-left'));
     backBtn.title = I18n.t('crossRefBackTooltip');
@@ -554,7 +554,7 @@ const PaneManager = (() => {
 
     const pinBtn = document.createElement('button');
     pinBtn.className =
-      'pane-pin-btn px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+      'pane-pin-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
     const isPinned = linkTargetPaneId === paneId;
     pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
     pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
@@ -573,7 +573,7 @@ const PaneManager = (() => {
 
     const closeBtn = document.createElement('button');
     closeBtn.className =
-      'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -606,7 +606,7 @@ const PaneManager = (() => {
     // Commentary module selector
     const select = document.createElement('select');
     select.className =
-      'app-select pl-2 pr-8 py-1 mr-1 rounded-md border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+      'app-select pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
     const sorted = Utils.sortCommentaryModules(commentaryModules);
     for (const m of sorted) {
       const opt = document.createElement('option');
@@ -640,7 +640,7 @@ const PaneManager = (() => {
     const syncTrigger = document.createElement('button');
     syncTrigger.type = 'button';
     syncTrigger.className =
-      'commentary-sync-trigger px-2 py-1 rounded-md text-sm text-brand-700 dark:text-night-200 hover:bg-brand-200 dark:hover:bg-night-700 cursor-pointer transition-colors';
+      'commentary-sync-trigger px-2 py-1 rounded-sm text-sm text-brand-700 dark:text-night-200 hover:bg-brand-200 dark:hover:bg-night-700 cursor-pointer transition-colors';
     syncTrigger.title = I18n.t('commentarySyncHint');
     syncTrigger.setAttribute('aria-expanded', 'false');
     syncTrigger.setAttribute('aria-haspopup', 'menu');
@@ -773,10 +773,18 @@ const PaneManager = (() => {
 
     syncWrap.append(syncTrigger, syncMenu);
 
+    // Coverage info button
+    const infoBtn = document.createElement('button');
+    infoBtn.className =
+      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    infoBtn.appendChild(Icons.create('info'));
+    infoBtn.title = I18n.t('commentaryCoverage');
+    infoBtn.addEventListener('click', () => openCommentaryCoverageModal(paneId));
+
     // Close button
     const closeBtn = document.createElement('button');
     closeBtn.className =
-      'px-2 py-1 rounded-md hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -785,7 +793,7 @@ const PaneManager = (() => {
     idBadge.className = 'pane-id-badge';
     idBadge.textContent = getPaneDisplayLabel(paneId);
 
-    toolbar.append(idBadge, select, navLabel, spacer, syncWrap, closeBtn);
+    toolbar.append(idBadge, select, navLabel, spacer, syncWrap, infoBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -1443,6 +1451,155 @@ const PaneManager = (() => {
       if (found) return found;
     }
     return null;
+  }
+
+  // Chapter counts per book (index 0=Gen, 65=Rev) — standard KJV canon
+  const CHAPTER_COUNTS = [
+    50,40,27,36,34,24,21,4,31,24,22,25,29,36,10,13,10,42,150,31,12,8,66,52,5,48,12,14,3,9,1,4,7,3,3,3,2,14,4,
+    28,16,24,21,28,16,16,13,6,6,4,4,5,3,6,4,3,1,13,5,5,3,5,1,1,1,22,
+  ];
+
+  async function openCommentaryCoverageModal(paneId) {
+    const pane = panes[paneId];
+    if (!pane) return;
+
+    const coverage = await window.api.getCommentaryCoverage(pane.moduleId);
+    const bookNumbers = I18n._BOOK_NUMBERS;
+
+    // Build overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-40 bg-black/50 flex items-center justify-center';
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    const modal = document.createElement('div');
+    modal.className =
+      'bg-brand-50 dark:bg-night-800 shadow-2xl w-[620px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between';
+    const title = document.createElement('h2');
+    title.className = 'text-lg font-semibold';
+    title.textContent = I18n.t('commentaryCoverage');
+    const closeBtn = document.createElement('button');
+    closeBtn.className =
+      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 cursor-pointer transition-colors inline-flex items-center justify-center';
+    closeBtn.appendChild(Icons.create('x'));
+    closeBtn.addEventListener('click', () => overlay.remove());
+    header.append(title, closeBtn);
+
+    // Legend
+    const legend = document.createElement('div');
+    legend.className = 'px-4 pt-3 pb-1 flex gap-4 text-xs text-brand-600 dark:text-night-300';
+    for (const [cls, key] of [
+      ['coverage-full', 'coverageFull'],
+      ['coverage-partial', 'coveragePartial'],
+      ['coverage-none', 'coverageNone'],
+    ]) {
+      const item = document.createElement('span');
+      item.className = 'flex items-center gap-1.5';
+      const dot = document.createElement('span');
+      dot.className = `inline-block w-3 h-3 ${cls}`;
+      item.append(dot, I18n.t(key));
+      legend.appendChild(item);
+    }
+
+    // Book grid
+    const grid = document.createElement('div');
+    grid.className = 'p-4 overflow-y-auto coverage-grid';
+
+    // OT label
+    const otLabel = document.createElement('div');
+    otLabel.className = 'text-xs font-semibold text-brand-500 dark:text-night-400 mb-1.5';
+    otLabel.textContent = I18n.t('oldTestament');
+    grid.appendChild(otLabel);
+
+    const otGrid = document.createElement('div');
+    otGrid.className = 'grid gap-1.5 mb-4';
+    otGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(52px, 1fr))';
+
+    for (let i = 0; i < 39; i++) {
+      otGrid.appendChild(buildCoverageCell(bookNumbers[i], i, coverage));
+    }
+    grid.appendChild(otGrid);
+
+    // NT label
+    const ntLabel = document.createElement('div');
+    ntLabel.className = 'text-xs font-semibold text-brand-500 dark:text-night-400 mb-1.5';
+    ntLabel.textContent = I18n.t('newTestament');
+    grid.appendChild(ntLabel);
+
+    const ntGrid = document.createElement('div');
+    ntGrid.className = 'grid gap-1.5';
+    ntGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(52px, 1fr))';
+
+    for (let i = 39; i < 66; i++) {
+      ntGrid.appendChild(buildCoverageCell(bookNumbers[i], i, coverage));
+    }
+    grid.appendChild(ntGrid);
+
+    modal.append(header, legend, grid);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Close on Escape
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+  }
+
+  function buildCoverageCell(bookNumber, bookIndex, coverage) {
+    const totalChapters = CHAPTER_COUNTS[bookIndex];
+    const coveredChapters = coverage[bookNumber] || [];
+    const name = I18n.bookName(bookNumber);
+    const ratio = coveredChapters.length / totalChapters;
+
+    const cell = document.createElement('div');
+    cell.className = 'coverage-cell';
+
+    if (ratio === 0) {
+      cell.classList.add('coverage-none');
+      cell.title = `${name.long}: ${I18n.t('coverageNone')}`;
+    } else if (ratio >= 1) {
+      cell.classList.add('coverage-full');
+      cell.title = `${name.long}: ${I18n.t('coverageFull')} (${totalChapters} ${I18n.t('coverageChapters')})`;
+    } else {
+      cell.classList.add('coverage-partial');
+      const coveredSet = new Set(coveredChapters);
+      const missing = [];
+      for (let ch = 1; ch <= totalChapters; ch++) {
+        if (!coveredSet.has(ch)) missing.push(ch);
+      }
+      const missingStr = compactRanges(missing);
+      cell.title = `${name.long}: ${coveredChapters.length}/${totalChapters} ${I18n.t('coverageChapters')}\n${I18n.t('coverageMissingChapters')}: ${missingStr}`;
+    }
+
+    cell.textContent = name.short;
+    return cell;
+  }
+
+  function compactRanges(nums) {
+    if (nums.length === 0) return '';
+    const ranges = [];
+    let start = nums[0];
+    let end = start;
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] === end + 1) {
+        end = nums[i];
+      } else {
+        ranges.push(start === end ? String(start) : `${start}-${end}`);
+        start = nums[i];
+        end = start;
+      }
+    }
+    ranges.push(start === end ? String(start) : `${start}-${end}`);
+    return ranges.join(', ');
   }
 
   return {

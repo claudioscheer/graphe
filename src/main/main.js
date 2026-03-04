@@ -191,64 +191,11 @@ async function installModulesFromDialog() {
   }
 }
 
-async function convertModulesFromDialog() {
-  const converter = require('./modules/converters');
-  const extensions = converter.getSupportedExtensions().map((e) => e.slice(1));
+let convertTmpDir = null;
 
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Convertible Modules', extensions }],
-  });
-  if (result.canceled || result.filePaths.length === 0) return;
-
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-convert-'));
-  const converted = [];
-  const errors = [];
-
-  for (const file of result.filePaths) {
-    try {
-      const out = await converter.convertFile(file, tmpDir);
-      converted.push({ name: path.basename(out), tmpPath: out, sourceDir: path.dirname(file) });
-    } catch (err) {
-      errors.push({ file: path.basename(file), error: err.message });
-    }
-  }
-
-  if (converted.length > 0) {
-    const response = dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      title: 'Convert Modules',
-      message: `Converted ${converted.length} module(s):\n${converted.map((c) => c.name).join('\n')}`,
-      buttons: ['Install', 'Save alongside original'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-
-    const modulesDir = path.join(os.homedir(), '.graphe', 'modules');
-    if (response === 0) {
-      for (const c of converted) {
-        fs.copyFileSync(c.tmpPath, path.join(modulesDir, c.name));
-      }
-      modules.init();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.reloadIgnoringCache();
-      }
-    } else {
-      for (const c of converted) {
-        fs.copyFileSync(c.tmpPath, path.join(c.sourceDir, c.name));
-      }
-    }
-  }
-
-  // Clean up temp dir
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-
-  if (errors.length > 0) {
-    dialog.showMessageBoxSync(mainWindow, {
-      type: converted.length === 0 ? 'error' : 'warning',
-      title: 'Convert Modules',
-      message: `Failed to convert ${errors.length} file(s):\n${errors.map((e) => `${e.file}: ${e.error}`).join('\n')}`,
-    });
+function openConvertModal() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('open-convert-modules');
   }
 }
 
@@ -306,7 +253,7 @@ function buildMenu() {
         },
         {
           label: 'Convert Modules...',
-          click: () => convertModulesFromDialog(),
+          click: () => openConvertModal(),
         },
         settingsMenuItem,
         { type: 'separator' },
@@ -446,6 +393,86 @@ ipcMain.on('show-strongs-context-menu', (event, { strongsNumber, paneId, labels 
 });
 
 ipcMain.on('install-modules', () => installModulesFromDialog());
+
+ipcMain.handle('select-convert-files', async () => {
+  const converter = require('./modules/converters');
+  const extensions = converter.getSupportedExtensions().map((e) => e.slice(1));
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Convertible Modules', extensions }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { files: [] };
+  return {
+    files: result.filePaths.map((fp) => ({ path: fp, name: path.basename(fp) })),
+  };
+});
+
+ipcMain.handle('select-convert-folder', async () => {
+  const converter = require('./modules/converters');
+  const extSet = new Set(converter.getSupportedExtensions());
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { files: [] };
+
+  const files = [];
+  function scanDir(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanDir(full);
+      } else if (extSet.has(path.extname(entry.name).toLowerCase())) {
+        files.push({ path: full, name: entry.name });
+      }
+    }
+  }
+  scanDir(result.filePaths[0]);
+  return { files };
+});
+
+ipcMain.handle('convert-single-file', async (_event, filePath) => {
+  const converter = require('./modules/converters');
+  if (!convertTmpDir) {
+    convertTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-convert-'));
+  }
+  try {
+    const out = await converter.convertFile(filePath, convertTmpDir);
+    return { ok: true, name: path.basename(out), tmpPath: out, sourceDir: path.dirname(filePath) };
+  } catch (err) {
+    return { ok: false, name: path.basename(filePath), error: err.message };
+  }
+});
+
+ipcMain.handle('finish-convert', (_event, convertedFiles, mode) => {
+  const modulesDir = path.join(os.homedir(), '.graphe', 'modules');
+  if (mode === 'install') {
+    for (const c of convertedFiles) {
+      fs.copyFileSync(c.tmpPath, path.join(modulesDir, c.name));
+    }
+    modules.init();
+  } else {
+    for (const c of convertedFiles) {
+      fs.copyFileSync(c.tmpPath, path.join(c.sourceDir, c.name));
+    }
+  }
+  // Clean up temp dir
+  if (convertTmpDir) {
+    fs.rmSync(convertTmpDir, { recursive: true, force: true });
+    convertTmpDir = null;
+  }
+  if (mode === 'install' && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reloadIgnoringCache();
+  }
+  return true;
+});
+
+ipcMain.handle('cleanup-convert', () => {
+  if (convertTmpDir) {
+    fs.rmSync(convertTmpDir, { recursive: true, force: true });
+    convertTmpDir = null;
+  }
+  return true;
+});
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-pending-update', () => pendingUpdate);

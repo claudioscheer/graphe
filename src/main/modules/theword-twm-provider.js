@@ -84,6 +84,24 @@ function load(filePath) {
 }
 
 /**
+ * Collect all descendant topic IDs that have content_search entries.
+ */
+function collectDescendantContentIds(db, parentId) {
+  const ids = [];
+  const children = db
+    .prepare('SELECT id FROM topics WHERE pid = ? ORDER BY rel_order')
+    .all(parentId);
+  for (const child of children) {
+    const hasContent = db
+      .prepare('SELECT 1 FROM content_search WHERE topic_id = ? LIMIT 1')
+      .get(child.id);
+    if (hasContent) ids.push(child.id);
+    ids.push(...collectDescendantContentIds(db, child.id));
+  }
+  return ids;
+}
+
+/**
  * Build a map from Graphe book numbers to topic IDs for type=3 modules.
  * Returns Map<grapheBookNumber, topicId[]>.
  */
@@ -91,11 +109,22 @@ function buildTopicBookMap(db) {
   const bookMap = new Map();
 
   // Get root topics that have content, ordered by rel_order
-  const rootTopics = db
+  let rootTopics = db
     .prepare(
       'SELECT id, subject FROM topics WHERE pid = 0 AND id IN (SELECT topic_id FROM content_search) ORDER BY rel_order'
     )
     .all();
+
+  // Fallback: if no root topics have content, use all root topics whose
+  // descendants have content (e.g. general books where roots are containers)
+  if (rootTopics.length === 0) {
+    const allRoots = db
+      .prepare('SELECT id, subject FROM topics WHERE pid = 0 ORDER BY rel_order')
+      .all();
+    rootTopics = allRoots.filter(
+      (t) => collectDescendantContentIds(db, t.id).length > 0
+    );
+  }
 
   // Check if bible_link_search table exists
   let hasBibleLinkSearch = false;
@@ -119,10 +148,20 @@ function buildTopicBookMap(db) {
     }
 
     if (grapheBook != null) {
-      if (!bookMap.has(grapheBook)) {
-        bookMap.set(grapheBook, []);
+      // Include the root topic itself if it has content, plus all descendants
+      const topicIds = [];
+      const rootHasContent = db
+        .prepare('SELECT 1 FROM content_search WHERE topic_id = ? LIMIT 1')
+        .get(topic.id);
+      if (rootHasContent) topicIds.push(topic.id);
+      topicIds.push(...collectDescendantContentIds(db, topic.id));
+
+      if (topicIds.length > 0) {
+        if (!bookMap.has(grapheBook)) {
+          bookMap.set(grapheBook, []);
+        }
+        bookMap.get(grapheBook).push(...topicIds);
       }
-      bookMap.get(grapheBook).push(topic.id);
     }
   }
 

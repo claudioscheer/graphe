@@ -78,7 +78,7 @@ const Navigation = (() => {
     for (const book of books) {
       const btn = document.createElement('button');
       btn.className =
-        'nav-book-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+        'nav-book-btn rounded-sm bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors truncate px-2';
       btn.textContent = I18n.bookName(book.bookNumber).short;
       btn.title = I18n.bookName(book.bookNumber).long;
@@ -110,7 +110,7 @@ const Navigation = (() => {
     for (let ch = 1; ch <= count; ch++) {
       const btn = document.createElement('button');
       btn.className =
-        'nav-chapter-btn rounded-lg bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+        'nav-chapter-btn rounded-sm bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
       btn.textContent = ch;
       btn.addEventListener('click', () => {
