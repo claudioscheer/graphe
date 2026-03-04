@@ -185,9 +185,16 @@ const BibleView = (() => {
     return { range: null, text };
   }
 
-  function parseVerseText(text, showStrongs, strongsPrefix) {
-    // Remove <f>...</f> footnotes
-    let html = text.replace(/<f>[\s\S]*?<\/f>/gi, '');
+  function parseVerseText(text, showStrongs, strongsPrefix, footnotes) {
+    // Replace <f>...</f> footnotes with superscript markers
+    const superDigits = ['\u2070', '\u00b9', '\u00b2', '\u00b3', '\u2074', '\u2075', '\u2076', '\u2077', '\u2078', '\u2079'];
+    let fnIndex = 0;
+    let html = text.replace(/<f>([\s\S]*?)<\/f>/gi, (_match, content) => {
+      if (footnotes) footnotes.push(content.trim());
+      fnIndex++;
+      const label = String(fnIndex).split('').map(d => superDigits[parseInt(d)]).join('');
+      return `<sup class="verse-footnote-marker" data-fn-index="${fnIndex - 1}">${label}</sup>`;
+    });
 
     // Normalize theWord case-paired original-language word tags before HTML parsing.
     html = normalizeTheWordWordAnnotations(html, strongsPrefix);
@@ -352,9 +359,11 @@ const BibleView = (() => {
       numSpan.id = `v-${v.verse}`;
 
       // Verse content
+      const footnotes = [];
       const textSpan = document.createElement('span');
       textSpan.className = 'verse-content';
-      textSpan.innerHTML = parseVerseText(cleanText, showStrongs, strongsPrefix);
+      textSpan.innerHTML = parseVerseText(cleanText, showStrongs, strongsPrefix, footnotes);
+      if (footnotes.length > 0) line._footnotes = footnotes;
 
       line.appendChild(numSpan);
       line.appendChild(textSpan);
@@ -385,6 +394,36 @@ const BibleView = (() => {
 
       wrapper.appendChild(line);
     }
+
+    // Footnote popover handler
+    wrapper.addEventListener('click', (e) => {
+      const marker = e.target.closest('.verse-footnote-marker');
+      // Dismiss any existing popover on any click
+      const existing = wrapper.querySelector('.verse-footnote-popover');
+      if (existing) existing.remove();
+      if (!marker) return;
+      e.stopPropagation();
+      const line = marker.closest('.verse-line');
+      if (!line || !line._footnotes) return;
+      const idx = parseInt(marker.dataset.fnIndex, 10);
+      const content = line._footnotes[idx];
+      if (!content) return;
+      const popover = document.createElement('div');
+      popover.className = 'verse-footnote-popover';
+      popover.innerHTML = content;
+      // Position near the marker
+      wrapper.style.position = 'relative';
+      const rect = marker.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+      popover.style.left = `${rect.left - wrapperRect.left}px`;
+      popover.style.top = `${rect.bottom - wrapperRect.top + 4}px`;
+      wrapper.appendChild(popover);
+      // Dismiss on Escape
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') { popover.remove(); document.removeEventListener('keydown', onKey); }
+      };
+      document.addEventListener('keydown', onKey);
+    });
 
     // Render inline cross-references if enabled
     if (crossRefMode === 'inline' && crossRefsByVerse) {
