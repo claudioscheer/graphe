@@ -1,5 +1,7 @@
 # Graphe
 
+Mais informacoes e atualizacoes: [Telegram do Graphe](https://t.me/graphetelegram)
+
 Um aplicativo moderno para estudo bíblico, com foco em leitura, comparação e pesquisa das Escrituras.
 
 O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.
