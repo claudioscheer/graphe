@@ -10,7 +10,7 @@ const SearchPanel = (() => {
   let resizeBound = false;
 
   // DOM refs
-  let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn;
+  let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn, pickerInstance;
 
   const MIN_WIDTH = 200;
   const MAX_WIDTH_RATIO = 0.6;
@@ -89,25 +89,20 @@ const SearchPanel = (() => {
     header.appendChild(titleRow);
 
     // Translation select
-    select = document.createElement('select');
-    select.className =
-      'app-select w-full pl-2 pr-8 py-1 mt-2 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    const sortedModules = Utils.sortBibleModules(modules);
-    for (const m of sortedModules) {
-      const opt = document.createElement('option');
-      const displayName = Utils.getModuleDisplayName(m);
-      opt.value = m.id;
-      opt.textContent = Utils.truncateText(displayName, 80);
-      opt.title = displayName;
-      if (m.id === selectedModuleId) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.addEventListener('change', () => {
-      selectedModuleId = select.value;
-      emitStateChange();
-      prefetchBooks();
-      runSearch();
+    const searchPicker = ModulePicker.create({
+      modules: Utils.sortBibleModules(modules),
+      selectedId: selectedModuleId,
+      moduleType: 'bible',
+      className: 'w-full pl-2 pr-8 py-1 mt-2 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      onChange: (moduleId) => {
+        selectedModuleId = moduleId;
+        emitStateChange();
+        prefetchBooks();
+        runSearch();
+      },
     });
+    pickerInstance = searchPicker;
+    select = searchPicker.el;
     header.appendChild(select);
 
     // Search input with clear button
@@ -433,7 +428,7 @@ const SearchPanel = (() => {
     const mod = modules.find((m) => m.id === moduleId);
     if (!mod) return;
     selectedModuleId = moduleId;
-    if (select) select.value = moduleId;
+    if (pickerInstance) pickerInstance.setSelected(moduleId);
     prefetchBooks();
     emitStateChange();
   }

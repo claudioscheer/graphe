@@ -20,7 +20,7 @@ const DictPanel = (() => {
   let bibleRefMatcherLang = null;
 
   // DOM refs
-  let panel, contentEl, searchInput, autocompleteEl, dictClearBtn, moduleSelect;
+  let panel, contentEl, searchInput, autocompleteEl, dictClearBtn, moduleSelect, dictPickerInstance;
 
   function init(modules, savedState) {
     dictModules = modules;
@@ -112,26 +112,23 @@ const DictPanel = (() => {
     const controlsRow = document.createElement('div');
     controlsRow.className = 'dict-controls-row mt-2';
 
-    moduleSelect = document.createElement('select');
-    moduleSelect.className =
-      'app-select flex-1 min-w-0 pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    for (const mod of dictModules) {
-      const opt = document.createElement('option');
-      const displayName = Utils.getModuleDisplayName(mod);
-      opt.value = mod.id;
-      opt.textContent = Utils.truncateText(displayName, 60);
-      opt.title = displayName;
-      if (mod.id === selectedModuleId) opt.selected = true;
-      moduleSelect.appendChild(opt);
-    }
-    moduleSelect.addEventListener('change', () => {
-      const prevModuleId = selectedModuleId;
-      persistCurrentModuleSearch(prevModuleId);
-      selectedModuleId = moduleSelect.value || resolveSelectedModuleId(null);
-      restoreSelectedModuleSearch();
-      updateNavButtons();
-      emitStateChange();
+    const dictPicker = ModulePicker.create({
+      modules: dictModules,
+      selectedId: selectedModuleId,
+      moduleType: 'dictionary',
+      truncateLength: 60,
+      className: 'flex-1 min-w-0 pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      onChange: (moduleId) => {
+        const prevModuleId = selectedModuleId;
+        persistCurrentModuleSearch(prevModuleId);
+        selectedModuleId = moduleId || resolveSelectedModuleId(null);
+        restoreSelectedModuleSearch();
+        updateNavButtons();
+        emitStateChange();
+      },
     });
+    dictPickerInstance = dictPicker;
+    moduleSelect = dictPicker.el;
 
     const infoBtn = document.createElement('button');
     infoBtn.type = 'button';
@@ -408,7 +405,7 @@ const DictPanel = (() => {
     const moduleId = resolveSelectedModuleId(selectedModuleId);
     if (!moduleId) return;
     selectedModuleId = moduleId;
-    if (moduleSelect && moduleSelect.value !== moduleId) moduleSelect.value = moduleId;
+    if (dictPickerInstance) dictPickerInstance.setSelected(moduleId);
 
     // Keep modal behavior aligned with commentary coverage modal.
     const overlay = document.createElement('div');
@@ -714,9 +711,9 @@ const DictPanel = (() => {
         return;
       }
 
-      if (moduleSelect && dictModules.some((m) => m.id === strongsDict)) {
+      if (dictPickerInstance && dictModules.some((m) => m.id === strongsDict)) {
         selectedModuleId = strongsDict;
-        moduleSelect.value = strongsDict;
+        dictPickerInstance.setSelected(strongsDict);
       }
 
       const results = await window.api.lookupAllStrongDicts(strongsNumber, [strongsDict]);
@@ -753,7 +750,7 @@ const DictPanel = (() => {
         '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoModulesInstalled')) + '</div>';
       return;
     }
-    if (moduleSelect && moduleSelect.value !== resolvedModuleId) moduleSelect.value = resolvedModuleId;
+    if (dictPickerInstance) dictPickerInstance.setSelected(resolvedModuleId);
     selectedModuleId = resolvedModuleId;
     currentLookup = { type: 'word', topic, moduleId: resolvedModuleId };
     moduleSearchCache.set(resolvedModuleId, topic);

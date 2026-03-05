@@ -16,6 +16,7 @@ function getDefaultState() {
       language: 'pt',
       fontSize: 20,
       strongsDicts: null,
+      favoriteModules: {},
     },
     paneManager: null,
     searchPanel: null,

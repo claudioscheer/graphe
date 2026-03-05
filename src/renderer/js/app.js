@@ -11,6 +11,7 @@ const AppStateStore = (() => {
       strongsDicts: null,
       crossRefModules: null,
       openPinnedRefsInModal: false,
+      favoriteModules: {},
     },
     paneManager: null,
     searchPanel: null,
@@ -246,29 +247,18 @@ const Settings = (() => {
     const current = AppStateStore.getSettings().strongsDicts;
     const currentId = Array.isArray(current) ? current[0] : (current || null);
 
-    const select = document.createElement('select');
-    select.className =
-      'app-select w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-
-    const noneOpt = document.createElement('option');
-    noneOpt.value = '';
-    noneOpt.textContent = '\u2014';
-    select.appendChild(noneOpt);
-
-    for (const mod of allDictModules) {
-      const opt = document.createElement('option');
-      opt.value = mod.id;
-      const displayName = Utils.getModuleDisplayName(mod);
-      opt.textContent = Utils.truncateText(displayName, 50);
-      opt.title = displayName;
-      if (mod.id === currentId) opt.selected = true;
-      select.appendChild(opt);
-    }
-
-    select.addEventListener('change', () => {
-      AppStateStore.setSettings({ strongsDicts: select.value || null });
+    const strongsPicker = ModulePicker.create({
+      modules: allDictModules,
+      selectedId: currentId,
+      moduleType: 'dictionary',
+      truncateLength: 50,
+      allowNone: true,
+      className: 'w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      onChange: (moduleId) => {
+        AppStateStore.setSettings({ strongsDicts: moduleId || null });
+      },
     });
-    list.appendChild(select);
+    list.appendChild(strongsPicker.el);
   }
 
   function initCrossRefModules(allCrossRefModules) {

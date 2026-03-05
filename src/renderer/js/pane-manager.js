@@ -455,33 +455,27 @@ const PaneManager = (() => {
     toolbar.className =
       'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
 
-    const select = document.createElement('select');
-    select.className =
-      'app-select pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    const sortedModules = Utils.sortBibleModules(modules);
-    for (const m of sortedModules) {
-      const opt = document.createElement('option');
-      const displayName = Utils.getModuleDisplayName(m);
-      opt.value = m.id;
-      opt.textContent = Utils.truncateText(displayName, 80);
-      opt.title = displayName;
-      if (m.id === pane.moduleId) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.addEventListener('change', async () => {
-      const el = document.querySelector(`[data-pane-id="${paneId}"]`);
-      const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
-      const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+    const picker = ModulePicker.create({
+      modules: Utils.sortBibleModules(modules),
+      selectedId: pane.moduleId,
+      moduleType: 'bible',
+      className: 'pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      onChange: async (moduleId) => {
+        const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+        const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
+        const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
 
-      pane.moduleId = select.value;
-      const mod = modules.find((m) => m.id === select.value);
-      pane.hasStrongs = mod ? mod.hasStrongs : false;
-      pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
-      pane.books = [];
-      pane.verses = [];
-      await loadPaneData(paneId, selectedVerse);
-      emitStateChange();
+        pane.moduleId = moduleId;
+        const mod = modules.find((m) => m.id === moduleId);
+        pane.hasStrongs = mod ? mod.hasStrongs : false;
+        pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
+        pane.books = [];
+        pane.verses = [];
+        await loadPaneData(paneId, selectedVerse);
+        emitStateChange();
+      },
     });
+    const select = picker.el;
     const prevBtn = document.createElement('button');
     prevBtn.className =
       'nav-prev-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
@@ -591,27 +585,21 @@ const PaneManager = (() => {
       'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
 
     // Commentary module selector
-    const select = document.createElement('select');
-    select.className =
-      'app-select pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    const sorted = Utils.sortCommentaryModules(commentaryModules);
-    for (const m of sorted) {
-      const opt = document.createElement('option');
-      const displayName = Utils.getModuleDisplayName(m);
-      opt.value = m.id;
-      opt.textContent = Utils.truncateText(displayName, 80);
-      opt.title = displayName;
-      if (m.id === pane.moduleId) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.addEventListener('change', async () => {
-      pane.moduleId = select.value;
-      pane.commentaryBooks = [];
-      pane.entries = [];
-      const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
-      await loadCommentaryData(paneId, selectedVerse);
-      emitStateChange();
+    const commentaryPicker = ModulePicker.create({
+      modules: Utils.sortCommentaryModules(commentaryModules),
+      selectedId: pane.moduleId,
+      moduleType: 'commentary',
+      className: 'pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      onChange: async (moduleId) => {
+        pane.moduleId = moduleId;
+        pane.commentaryBooks = [];
+        pane.entries = [];
+        const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
+        await loadCommentaryData(paneId, selectedVerse);
+        emitStateChange();
+      },
     });
+    const select = commentaryPicker.el;
     // Navigation label
     const navLabel = document.createElement('span');
     navLabel.className =
