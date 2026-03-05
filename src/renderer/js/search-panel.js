@@ -24,6 +24,13 @@ const SearchPanel = (() => {
     const width = Math.round(getViewportWidth() * widthRatio);
     buildDOM(width);
     prefetchBooks();
+    // Restore last search query
+    const savedQuery = savedState?.query || '';
+    if (savedQuery && input) {
+      input.value = savedQuery;
+      if (searchClearBtn) searchClearBtn.style.display = '';
+      runSearch();
+    }
     emitStateChange();
   }
 
@@ -261,17 +268,19 @@ const SearchPanel = (() => {
 
       statusEl.textContent = I18n.t('searchResultCount').replace('{count}', results.length);
 
-      renderResults(results, textTerms);
+      const strongTerms = extractStrongTerms(query);
+      renderResults(results, textTerms, strongTerms);
     } catch (err) {
       statusEl.textContent = err.message;
     }
+    emitStateChange();
   }
 
-  function renderResults(results, terms) {
+  function renderResults(results, terms, strongTerms) {
     const frag = document.createDocumentFragment();
 
     for (const row of sortResultsCanonical(results)) {
-      const item = createResultItem(row, terms);
+      const item = createResultItem(row, terms, strongTerms);
       frag.appendChild(item);
     }
 
@@ -286,7 +295,7 @@ const SearchPanel = (() => {
     });
   }
 
-  function createResultItem(row, terms) {
+  function createResultItem(row, terms, strongTerms) {
     const item = document.createElement('div');
     item.className = 'search-result-item';
     item.addEventListener('click', () => {
@@ -309,32 +318,172 @@ const SearchPanel = (() => {
     top.appendChild(ref);
     item.appendChild(top);
 
-    const meta = document.createElement('div');
-    meta.className = 'search-result-meta';
-
-    if (terms.length > 0) {
-      const wordsLine = document.createElement('div');
-      wordsLine.className = 'search-result-meta-line';
-      wordsLine.textContent = `${I18n.t('searchWordsLabel')}: ${terms.join(', ')}`;
-      meta.appendChild(wordsLine);
-    }
-
-    const workLine = document.createElement('div');
-    workLine.className = 'search-result-meta-line';
-    workLine.textContent = `${I18n.t('searchWorkLabel')}: ${getSelectedWorkLabel()}`;
-    meta.appendChild(workLine);
-
-    item.appendChild(meta);
-
     const preview = document.createElement('div');
     preview.className = 'search-result-text';
-    preview.innerHTML = highlightText(
-      buildPreviewSnippet(VerseUtils.cleanText(row.text), terms, PREVIEW_MAX_CHARS),
-      terms
-    );
+
+    if (strongTerms.length > 0) {
+      // For Strong's searches: render with inline Strong's numbers
+      const richHtml = VerseUtils.cleanTextWithStrongs(row.text, strongTerms);
+      // Extract matched words for snippet centering
+      const matchedWords = extractMatchedWords(row.text, strongTerms);
+      const allTerms = terms.concat(matchedWords);
+      const plainText = VerseUtils.cleanText(row.text);
+      const snippet = buildPreviewSnippet(plainText, allTerms, PREVIEW_MAX_CHARS);
+      // Build the rich snippet: take the snippet range from clean text and apply Strong's rendering
+      const richSnippet = buildRichSnippet(richHtml, snippet, PREVIEW_MAX_CHARS);
+      // richSnippet already contains trusted HTML (<mark>, <sup>), so highlight text terms in-place
+      preview.innerHTML = highlightRichText(richSnippet, terms);
+    } else {
+      preview.innerHTML = highlightText(
+        buildPreviewSnippet(VerseUtils.cleanText(row.text), terms, PREVIEW_MAX_CHARS),
+        terms
+      );
+    }
 
     item.appendChild(preview);
     return item;
+  }
+
+  function extractStrongTerms(query) {
+    const terms = [];
+    const regex = /strong:([HhGg]?)(\d+\w*)/gi;
+    let match;
+    while ((match = regex.exec(query)) !== null) {
+      const prefix = (match[1] || '').toUpperCase();
+      const number = match[2];
+      terms.push({ prefix, number });
+    }
+    return terms;
+  }
+
+  function extractMatchedWords(rawText, strongTerms) {
+    if (!rawText || strongTerms.length === 0) return [];
+    const matchSet = new Set();
+    for (const sn of strongTerms) {
+      const full = (sn.prefix + sn.number).toUpperCase();
+      matchSet.add(full);
+      matchSet.add(sn.number.toUpperCase());
+    }
+    const words = [];
+    const regex = /(\S+)\s*<S>([\s\S]*?)<\/S>/gi;
+    let match;
+    while ((match = regex.exec(rawText)) !== null) {
+      const code = match[2].trim().toUpperCase();
+      if (matchSet.has(code)) {
+        // Clean any remaining tags from the word
+        const word = match[1].replace(/<[^>]+>/g, '').trim();
+        if (word) words.push(word);
+      }
+    }
+    return words;
+  }
+
+  function buildRichSnippet(richHtml, snippet, maxChars) {
+    // The richHtml contains <mark> and <sup> tags from cleanTextWithStrongs.
+    // We need to produce a clipped version that preserves those tags.
+    // Strategy: strip tags from richHtml to get plain text, find snippet range, then slice with tags.
+
+    const plainFromRich = richHtml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const cleanSnippet = snippet.replace(/^\.\.\./, '').replace(/\.\.\.$/, '').trim();
+
+    if (!cleanSnippet) return snippet;
+
+    // Find where the snippet starts in the plain text
+    const idx = plainFromRich.toLowerCase().indexOf(cleanSnippet.toLowerCase().slice(0, 30));
+    if (idx < 0) {
+      // Fallback: just clip the rich HTML by text length
+      return clipRichHtml(richHtml, maxChars);
+    }
+
+    // Map plain-text positions to richHtml positions
+    const result = sliceRichHtml(richHtml, idx, idx + cleanSnippet.length);
+    let out = result;
+    if (snippet.startsWith('...')) out = '...' + out;
+    if (snippet.endsWith('...')) out = out + '...';
+    return out;
+  }
+
+  function sliceRichHtml(html, startPlain, endPlain) {
+    // Walk through html, tracking plain-text position, and extract the range [startPlain, endPlain)
+    let plainPos = 0;
+    let i = 0;
+    let collecting = false;
+    let result = '';
+    let openTags = [];
+
+    while (i < html.length) {
+      if (html[i] === '<') {
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+        const tag = html.slice(i, tagEnd + 1);
+        if (collecting || (plainPos >= startPlain && plainPos < endPlain)) {
+          result += tag;
+        }
+        // Track open/close tags
+        const closeMatch = tag.match(/^<\/(\w+)/);
+        const openMatch = tag.match(/^<(\w+)/);
+        if (closeMatch) {
+          if (collecting) openTags.pop();
+        } else if (openMatch && !tag.endsWith('/>')) {
+          if (collecting) openTags.push(openMatch[1]);
+          else if (plainPos >= startPlain) {
+            collecting = true;
+            openTags.push(openMatch[1]);
+          }
+        }
+        i = tagEnd + 1;
+      } else if (html[i] === '&') {
+        // Handle HTML entities
+        const entEnd = html.indexOf(';', i);
+        const entity = entEnd > i ? html.slice(i, entEnd + 1) : html[i];
+        if (plainPos >= startPlain && plainPos < endPlain) {
+          collecting = true;
+          result += entity;
+        }
+        plainPos++;
+        i = entEnd > i ? entEnd + 1 : i + 1;
+      } else {
+        // Regular character (including whitespace)
+        if (plainPos >= startPlain && plainPos < endPlain) {
+          collecting = true;
+          result += html[i];
+        }
+        if (plainPos >= endPlain && collecting) {
+          // Close any open tags
+          while (openTags.length > 0) {
+            result += '</' + openTags.pop() + '>';
+          }
+          break;
+        }
+        plainPos++;
+        i++;
+      }
+    }
+    // Close any remaining open tags
+    while (openTags.length > 0) {
+      result += '</' + openTags.pop() + '>';
+    }
+    return result;
+  }
+
+  function clipRichHtml(html, maxChars) {
+    let plainCount = 0;
+    let i = 0;
+    let result = '';
+    while (i < html.length && plainCount < maxChars) {
+      if (html[i] === '<') {
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+        result += html.slice(i, tagEnd + 1);
+        i = tagEnd + 1;
+      } else {
+        result += html[i];
+        plainCount++;
+        i++;
+      }
+    }
+    if (plainCount >= maxChars) result += '...';
+    return result;
   }
 
   function extractSearchTerms(query) {
@@ -352,14 +501,6 @@ const SearchPanel = (() => {
       terms.push(term);
     }
     return terms;
-  }
-
-  function getSelectedWorkLabel() {
-    const mod = modules.find((m) => m.id === selectedModuleId);
-    if (!mod) return selectedModuleId || '';
-    const description = (mod.description || '').trim();
-    if (!description || description === mod.id) return mod.id;
-    return `${mod.id} - ${description}`;
   }
 
   function buildPreviewSnippet(text, terms, maxChars) {
@@ -418,6 +559,23 @@ const SearchPanel = (() => {
     return result;
   }
 
+  function highlightRichText(html, terms) {
+    if (!terms || terms.length === 0) return html;
+    // Split on HTML tags, only highlight in text nodes
+    const parts = html.split(/(<[^>]+>)/);
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].startsWith('<')) continue; // skip tags
+      let text = Utils.escapeHtml(parts[i]);
+      for (const term of terms) {
+        const escapedTerm = Utils.escapeHtml(term);
+        const regex = new RegExp(`(${escapeRegex(escapedTerm)})`, 'gi');
+        text = text.replace(regex, '<mark>$1</mark>');
+      }
+      parts[i] = text;
+    }
+    return parts.join('');
+  }
+
   function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -455,6 +613,7 @@ const SearchPanel = (() => {
     onStateChange({
       widthRatio,
       moduleId: selectedModuleId,
+      query: input ? input.value.trim() : '',
     });
   }
 
@@ -464,6 +623,7 @@ const SearchPanel = (() => {
     return {
       widthRatio,
       moduleId: selectedModuleId,
+      query: input ? input.value.trim() : '',
     };
   }
 
