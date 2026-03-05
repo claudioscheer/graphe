@@ -3,3 +3,7 @@
     - you define a pattern and apply a css to it. then on each verse of that translation we apply that style
 - better mophology
     - allow to click it and open a dictionary
+- commentary panel letter could be the same as the bible. when i click on it i can select which bible to link
+    - then we can remove the speccific button for that
+    - if bible shows A and commnetary panel shows A, they are linked
+    - if commentary window shows B, it's linked to bible B

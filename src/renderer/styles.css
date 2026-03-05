@@ -639,8 +639,8 @@
 }
 
 .pane-active > .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-surface-rgb) / 0.92);
-  border-color: rgb(var(--ui-link-rgb) / 0.35);
+  background-color: rgb(var(--ui-surface-rgb) / 0.65);
+  border: none;
 }
 
 .pane-active > .pane-toolbar .nav-group {
@@ -656,17 +656,8 @@
 .pane-active > .pane-toolbar .nav-btn,
 .pane-active > .pane-toolbar .nav-prev-btn,
 .pane-active > .pane-toolbar .nav-next-btn,
-.pane-active > .pane-toolbar .pane-back-btn,
 .pane-active > .pane-toolbar button {
-  background-color: rgb(var(--ui-surface-rgb) / 0.58);
-}
-
-.pane-active > .pane-toolbar .nav-btn:hover,
-.pane-active > .pane-toolbar .nav-prev-btn:hover,
-.pane-active > .pane-toolbar .nav-next-btn:hover,
-.pane-active > .pane-toolbar .pane-back-btn:hover,
-.pane-active > .pane-toolbar button:hover {
-  background-color: rgb(var(--ui-surface-rgb) / 0.9);
+  background-color: transparent;
 }
 
 .dark .pane-active > .pane-toolbar {
@@ -687,8 +678,8 @@
 }
 
 .dark .pane-active > .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-overlay-rgb) / 0.45);
-  border-color: rgb(var(--ui-link-soft-rgb) / 0.45);
+  background-color: rgb(var(--ui-overlay-rgb) / 0.4);
+  border: none;
 }
 
 .dark .pane-active > .pane-toolbar .nav-group {
@@ -704,17 +695,8 @@
 .dark .pane-active > .pane-toolbar .nav-btn,
 .dark .pane-active > .pane-toolbar .nav-prev-btn,
 .dark .pane-active > .pane-toolbar .nav-next-btn,
-.dark .pane-active > .pane-toolbar .pane-back-btn,
 .dark .pane-active > .pane-toolbar button {
-  background-color: rgb(var(--ui-overlay-rgb) / 0.28);
-}
-
-.dark .pane-active > .pane-toolbar .nav-btn:hover,
-.dark .pane-active > .pane-toolbar .nav-prev-btn:hover,
-.dark .pane-active > .pane-toolbar .nav-next-btn:hover,
-.dark .pane-active > .pane-toolbar .pane-back-btn:hover,
-.dark .pane-active > .pane-toolbar button:hover {
-  background-color: rgb(var(--ui-overlay-rgb) / 0.45);
+  background-color: transparent;
 }
 
 /* Pane toolbar */
@@ -722,17 +704,32 @@
   min-height: 44px;
 }
 
-.pane-toolbar select,
+.pane-toolbar select {
+  min-height: 26px;
+  min-width: 26px;
+}
+
 .pane-toolbar button {
-  min-height: 36px;
-  min-width: 36px;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 2px;
+  background-color: transparent;
 }
 
 /* Keep module selectors compact in pane toolbars (Bible/commentary). */
 .pane-toolbar > .app-select,
 .pane-toolbar > .module-picker-wrapper {
-  width: clamp(8.5rem, 24vw, 14rem);
+  width: clamp(7rem, 20vw, 12rem);
   min-width: 0;
+}
+
+/* Match .app-select background to .nav-group in pane toolbars */
+.pane-toolbar .app-select {
+  background-color: rgb(var(--ui-shadow-rgb) / 0.03);
+}
+
+.dark .pane-toolbar .app-select {
+  background-color: rgb(var(--ui-surface-rgb) / 0.05);
 }
 
 /* Keep chapter indicator compact: "... Gn 2" must stay in one line */
@@ -792,16 +789,16 @@
   -webkit-appearance: none;
   -moz-appearance: none;
   box-sizing: border-box;
-  height: 36px;
-  min-height: 36px;
+  height: 26px;
+  min-height: 26px;
   padding-top: 0;
   padding-bottom: 0;
   line-height: 1.2;
-  padding-right: 2rem;
+  padding-right: 1.4rem;
   background-image: url('icons/chevron-down.svg');
   background-repeat: no-repeat;
-  background-position: right 0.7rem center;
-  background-size: 10px 6px;
+  background-position: right 0.4rem center;
+  background-size: 8px 5px;
 }
 
 .dark .app-select {
@@ -1202,21 +1199,23 @@
 }
 
 .dict-info-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--ui-border-soft);
-  border-radius: 4px;
-  background: var(--ui-surface-elevated);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
   color: var(--ui-text-muted);
   cursor: pointer;
+  padding: 0;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 
 .dict-info-btn:hover {
   color: var(--ui-link-strong);
-  border-color: var(--ui-border-stronger);
 }
 
 .dict-nav-btn {
@@ -1861,15 +1860,10 @@ el {
 
 .pane-pin-btn.pane-link-target {
   color: var(--ui-link);
-  background-color: rgb(var(--ui-link-rgb) / 0.12);
 }
 
 .pane-pin-btn.pane-link-target svg {
   fill: currentColor;
-}
-
-.pane-pin-btn.pane-link-target:hover {
-  background-color: rgb(var(--ui-link-rgb) / 0.2);
 }
 
 .dark .pane-pin-btn {
@@ -1878,28 +1872,97 @@ el {
 
 .dark .pane-pin-btn.pane-link-target {
   color: var(--ui-link-soft);
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.18);
 }
 
-.dark .pane-pin-btn.pane-link-target:hover {
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.28);
-}
-
-/* Pane back button */
-.pane-back-btn {
+/* Pane back/forward buttons */
+.pane-back-btn,
+.pane-forward-btn {
   color: var(--ui-text-muted);
+  padding: 2px;
+  background: none;
 }
 
-.pane-back-btn:hover {
+.pane-back-btn:hover:not(:disabled),
+.pane-forward-btn:hover:not(:disabled) {
   color: var(--ui-border-strong);
+  background: none;
 }
 
-.dark .pane-back-btn {
+.pane-back-btn:disabled,
+.pane-forward-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.dark .pane-back-btn,
+.dark .pane-forward-btn {
   color: var(--ui-text-subtle);
 }
 
-.dark .pane-back-btn:hover {
+.dark .pane-back-btn:hover:not(:disabled),
+.dark .pane-forward-btn:hover:not(:disabled) {
   color: var(--ui-border-soft);
+}
+
+/* Quick-switch bar for favorite translations */
+.pane-quick-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px 8px 4px;
+  border-bottom: 1px solid var(--ui-border-soft);
+  background: var(--ui-surface-muted);
+  flex-shrink: 0;
+}
+
+.dark .pane-quick-switch {
+  border-bottom-color: var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.pane-quick-pill {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 9999px;
+  border: 1px solid var(--ui-border-soft);
+  background: var(--ui-surface);
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.pane-quick-pill:hover {
+  background: var(--ui-accent-bg);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+
+.pane-quick-pill.is-active {
+  background: var(--ui-accent-bg);
+  color: var(--ui-accent-ink);
+  border-color: var(--ui-border-strong);
+  font-weight: 600;
+}
+
+.dark .pane-quick-pill {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-elevated);
+  color: var(--ui-text-subtle);
+}
+
+.dark .pane-quick-pill:hover {
+  background: var(--ui-accent-bg-soft);
+  color: var(--ui-text);
+  border-color: var(--ui-border-strong);
+}
+
+.dark .pane-quick-pill.is-active {
+  background: var(--ui-accent-bg-soft);
+  color: var(--ui-text);
+  border-color: var(--ui-border-stronger);
+  font-weight: 600;
 }
 
 /* Cross-ref module checkbox list in settings */
@@ -2327,6 +2390,16 @@ el {
 .module-picker-wrapper {
   position: relative;
   display: inline-flex;
+  min-width: 0;
+}
+
+#search-panel .module-picker-wrapper {
+  width: 100%;
+}
+
+.dict-controls-row .module-picker-wrapper {
+  flex: 1;
+  min-width: 0;
 }
 
 .module-picker {
@@ -2336,6 +2409,8 @@ el {
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
+  display: inline-flex;
+  align-items: center;
 }
 
 .module-picker.is-open {

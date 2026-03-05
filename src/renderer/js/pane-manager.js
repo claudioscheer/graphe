@@ -60,6 +60,8 @@ const PaneManager = (() => {
       if (initialLoadPending.size === 0) resolve();
     });
 
+    ModulePicker.onFavoritesChange(() => refreshAllQuickBars());
+
     render();
     emitStateChange();
   }
@@ -459,8 +461,10 @@ const PaneManager = (() => {
       modules: Utils.sortBibleModules(modules),
       selectedId: pane.moduleId,
       moduleType: 'bible',
-      className: 'pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      className: 'pl-2 pr-6 py-0.5 rounded mr-1 text-xs',
       onChange: async (moduleId) => {
+        // Push current state before switching translation
+        pushNavHistory(paneId);
         const el = document.querySelector(`[data-pane-id="${paneId}"]`);
         const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
         const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
@@ -471,14 +475,18 @@ const PaneManager = (() => {
         pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
         pane.books = [];
         pane.verses = [];
+        refreshQuickBarForPane(paneId);
         await loadPaneData(paneId, selectedVerse);
+        // Push new state after switch
+        pushNavHistory(paneId);
         emitStateChange();
       },
     });
     const select = picker.el;
+    select.__pickerInstance = picker;
     const prevBtn = document.createElement('button');
     prevBtn.className =
-      'nav-prev-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+      'nav-prev-btn cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const prevIcon = Icons.create('chevron-left');
     prevIcon.setAttribute('width', '16');
     prevIcon.setAttribute('height', '16');
@@ -492,7 +500,7 @@ const PaneManager = (() => {
 
     const navBtn = document.createElement('button');
     navBtn.className =
-      'nav-btn px-3 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
+      'nav-btn cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
     navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-brand-600 dark:text-night-300'));
     const navBtnLabel = document.createElement('span');
     navBtnLabel.className = 'nav-btn-label';
@@ -509,7 +517,7 @@ const PaneManager = (() => {
 
     const nextBtn = document.createElement('button');
     nextBtn.className =
-      'nav-next-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
+      'nav-next-btn cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
     const nextBtnLabel = document.createElement('span');
     nextBtnLabel.className = 'nav-next-label';
     nextBtn.appendChild(nextBtnLabel);
@@ -527,15 +535,23 @@ const PaneManager = (() => {
 
     const backBtn = document.createElement('button');
     backBtn.className =
-      'pane-back-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors items-center justify-center';
-    backBtn.hidden = true;
-    backBtn.appendChild(Icons.create('arrow-left'));
+      'pane-back-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+    backBtn.disabled = true;
+    backBtn.appendChild(Icons.create('arrow-left', 'w-3.5 h-3.5'));
     backBtn.title = I18n.t('crossRefBackTooltip');
     backBtn.addEventListener('click', () => navBack(paneId));
 
+    const forwardBtn = document.createElement('button');
+    forwardBtn.className =
+      'pane-forward-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+    forwardBtn.disabled = true;
+    forwardBtn.appendChild(Icons.create('arrow-right', 'w-3.5 h-3.5'));
+    forwardBtn.title = I18n.t('crossRefForwardTooltip');
+    forwardBtn.addEventListener('click', () => navForward(paneId));
+
     const pinBtn = document.createElement('button');
     pinBtn.className =
-      'pane-pin-btn px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-600 cursor-pointer transition-colors inline-flex items-center justify-center';
+      'pane-pin-btn cursor-pointer transition-colors inline-flex items-center justify-center';
     const isPinned = linkTargetPaneId === paneId;
     pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
     pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
@@ -554,7 +570,7 @@ const PaneManager = (() => {
 
     const closeBtn = document.createElement('button');
     closeBtn.className =
-      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+      'pane-close-btn cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -563,12 +579,57 @@ const PaneManager = (() => {
     idBadge.className = 'pane-id-badge';
     idBadge.textContent = getPaneDisplayLabel(paneId);
 
-    toolbar.append(idBadge, select, navGroup, spacer, backBtn, pinBtn, closeBtn);
+    toolbar.append(idBadge, select, navGroup, spacer, backBtn, forwardBtn, pinBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
 
+    // Quick-switch bar for favorite Bible modules
+    const quickBar = document.createElement('div');
+    quickBar.className = 'pane-quick-switch';
+    quickBar.dataset.paneId = paneId;
+    function refreshQuickBar() {
+      const favs = (AppStateStore.getSettings().favoriteModules || {}).bible || [];
+      quickBar.innerHTML = '';
+      if (favs.length === 0) {
+        quickBar.style.display = 'none';
+        return;
+      }
+      quickBar.style.display = '';
+      for (const favId of favs) {
+        const mod = modules.find((m) => m.id === favId);
+        if (!mod) continue;
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'pane-quick-pill' + (favId === pane.moduleId ? ' is-active' : '');
+        pill.textContent = mod.shortTitle || mod.id;
+        pill.title = Utils.getModuleDisplayName(mod);
+        pill.addEventListener('click', async () => {
+          if (favId === pane.moduleId) return;
+          // Push current state before switching translation
+          pushNavHistory(paneId);
+          const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
+          const selectedLine = paneEl?.querySelector('.pane-content .verse-line.verse-selected');
+          const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+          pane.moduleId = favId;
+          pane.hasStrongs = mod.hasStrongs || false;
+          pane.strongsPrefix = mod.strongsPrefix || null;
+          pane.books = [];
+          pane.verses = [];
+          picker.setSelected(favId);
+          refreshQuickBar();
+          await loadPaneData(paneId, selectedVerse);
+          // Push new state after switch
+          pushNavHistory(paneId);
+          emitStateChange();
+        });
+        quickBar.appendChild(pill);
+      }
+    }
+    refreshQuickBar();
+
     el.appendChild(toolbar);
+    el.appendChild(quickBar);
     el.appendChild(content);
     return el;
   }
@@ -589,7 +650,7 @@ const PaneManager = (() => {
       modules: Utils.sortCommentaryModules(commentaryModules),
       selectedId: pane.moduleId,
       moduleType: 'commentary',
-      className: 'pl-2 pr-8 py-1 rounded-sm mr-1 border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      className: 'pl-2 pr-6 py-0.5 rounded mr-1 text-xs',
       onChange: async (moduleId) => {
         pane.moduleId = moduleId;
         pane.commentaryBooks = [];
@@ -616,7 +677,7 @@ const PaneManager = (() => {
     const syncTrigger = document.createElement('button');
     syncTrigger.type = 'button';
     syncTrigger.className =
-      'commentary-sync-trigger px-2 py-1 rounded-sm text-sm text-brand-700 dark:text-night-200 hover:bg-brand-200 dark:hover:bg-night-700 cursor-pointer transition-colors';
+      'commentary-sync-trigger text-sm text-brand-700 dark:text-night-200 cursor-pointer transition-colors';
     syncTrigger.title = I18n.t('commentarySyncHint');
     syncTrigger.setAttribute('aria-expanded', 'false');
     syncTrigger.setAttribute('aria-haspopup', 'menu');
@@ -752,7 +813,7 @@ const PaneManager = (() => {
     // Coverage info button
     const infoBtn = document.createElement('button');
     infoBtn.className =
-      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+      'cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     infoBtn.appendChild(Icons.create('info'));
     infoBtn.title = I18n.t('commentaryCoverage');
     infoBtn.addEventListener('click', () => openCommentaryCoverageModal(paneId));
@@ -760,7 +821,7 @@ const PaneManager = (() => {
     // Close button
     const closeBtn = document.createElement('button');
     closeBtn.className =
-      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 hover:text-brand-700 dark:hover:text-night-200 cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+      'pane-close-btn cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
     closeBtn.appendChild(Icons.create('x'));
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
@@ -1001,43 +1062,144 @@ const PaneManager = (() => {
     return (bookNumber) => I18n.bookName(bookNumber).short;
   }
 
-  function hasNavBackHistory(pane) {
-    if (!pane || !Array.isArray(pane.navHistory)) return false;
-    if (pane.navHistory.length === 0) return false;
-    return pane.navHistoryIdx >= 0 && pane.navHistoryIdx < pane.navHistory.length;
+  function refreshQuickBarForPane(paneId) {
+    const bar = document.querySelector(`.pane-quick-switch[data-pane-id="${paneId}"]`);
+    if (!bar) return;
+    const pane = panes[paneId];
+    if (!pane || pane.paneType !== 'bible') return;
+    const favs = (AppStateStore.getSettings().favoriteModules || {}).bible || [];
+    bar.innerHTML = '';
+    if (favs.length === 0) {
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = '';
+    for (const favId of favs) {
+      const mod = modules.find((m) => m.id === favId);
+      if (!mod) continue;
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'pane-quick-pill' + (favId === pane.moduleId ? ' is-active' : '');
+      pill.textContent = mod.shortTitle || mod.id;
+      pill.title = Utils.getModuleDisplayName(mod);
+      pill.addEventListener('click', async () => {
+        if (favId === pane.moduleId) return;
+        pushNavHistory(paneId);
+        const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
+        const selectedLine = paneEl?.querySelector('.pane-content .verse-line.verse-selected');
+        const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+        pane.moduleId = favId;
+        pane.hasStrongs = mod.hasStrongs || false;
+        pane.strongsPrefix = mod.strongsPrefix || null;
+        pane.books = [];
+        pane.verses = [];
+        const pickerEl = paneEl?.querySelector('.module-picker-wrapper');
+        if (pickerEl && pickerEl.__pickerInstance) {
+          pickerEl.__pickerInstance.setSelected(favId);
+        }
+        refreshQuickBarForPane(paneId);
+        await loadPaneData(paneId, selectedVerse);
+        pushNavHistory(paneId);
+        emitStateChange();
+      });
+      bar.appendChild(pill);
+    }
   }
 
-  function updateBackBtn(paneId) {
+  function refreshAllQuickBars() {
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType === 'bible') {
+        refreshQuickBarForPane(pane.id);
+      }
+    }
+  }
+
+  // Navigation history model: navHistory[idx] = current state snapshot.
+  // Back = go to idx-1, forward = go to idx+1.
+  // pushNavHistory records a new destination, truncating any forward entries.
+
+  function hasNavBackHistory(pane) {
+    if (!pane || !Array.isArray(pane.navHistory)) return false;
+    return pane.navHistoryIdx > 0;
+  }
+
+  function hasNavForwardHistory(pane) {
+    if (!pane || !Array.isArray(pane.navHistory)) return false;
+    return pane.navHistoryIdx < pane.navHistory.length - 1;
+  }
+
+  function updateNavBtns(paneId) {
     const pane = panes[paneId];
     const el = document.querySelector(`[data-pane-id="${paneId}"]`);
     if (!el || !pane) return;
-    const btn = el.querySelector('.pane-back-btn');
-    if (!btn) return;
-    const visible = hasNavBackHistory(pane);
-    btn.hidden = !visible;
-    btn.disabled = !visible;
+    const backBtn = el.querySelector('.pane-back-btn');
+    if (backBtn) {
+      backBtn.disabled = !hasNavBackHistory(pane);
+    }
+    const fwdBtn = el.querySelector('.pane-forward-btn');
+    if (fwdBtn) {
+      fwdBtn.disabled = !hasNavForwardHistory(pane);
+    }
   }
 
   function pushNavHistory(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
+    const entry = { moduleId: pane.moduleId, bookNumber: pane.bookNumber, chapter: pane.chapter };
     // Truncate any forward history
     pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
-    pane.navHistory.push({ bookNumber: pane.bookNumber, chapter: pane.chapter });
+    // Avoid duplicate of current top
+    const top = pane.navHistory[pane.navHistoryIdx];
+    if (top && top.moduleId === entry.moduleId && top.bookNumber === entry.bookNumber && top.chapter === entry.chapter) {
+      return;
+    }
+    pane.navHistory.push(entry);
     pane.navHistoryIdx = pane.navHistory.length - 1;
-    updateBackBtn(paneId);
+    updateNavBtns(paneId);
   }
 
   async function navBack(paneId) {
     const pane = panes[paneId];
     if (!hasNavBackHistory(pane)) return;
-    const entry = pane.navHistory[pane.navHistoryIdx];
     pane.navHistoryIdx--;
+    const entry = pane.navHistory[pane.navHistoryIdx];
+    await restoreNavEntry(paneId, entry);
+    updateNavBtns(paneId);
+    emitStateChange();
+  }
+
+  async function navForward(paneId) {
+    const pane = panes[paneId];
+    if (!hasNavForwardHistory(pane)) return;
+    pane.navHistoryIdx++;
+    const entry = pane.navHistory[pane.navHistoryIdx];
+    await restoreNavEntry(paneId, entry);
+    updateNavBtns(paneId);
+    emitStateChange();
+  }
+
+  async function restoreNavEntry(paneId, entry) {
+    const pane = panes[paneId];
+    const moduleChanged = entry.moduleId && entry.moduleId !== pane.moduleId;
     pane.bookNumber = entry.bookNumber;
     pane.chapter = entry.chapter;
-    await loadChapter(paneId);
-    updateBackBtn(paneId);
-    emitStateChange();
+    if (moduleChanged) {
+      pane.moduleId = entry.moduleId;
+      const mod = modules.find((m) => m.id === entry.moduleId);
+      pane.hasStrongs = mod ? mod.hasStrongs : false;
+      pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
+      pane.books = [];
+      pane.verses = [];
+      const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+      const pickerEl = el?.querySelector('.module-picker-wrapper');
+      if (pickerEl && pickerEl.__pickerInstance) {
+        pickerEl.__pickerInstance.setSelected(entry.moduleId);
+      }
+      refreshQuickBarForPane(paneId);
+      await loadPaneData(paneId);
+    } else {
+      await loadChapter(paneId);
+    }
   }
 
   async function loadChapter(paneId, scrollToVerse) {
@@ -1133,7 +1295,7 @@ const PaneManager = (() => {
       console.error('Failed to load chapter:', err);
       renderUnavailableMessage(paneId, 'chapter');
     } finally {
-      updateBackBtn(paneId);
+      updateNavBtns(paneId);
       markInitialLoaded(paneId);
     }
   }
@@ -1156,15 +1318,14 @@ const PaneManager = (() => {
     }
     const prevBookNumber = pane.bookNumber;
     const prevChapter = pane.chapter;
+    // Record current state before navigating
+    pushNavHistory(paneId);
     pane.bookNumber = bookNumber;
     pane.chapter = chapter;
     try {
       await loadChapter(paneId, verse || null);
-      // Push the *old* location so navBack returns there
-      pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
-      pane.navHistory.push({ bookNumber: prevBookNumber, chapter: prevChapter });
-      pane.navHistoryIdx = pane.navHistory.length - 1;
-      updateBackBtn(paneId);
+      // Record new destination
+      pushNavHistory(paneId);
       emitStateChange();
       return true;
     } catch (err) {

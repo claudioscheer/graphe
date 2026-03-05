@@ -36,15 +36,18 @@ const ModulePicker = (() => {
   function toggleFavorite(moduleType, moduleId) {
     const favs = getFavorites(moduleType);
     const idx = favs.indexOf(moduleId);
+    let nowFav;
     if (idx >= 0) {
       const next = [...favs];
       next.splice(idx, 1);
       setFavorites(moduleType, next);
-      return false;
+      nowFav = false;
     } else {
       setFavorites(moduleType, [...favs, moduleId]);
-      return true;
+      nowFav = true;
     }
+    _fireFavoritesChange(moduleType);
+    return nowFav;
   }
 
   function create(options) {
@@ -351,5 +354,15 @@ const ModulePicker = (() => {
     return instance;
   }
 
-  return { create, closeOpen };
+  const _favListeners = [];
+
+  function onFavoritesChange(fn) {
+    _favListeners.push(fn);
+  }
+
+  function _fireFavoritesChange(moduleType) {
+    for (const fn of _favListeners) fn(moduleType);
+  }
+
+  return { create, closeOpen, onFavoritesChange, getFavorites };
 })();

@@ -103,8 +103,15 @@ const DictPanel = (() => {
     navForwardBtn.disabled = true;
     navForwardBtn.appendChild(Icons.create('chevron-right', 'w-3.5 h-3.5'));
     navForwardBtn.addEventListener('click', navForward);
-    navGroup.appendChild(navBackBtn);
-    navGroup.appendChild(navForwardBtn);
+    const infoBtn = document.createElement('button');
+    infoBtn.type = 'button';
+    infoBtn.className = 'dict-info-btn';
+    infoBtn.title = I18n.t('dictInfoTitle');
+    infoBtn.setAttribute('aria-label', I18n.t('dictInfoTitle'));
+    infoBtn.appendChild(Icons.create('info', 'w-3.5 h-3.5'));
+    infoBtn.addEventListener('click', () => openDictionaryInfoModal());
+
+    navGroup.append(navBackBtn, navForwardBtn, infoBtn);
     titleRow.appendChild(navGroup);
 
     header.appendChild(titleRow);
@@ -130,15 +137,7 @@ const DictPanel = (() => {
     dictPickerInstance = dictPicker;
     moduleSelect = dictPicker.el;
 
-    const infoBtn = document.createElement('button');
-    infoBtn.type = 'button';
-    infoBtn.className = 'dict-info-btn';
-    infoBtn.title = I18n.t('dictInfoTitle');
-    infoBtn.setAttribute('aria-label', I18n.t('dictInfoTitle'));
-    infoBtn.appendChild(Icons.create('info', 'w-3.5 h-3.5'));
-    infoBtn.addEventListener('click', () => openDictionaryInfoModal());
-
-    controlsRow.append(moduleSelect, infoBtn);
+    controlsRow.append(moduleSelect);
     header.appendChild(controlsRow);
 
     // Search input with autocomplete wrapper
