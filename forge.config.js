@@ -1,14 +1,38 @@
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const appIconBase = path.join(__dirname, 'assets', 'graphe');
 const appIconPng = `${appIconBase}.png`;
 const executableName = 'graphe-bible';
+
+function getGitIgnoredDirectoryPatterns() {
+  const result = spawnSync(
+    'git',
+    ['ls-files', '--others', '-i', '--exclude-standard', '--directory'],
+    {
+      cwd: __dirname,
+      encoding: 'utf8',
+    }
+  );
+
+  if (result.status !== 0 || !result.stdout) {
+    return [];
+  }
+
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith('/'))
+    .filter((line) => line !== 'node_modules/')
+    .map((line) => `^/${line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+}
 
 module.exports = {
   packagerConfig: {
     asar: true,
     icon: appIconBase,
     executableName,
+    ignore: getGitIgnoredDirectoryPatterns(),
   },
   makers: [
     {
