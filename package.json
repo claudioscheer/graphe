@@ -24,6 +24,7 @@
     "make:win": "electron-forge make --platform=win32 --arch=x64",
     "make:mac": "electron-forge make --platform=darwin --arch=universal",
     "make:desktop": "npm run make:linux && npm run make:win && npm run make:mac",
+    "release:local": "node scripts/build-release.js",
     "test": "npm rebuild better-sqlite3 && vitest run && npx electron-rebuild -f -w better-sqlite3",
     "convert:theword": "node scripts/batch-convert.js",
     "compare:theword": "node scripts/compare-modules.js"
