@@ -154,20 +154,20 @@ function hostPlatformName() {
   return null;
 }
 
-function npmCommand() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
-}
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+function spawnOptions(options = {}) {
+  return {
     cwd: repoRoot,
     stdio: 'inherit',
-    shell: false,
     env: {
       ...process.env,
       ...(options.env || {}),
     },
-  });
+    shell: process.platform === 'win32',
+  };
+}
+
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, spawnOptions(options));
 
   if (result.error) {
     fail(`${command} failed: ${result.error.message}`);
@@ -181,7 +181,7 @@ function run(command, args, options = {}) {
 function commandExists(command) {
   const checker = process.platform === 'win32' ? 'where' : 'which';
   const result = spawnSync(checker, [command], {
-    cwd: repoRoot,
+    ...spawnOptions(),
     stdio: 'ignore',
   });
   return result.status === 0;
@@ -250,8 +250,8 @@ function ensureGhRelease(tag) {
   }
 
   const view = spawnSync('gh', ['release', 'view', tag], {
-    cwd: repoRoot,
     stdio: 'ignore',
+    ...spawnOptions(),
   });
 
   if (view.status === 0) {
@@ -285,10 +285,10 @@ function main() {
   console.log(`Targets: ${targets.join(', ')}`);
 
   if (!options.skipInstall) {
-    run(npmCommand(), ['ci']);
+    run('npm', ['ci']);
   }
 
-  run(npmCommand(), ['run', 'build:css']);
+  run('npm', ['run', 'build:css']);
   fs.rmSync(path.join(repoRoot, 'out', 'make'), { recursive: true, force: true });
 
   for (const target of targets) {
@@ -299,7 +299,7 @@ function main() {
         : undefined;
 
     console.log(`Building ${targetConfig.workflowName} artifacts with npm run ${targetConfig.npmScript}.`);
-    run(npmCommand(), ['run', targetConfig.npmScript], { env });
+    run('npm', ['run', targetConfig.npmScript], { env });
   }
 
   const assets = collectArtifacts(options.assetsDir);
