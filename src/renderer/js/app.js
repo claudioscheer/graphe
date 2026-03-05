@@ -244,29 +244,31 @@ const Settings = (() => {
     list.innerHTML = '';
 
     const current = AppStateStore.getSettings().strongsDicts;
+    const currentId = Array.isArray(current) ? current[0] : (current || null);
+
+    const select = document.createElement('select');
+    select.className =
+      'app-select w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
+
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '\u2014';
+    select.appendChild(noneOpt);
 
     for (const mod of allDictModules) {
-      const label = document.createElement('label');
-      label.className = 'settings-checkbox-option';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = mod.id;
-      cb.checked = Array.isArray(current) && current.includes(mod.id);
-      cb.addEventListener('change', () => {
-        const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(
-          (b) => b.value
-        );
-        AppStateStore.setSettings({ strongsDicts: checked.length > 0 ? checked : null });
-      });
-      const text = document.createElement('span');
-      text.className = 'settings-checkbox-text';
+      const opt = document.createElement('option');
+      opt.value = mod.id;
       const displayName = Utils.getModuleDisplayName(mod);
-      text.textContent = Utils.truncateText(displayName, 50);
-      text.title = displayName;
-      label.appendChild(cb);
-      label.appendChild(text);
-      list.appendChild(label);
+      opt.textContent = Utils.truncateText(displayName, 50);
+      opt.title = displayName;
+      if (mod.id === currentId) opt.selected = true;
+      select.appendChild(opt);
     }
+
+    select.addEventListener('change', () => {
+      AppStateStore.setSettings({ strongsDicts: select.value || null });
+    });
+    list.appendChild(select);
   }
 
   function initCrossRefModules(allCrossRefModules) {
@@ -680,6 +682,10 @@ document.addEventListener('contextmenu', (e) => {
 window.api.onContextMenuCopy(() => copySelectedVerses());
 
 window.api.onStrongsSearch(({ strongsNumber, paneId }) => {
+  const pane = PaneManager.getPane(paneId || PaneManager.getActivePaneId());
+  if (pane && pane.moduleId) {
+    SearchPanel.setSelectedModule(pane.moduleId);
+  }
   SearchPanel.search(`strong:${strongsNumber}`);
 });
 

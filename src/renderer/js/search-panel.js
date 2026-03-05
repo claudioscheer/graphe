@@ -428,6 +428,16 @@ const SearchPanel = (() => {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  function setSelectedModule(moduleId) {
+    if (!moduleId) return;
+    const mod = modules.find((m) => m.id === moduleId);
+    if (!mod) return;
+    selectedModuleId = moduleId;
+    if (select) select.value = moduleId;
+    prefetchBooks();
+    emitStateChange();
+  }
+
   function search(query) {
     if (input) {
       input.value = query;
@@ -467,6 +477,7 @@ const SearchPanel = (() => {
     init,
     focusInput,
     search,
+    setSelectedModule,
     setStateChangeListener,
     getState,
     getSidebar,

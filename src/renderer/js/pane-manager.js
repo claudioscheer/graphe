@@ -469,13 +469,17 @@ const PaneManager = (() => {
       select.appendChild(opt);
     }
     select.addEventListener('change', async () => {
+      const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+      const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
+      const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+
       pane.moduleId = select.value;
       const mod = modules.find((m) => m.id === select.value);
       pane.hasStrongs = mod ? mod.hasStrongs : false;
       pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
       pane.books = [];
       pane.verses = [];
-      await loadPaneData(paneId);
+      await loadPaneData(paneId, selectedVerse);
       emitStateChange();
     });
     const prevBtn = document.createElement('button');
@@ -835,7 +839,7 @@ const PaneManager = (() => {
 
   // ---- Data loading ----
 
-  async function loadPaneData(paneId) {
+  async function loadPaneData(paneId, scrollToVerse) {
     const pane = panes[paneId];
     try {
       if (!pane || !pane.moduleId) return;
@@ -852,7 +856,7 @@ const PaneManager = (() => {
         return;
       }
 
-      await loadChapter(paneId);
+      await loadChapter(paneId, scrollToVerse);
     } catch (err) {
       console.error('Failed to load pane data:', err);
       renderUnavailableMessage(paneId, 'book');

@@ -374,36 +374,6 @@ const DictPanel = (() => {
     return header;
   }
 
-  function createStrongSourcesSummary(configuredIds, results) {
-    const modsById = new Map(dictModules.map((m) => [m.id, m]));
-    const matchedIds = new Set(results.map((r) => r.moduleId));
-    const sourceIds = Array.from(new Set((configuredIds || []).filter(Boolean)));
-    if (sourceIds.length === 0) return null;
-
-    const wrap = document.createElement('div');
-    wrap.className = 'dict-strong-sources';
-
-    const label = document.createElement('span');
-    label.className = 'dict-strong-sources-label';
-    label.textContent = I18n.t('dictStrongSources');
-    wrap.appendChild(label);
-
-    const chips = document.createElement('div');
-    chips.className = 'dict-strong-sources-list';
-    for (const id of sourceIds) {
-      const mod = modsById.get(id);
-      const chip = document.createElement('span');
-      chip.className = 'dict-strong-source-chip';
-      if (matchedIds.has(id)) chip.classList.add('is-hit');
-      const displayName = mod ? Utils.getModuleDisplayName(mod) : id;
-      chip.textContent = Utils.truncateText(displayName, 28);
-      chip.title = displayName;
-      chips.appendChild(chip);
-    }
-    wrap.appendChild(chips);
-    return wrap;
-  }
-
   function persistCurrentModuleSearch(moduleId) {
     if (!moduleId) return;
     if (
@@ -728,8 +698,9 @@ const DictPanel = (() => {
           '</div>';
         return;
       }
-      const strongsDicts = AppStateStore.getSettings().strongsDicts;
-      if (!strongsDicts || strongsDicts.length === 0) {
+      const strongsDictSetting = AppStateStore.getSettings().strongsDicts;
+      const strongsDict = Array.isArray(strongsDictSetting) ? strongsDictSetting[0] : strongsDictSetting;
+      if (!strongsDict) {
         const placeholder = document.createElement('div');
         placeholder.className = 'dict-placeholder';
         placeholder.textContent = I18n.t('dictNoDictsConfigured') + ' ';
@@ -742,15 +713,18 @@ const DictPanel = (() => {
         contentEl.appendChild(placeholder);
         return;
       }
-      const results = await window.api.lookupAllStrongDicts(strongsNumber, strongsDicts);
+
+      if (moduleSelect && dictModules.some((m) => m.id === strongsDict)) {
+        selectedModuleId = strongsDict;
+        moduleSelect.value = strongsDict;
+      }
+
+      const results = await window.api.lookupAllStrongDicts(strongsNumber, [strongsDict]);
       if (results.length === 0) {
         contentEl.innerHTML =
           '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoEntry')) + '</div>';
         return;
       }
-
-      const sourceSummary = createStrongSourcesSummary(strongsDicts, results);
-      if (sourceSummary) contentEl.appendChild(sourceSummary);
 
       for (const { moduleId, entry } of results) {
         const section = document.createElement('div');

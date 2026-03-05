@@ -1494,47 +1494,6 @@ el {
   background: rgb(var(--ui-link-soft-rgb) / 0.2);
 }
 
-.dict-strong-sources {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 8px;
-  border: 1px solid var(--ui-border-soft);
-  border-radius: 4px;
-  background: var(--ui-surface-elevated);
-}
-
-.dict-strong-sources-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ui-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-
-.dict-strong-sources-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.dict-strong-source-chip {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--ui-border-soft);
-  color: var(--ui-text-muted);
-  background: var(--ui-surface);
-}
-
-.dict-strong-source-chip.is-hit {
-  border-color: rgb(var(--ui-link-rgb) / 0.35);
-  background: rgb(var(--ui-link-rgb) / 0.1);
-  color: var(--ui-link-strong);
-}
-
 /* Input clear button (shared by search & dict inputs) */
 .input-clear-wrapper {
   position: relative;
@@ -2034,7 +1993,6 @@ el {
   line-height: 1.35;
 }
 
-#settings-strongs-list .settings-checkbox-option input[type='checkbox'],
 #settings-pinned-ref-modal {
   flex: 0 0 auto;
   margin-top: 1px;
