@@ -1,7 +1,7 @@
 /**
  * utils.js — Shared utility functions
  */
-const Utils = (() => {
+export const Utils = (() => {
   function truncateText(text, maxLength = 50) {
     const value = String(text ?? '');
     if (maxLength <= 0) return '';

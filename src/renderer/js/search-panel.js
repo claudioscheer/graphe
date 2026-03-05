@@ -1,7 +1,14 @@
 /**
  * search-panel.js — Fixed left sidebar for searching Bible verses by word
  */
-const SearchPanel = (() => {
+import { Icons } from './icons.js';
+import { I18n } from './i18n.js';
+import { ModulePicker } from './module-picker.js';
+import { PaneManager } from './pane-manager.js';
+import { Utils } from './utils.js';
+import { VerseUtils } from './verse-utils.js';
+
+export const SearchPanel = (() => {
   let modules = [];
   let selectedModuleId = null;
   let booksCache = {};

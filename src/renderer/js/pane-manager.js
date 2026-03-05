@@ -4,7 +4,17 @@
  * Tree structure:
  *   Node = { type: 'leaf', paneId } | { type: 'split', direction: 'h'|'v', children: [Node, Node], ratio: number }
  */
-const PaneManager = (() => {
+import { AppStateStore } from './app-state-store.js';
+import { BibleView } from './bible-view.js';
+import { CommentaryView } from './commentary-view.js';
+import { I18n } from './i18n.js';
+import { Icons } from './icons.js';
+import { ModulePicker } from './module-picker.js';
+import { Navigation } from './navigation.js';
+import { Sanitize } from './sanitize.js';
+import { Utils } from './utils.js';
+
+export const PaneManager = (() => {
   let tree = null;
   let panes = {};
   let paneCounter = 0;

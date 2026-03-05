@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const parser = require('../src/renderer/js/commentary-ref-parser.js');
+import * as parser from '../src/renderer/js/commentary-ref-parser.mjs';
 
 const bookNames = {
   pt: [

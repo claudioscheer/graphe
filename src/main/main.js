@@ -47,6 +47,10 @@ function setupDevHotReload() {
 }
 
 function createWindow() {
+  const rendererHtml = app.isPackaged
+    ? path.join(__dirname, '..', '..', 'dist', 'renderer', 'index.html')
+    : path.join(__dirname, '..', 'renderer', 'index.html');
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -61,7 +65,7 @@ function createWindow() {
     show: false,
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(rendererHtml);
 
   // Block all navigation away from the app (defense-in-depth)
   mainWindow.webContents.on('will-navigate', (event) => {

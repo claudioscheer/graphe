@@ -1,7 +1,17 @@
 /**
  * dict-panel.js — Dictionary panel for Strong's number and word lookups
  */
-const DictPanel = (() => {
+import { AppStateStore } from './app-state-store.js';
+import { buildReferenceMatcher } from './commentary-ref-parser.mjs';
+import { I18n } from './i18n.js';
+import { Icons } from './icons.js';
+import { ModulePicker } from './module-picker.js';
+import { PaneManager } from './pane-manager.js';
+import { Sanitize } from './sanitize.js';
+import { SearchPanel } from './search-panel.js';
+import { Utils } from './utils.js';
+
+export const DictPanel = (() => {
   let dictModules = [];
   let selectedModuleId = null;
   const moduleSearchCache = new Map();
@@ -1259,9 +1269,7 @@ const DictPanel = (() => {
   function getBibleRefMatcher() {
     const lang = I18n.getCurrentLang();
     if (bibleRefMatcher && bibleRefMatcherLang === lang) return bibleRefMatcher;
-    const parserApi = globalThis.CommentaryRefParser;
-    if (!parserApi || typeof parserApi.buildReferenceMatcher !== 'function') return null;
-    bibleRefMatcher = parserApi.buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
+    bibleRefMatcher = buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
     bibleRefMatcherLang = lang;
     return bibleRefMatcher;
   }

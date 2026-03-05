@@ -1,7 +1,7 @@
 /**
  * sanitize.js — Shared HTML sanitization utilities.
  */
-const Sanitize = (() => {
+export const Sanitize = (() => {
   const dangerousTags = 'script, iframe, object, embed, form, link, meta';
   const urlAttrs = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster']);
   const legacyPresentationalAttrs = new Set([

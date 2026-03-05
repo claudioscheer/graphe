@@ -1,7 +1,11 @@
 /**
  * module-picker.js — Searchable dropdown with favorites for module selection
  */
-const ModulePicker = (() => {
+import { AppStateStore } from './app-state-store.js';
+import { I18n } from './i18n.js';
+import { Utils } from './utils.js';
+
+export const ModulePicker = (() => {
   let openInstance = null;
 
   function closeOpen() {

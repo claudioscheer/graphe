@@ -32,7 +32,22 @@ module.exports = {
     asar: true,
     icon: appIconBase,
     executableName,
-    ignore: getGitIgnoredDirectoryPatterns(),
+    ignore: [
+      ...getGitIgnoredDirectoryPatterns(),
+      '^/test($|/)',
+      '^/scripts($|/)',
+      '^/src/renderer($|/)',
+      '^/data($|/)',
+      '^/README\\.md$',
+      '^/CLAUDE\\.md$',
+      '^/MyBibleModulesFormat\\.md$',
+      '^/TODO\\.md$',
+      '^/package-lock\\.json$',
+      '^/eslint\\.config\\.js$',
+      '^/vitest\\.config\\.js$',
+      '^/vite\\.renderer\\.config\\.mjs$',
+      '^/dist/renderer/.*\\.map$',
+    ],
   },
   makers: [
     {

@@ -1,7 +1,7 @@
 /**
  * i18n.js — UI translation support (PT, EN, ES)
  */
-const I18n = (() => {
+export const I18n = (() => {
   const translations = {
     pt: {
       oldTestament: 'Antigo Testamento',
@@ -607,5 +607,14 @@ const I18n = (() => {
     return null;
   }
 
-  return { getCurrentLang, setLang, t, updateAll, bookName, findBookByAbbrev, _bookNames: bookNames, _BOOK_NUMBERS: BOOK_NUMBERS };
+  return {
+    getCurrentLang,
+    setLang,
+    t,
+    updateAll,
+    bookName,
+    findBookByAbbrev,
+    _bookNames: bookNames,
+    _BOOK_NUMBERS: BOOK_NUMBERS,
+  };
 })();

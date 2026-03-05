@@ -1,7 +1,15 @@
 /**
  * navigation.js — Navigation dialog with book/chapter grids + quick input
  */
-const Navigation = (() => {
+import { I18n } from './i18n.js';
+
+let paneManagerApi = null;
+
+export function setNavigationPaneManager(api) {
+  paneManagerApi = api;
+}
+
+export const Navigation = (() => {
   let activePaneId = null;
   let currentBooks = [];
   let selectedBook = null;
@@ -92,7 +100,7 @@ const Navigation = (() => {
     selectedBook = book;
     backBtn().classList.remove('hidden');
 
-    const pane = PaneManager.getPane(activePaneId);
+    const pane = paneManagerApi.getPane(activePaneId);
     if (!pane) return;
 
     const count = await window.api.getChapterCount(pane.moduleId, book.bookNumber);
@@ -114,7 +122,7 @@ const Navigation = (() => {
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
       btn.textContent = ch;
       btn.addEventListener('click', () => {
-        PaneManager.navigatePane(activePaneId, book.bookNumber, ch);
+        paneManagerApi.navigatePane(activePaneId, book.bookNumber, ch);
         close();
       });
       container.appendChild(btn);
@@ -126,7 +134,7 @@ const Navigation = (() => {
     const raw = input().value.trim();
     if (!raw) return;
 
-    const pane = PaneManager.getPane(activePaneId);
+    const pane = paneManagerApi.getPane(activePaneId);
     if (!pane) return;
 
     // Parse: "BookName Chapter:Verse" or "BookName Chapter"
@@ -146,7 +154,7 @@ const Navigation = (() => {
 
     if (!book) return;
 
-    PaneManager.navigatePane(activePaneId, book.bookNumber, chapter, verse);
+    paneManagerApi.navigatePane(activePaneId, book.bookNumber, chapter, verse);
     close();
   }
 

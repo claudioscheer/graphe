@@ -1,7 +1,7 @@
 /**
  * bible-view.js — Verse rendering with Strong's number parsing
  */
-const BibleView = (() => {
+export const BibleView = (() => {
   function escapeHtml(text) {
     return String(text || '')
       .replace(/&/g, '&amp;')

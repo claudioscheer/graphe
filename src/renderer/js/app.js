@@ -1,99 +1,17 @@
 /**
  * app.js — Entry point, initializes settings, language, and pane state persistence
  */
-
-const AppStateStore = (() => {
-  let state = {
-    settings: {
-      theme: null,
-      language: 'pt',
-      fontSize: 20,
-      strongsDicts: null,
-      crossRefModules: null,
-      openPinnedRefsInModal: false,
-      favoriteModules: {},
-    },
-    paneManager: null,
-    searchPanel: null,
-    dictPanel: null,
-  };
-
-  let saveTimer = null;
-
-  function init(loadedState) {
-    if (!loadedState || typeof loadedState !== 'object') return;
-    state = {
-      ...state,
-      ...loadedState,
-      settings: {
-        ...state.settings,
-        ...(loadedState.settings || {}),
-      },
-      searchPanel: loadedState.searchPanel || null,
-      dictPanel: loadedState.dictPanel || null,
-    };
-  }
-
-  function scheduleSave() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      window.api.saveAppState(state).catch((err) => {
-        console.error('Failed to save app state:', err);
-      });
-    }, 200);
-  }
-
-  function setSettings(nextSettings) {
-    state.settings = {
-      ...state.settings,
-      ...nextSettings,
-    };
-    scheduleSave();
-  }
-
-  function setPaneManager(nextPaneState) {
-    state.paneManager = nextPaneState;
-    scheduleSave();
-  }
-
-  function getSettings() {
-    return state.settings;
-  }
-
-  function getPaneManager() {
-    return state.paneManager;
-  }
-
-  function setSearchPanel(nextSearchPanel) {
-    state.searchPanel = nextSearchPanel;
-    scheduleSave();
-  }
-
-  function getSearchPanel() {
-    return state.searchPanel;
-  }
-
-  function setDictPanel(nextDictPanel) {
-    state.dictPanel = nextDictPanel;
-    scheduleSave();
-  }
-
-  function getDictPanel() {
-    return state.dictPanel;
-  }
-
-  return {
-    init,
-    setSettings,
-    setPaneManager,
-    getSettings,
-    getPaneManager,
-    setSearchPanel,
-    getSearchPanel,
-    setDictPanel,
-    getDictPanel,
-  };
-})();
+import { AppStateStore } from './app-state-store.js';
+import { BibleView } from './bible-view.js';
+import { DictPanel } from './dict-panel.js';
+import { I18n } from './i18n.js';
+import { Icons } from './icons.js';
+import { ModuleEditor } from './module-editor.js';
+import { ModulePicker } from './module-picker.js';
+import { Navigation, setNavigationPaneManager } from './navigation.js';
+import { PaneManager } from './pane-manager.js';
+import { SearchPanel } from './search-panel.js';
+import { Utils } from './utils.js';
 
 function renderNoModulesMessage() {
   const paneRoot = document.getElementById('pane-root');
@@ -708,7 +626,7 @@ document.addEventListener('keydown', (e) => {
     !document.getElementById('nav-overlay').classList.contains('hidden') ||
     CrossRefPreview.isOpen() ||
     AboutDialog.isOpen() ||
-    (window.ModuleEditor && window.ModuleEditor.isOpen());
+    ModuleEditor.isOpen();
 
   if (e.key === 'Escape' && AboutDialog.isOpen()) {
     e.preventDefault();
@@ -1107,6 +1025,7 @@ window.api
       return;
     }
 
+    setNavigationPaneManager(PaneManager);
     Navigation.init();
 
     PaneManager.setStateChangeListener((paneState) => {
@@ -1114,17 +1033,15 @@ window.api
     });
 
     PaneManager.init(bibleModules, AppStateStore.getPaneManager(), commentaryModulesList);
-    if (window.ModuleEditor) {
-      window.ModuleEditor.init(modules, {
-        onSaved: () => PaneManager.reloadAllChapters(),
-      });
-      window.api.onOpenModuleEditor(() => {
-        const activePane = PaneManager.getPane(PaneManager.getActivePaneId());
-        const fallbackModuleId = modules[0] ? modules[0].id : null;
-        const moduleId = activePane?.moduleId || fallbackModuleId;
-        if (moduleId) window.ModuleEditor.open(moduleId, 'info');
-      });
-    }
+    ModuleEditor.init(modules, {
+      onSaved: () => PaneManager.reloadAllChapters(),
+    });
+    window.api.onOpenModuleEditor(() => {
+      const activePane = PaneManager.getPane(PaneManager.getActivePaneId());
+      const fallbackModuleId = modules[0] ? modules[0].id : null;
+      const moduleId = activePane?.moduleId || fallbackModuleId;
+      if (moduleId) ModuleEditor.open(moduleId, 'info');
+    });
 
     SearchPanel.setStateChangeListener((searchState) => {
       AppStateStore.setSearchPanel(searchState);

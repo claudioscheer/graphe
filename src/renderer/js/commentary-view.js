@@ -1,13 +1,17 @@
 /**
  * commentary-view.js — Commentary rendering for commentary panes
  */
-const CommentaryView = (() => {
-  const _refMatcher = CommentaryRefParser.buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
+import { buildReferenceMatcher, parseLeadingReferenceFromPlainText } from './commentary-ref-parser.mjs';
+import { I18n } from './i18n.js';
+import { Sanitize } from './sanitize.js';
+
+export const CommentaryView = (() => {
+  const _refMatcher = buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
 
   function parseLeadingReference(text) {
     if (!text) return null;
     const plain = new DOMParser().parseFromString(String(text), 'text/html').body.textContent || '';
-    return CommentaryRefParser.parseLeadingReferenceFromPlainText(plain);
+    return parseLeadingReferenceFromPlainText(plain);
   }
 
   function parseVerseNumber(value) {

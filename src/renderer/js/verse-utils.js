@@ -1,7 +1,7 @@
 /**
  * verse-utils.js — Shared plain-text extraction from raw verse markup
  */
-const VerseUtils = (() => {
+export const VerseUtils = (() => {
   function cleanText(text) {
     if (!text) return '';
     let s = String(text);

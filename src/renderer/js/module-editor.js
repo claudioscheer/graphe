@@ -1,4 +1,7 @@
-const ModuleEditor = (() => {
+import { I18n } from './i18n.js';
+import { ModulePicker } from './module-picker.js';
+
+export const ModuleEditor = (() => {
   let modules = [];
   let onSaved = null;
   let state = null;
@@ -596,5 +599,3 @@ const ModuleEditor = (() => {
     isOpen,
   };
 })();
-
-window.ModuleEditor = ModuleEditor;
