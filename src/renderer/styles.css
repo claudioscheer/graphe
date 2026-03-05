@@ -1034,6 +1034,10 @@
   border-bottom: 1px solid rgb(var(--ui-shadow-rgb) / 0.06);
 }
 
+.search-panel-status:empty {
+  display: none;
+}
+
 .dark .search-panel-status {
   color: var(--ui-text-subtle);
   border-bottom-color: rgb(var(--ui-surface-rgb) / 0.26);
@@ -2394,25 +2398,39 @@ el {
   white-space: nowrap;
 }
 
-.commentary-sync-control {
+.commentary-badge-control {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
 
-.commentary-sync-menu {
+.pane-id-badge--clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pane-id-badge--clickable:hover {
+  background: rgb(var(--ui-shadow-rgb) / 0.12);
+}
+
+.dark .pane-id-badge--clickable:hover {
+  background: rgb(var(--ui-surface-rgb) / 0.18);
+}
+
+.commentary-badge-menu {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   min-width: 170px;
   z-index: 40;
   padding: 4px;
+  border-radius: 6px;
   border: 1px solid var(--ui-border);
   background: var(--ui-surface);
   box-shadow: 0 8px 24px rgb(var(--ui-shadow-rgb) / 0.2);
 }
 
-.commentary-sync-menu-item {
+.commentary-badge-menu-item {
   display: block;
   width: 100%;
   border: 0;
@@ -2424,11 +2442,11 @@ el {
   cursor: pointer;
 }
 
-.commentary-sync-menu-item:hover {
+.commentary-badge-menu-item:hover {
   background: rgb(var(--ui-primary-rgb) / 0.12);
 }
 
-.commentary-sync-menu-item.is-selected {
+.commentary-badge-menu-item.is-selected {
   color: var(--ui-primary-strong);
   background: rgb(var(--ui-primary-rgb) / 0.28);
   box-shadow: inset 3px 0 0 var(--ui-primary-strong);

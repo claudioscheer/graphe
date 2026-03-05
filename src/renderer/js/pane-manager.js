@@ -84,7 +84,7 @@ const PaneManager = (() => {
     paneCounter = Math.max(paneCounter, parsePaneNumber(id));
 
     const paneType = initial.paneType || 'bible';
-    const windowLabel = allocatePaneLabel(paneType, initial.windowLabel);
+    const windowLabel = paneType === 'commentary' ? null : allocatePaneLabel(paneType, initial.windowLabel);
 
     if (paneType === 'commentary') {
       const moduleId = resolveCommentaryModuleId(initial.moduleId);
@@ -129,10 +129,6 @@ const PaneManager = (() => {
     return match ? parseInt(match[1], 10) : 0;
   }
 
-  function paneTypeForLabel(paneType) {
-    return paneType === 'commentary' ? 'commentary' : 'bible';
-  }
-
   function labelForIndex(index) {
     let n = Math.max(0, index);
     let out = '';
@@ -149,11 +145,10 @@ const PaneManager = (() => {
     return /^[A-Z]+$/.test(trimmed) ? trimmed : null;
   }
 
-  function collectUsedWindowLabels(paneType) {
-    const targetType = paneTypeForLabel(paneType);
+  function collectUsedWindowLabels() {
     const used = new Set();
     for (const pane of Object.values(panes)) {
-      if (pane.paneType !== targetType) continue;
+      if (pane.paneType !== 'bible') continue;
       const label = normalizeWindowLabel(pane.windowLabel);
       if (label) used.add(label);
     }
@@ -161,7 +156,7 @@ const PaneManager = (() => {
   }
 
   function allocatePaneLabel(paneType, preferred) {
-    const used = collectUsedWindowLabels(paneType);
+    const used = collectUsedWindowLabels();
     const normalizedPreferred = normalizeWindowLabel(preferred);
     if (normalizedPreferred && !used.has(normalizedPreferred)) return normalizedPreferred;
     let idx = 0;
@@ -172,6 +167,12 @@ const PaneManager = (() => {
   function getPaneDisplayLabel(paneId) {
     const pane = panes[paneId];
     if (!pane) return '';
+    if (pane.paneType === 'commentary') {
+      if (pane.syncedToPaneId && panes[pane.syncedToPaneId] && panes[pane.syncedToPaneId].paneType === 'bible') {
+        return getPaneDisplayLabel(pane.syncedToPaneId);
+      }
+      return '\u2013';
+    }
     return normalizeWindowLabel(pane.windowLabel) || paneId.replace('pane-', '');
   }
 
@@ -209,7 +210,7 @@ const PaneManager = (() => {
         const moduleId = resolveCommentaryModuleId(raw.moduleId);
         nextPanes[paneId] = {
           id: paneId,
-          windowLabel: normalizeWindowLabel(raw.windowLabel),
+          windowLabel: null,
           paneType: 'commentary',
           moduleId,
           bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
@@ -339,20 +340,23 @@ const PaneManager = (() => {
   // ---- Active pane ----
 
   function ensureWindowLabels() {
-    const usedByType = { bible: new Set(), commentary: new Set() };
+    const used = new Set();
 
     for (const pane of Object.values(panes)) {
-      const type = paneTypeForLabel(pane.paneType);
+      if (pane.paneType === 'commentary') {
+        pane.windowLabel = null;
+        continue;
+      }
       const normalized = normalizeWindowLabel(pane.windowLabel);
-      if (normalized && !usedByType[type].has(normalized)) {
+      if (normalized && !used.has(normalized)) {
         pane.windowLabel = normalized;
-        usedByType[type].add(normalized);
+        used.add(normalized);
         continue;
       }
       let idx = 0;
-      while (usedByType[type].has(labelForIndex(idx))) idx++;
+      while (used.has(labelForIndex(idx))) idx++;
       pane.windowLabel = labelForIndex(idx);
-      usedByType[type].add(pane.windowLabel);
+      used.add(pane.windowLabel);
     }
   }
 
@@ -670,31 +674,12 @@ const PaneManager = (() => {
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
 
-    const syncWrap = document.createElement('div');
-    syncWrap.className = 'commentary-sync-control mr-1';
-    syncWrap.addEventListener('mousedown', (e) => e.stopPropagation());
-
-    const syncTrigger = document.createElement('button');
-    syncTrigger.type = 'button';
-    syncTrigger.className =
-      'commentary-sync-trigger text-sm text-brand-700 dark:text-night-200 cursor-pointer transition-colors';
-    syncTrigger.title = I18n.t('commentarySyncHint');
-    syncTrigger.setAttribute('aria-expanded', 'false');
-    syncTrigger.setAttribute('aria-haspopup', 'menu');
-
-    const syncMenu = document.createElement('div');
-    syncMenu.className = 'commentary-sync-menu hidden';
-    syncMenu.setAttribute('role', 'menu');
-    syncMenu.tabIndex = -1;
+    // Badge with sync selector
+    const badgeWrap = document.createElement('div');
+    badgeWrap.className = 'commentary-badge-control';
+    badgeWrap.addEventListener('mousedown', (e) => e.stopPropagation());
 
     const biblePaneIds = getBiblePaneIdsForSync();
-    const syncOptions = [
-      { value: '', label: I18n.t('commentarySyncNone') },
-      ...biblePaneIds.map((biblePaneId) => ({
-        value: biblePaneId,
-        label: `${I18n.t('commentarySyncBiblePrefix')} ${getPaneDisplayLabel(biblePaneId)}`,
-      })),
-    ];
 
     if (
       !pane.syncedToPaneId ||
@@ -704,111 +689,119 @@ const PaneManager = (() => {
       pane.syncedToPaneId = null;
     }
 
-    let isSyncMenuOpen = false;
-    let syncMenuDocListener = null;
+    const badgeBtn = document.createElement('button');
+    badgeBtn.type = 'button';
+    badgeBtn.className = 'pane-id-badge pane-id-badge--clickable';
+    badgeBtn.textContent = getPaneDisplayLabel(paneId);
+    badgeBtn.title = I18n.t('commentarySyncHint');
+    badgeBtn.setAttribute('aria-expanded', 'false');
+    badgeBtn.setAttribute('aria-haspopup', 'menu');
 
-    const setSyncMenuOpen = (open) => {
-      isSyncMenuOpen = open;
-      syncMenu.classList.toggle('hidden', !open);
-      syncTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const badgeMenu = document.createElement('div');
+    badgeMenu.className = 'commentary-badge-menu hidden';
+    badgeMenu.setAttribute('role', 'menu');
+    badgeMenu.tabIndex = -1;
+
+    let isBadgeMenuOpen = false;
+    let badgeMenuDocListener = null;
+
+    const setBadgeMenuOpen = (open) => {
+      isBadgeMenuOpen = open;
+      badgeMenu.classList.toggle('hidden', !open);
+      badgeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open) {
-        if (!syncMenuDocListener) {
-          syncMenuDocListener = (e) => {
-            if (!syncWrap.isConnected) {
-              document.removeEventListener('mousedown', syncMenuDocListener);
-              syncMenuDocListener = null;
+        if (!badgeMenuDocListener) {
+          badgeMenuDocListener = (e) => {
+            if (!badgeWrap.isConnected) {
+              document.removeEventListener('mousedown', badgeMenuDocListener);
+              badgeMenuDocListener = null;
               return;
             }
-            if (!syncWrap.contains(e.target)) setSyncMenuOpen(false);
+            if (!badgeWrap.contains(e.target)) setBadgeMenuOpen(false);
           };
-          document.addEventListener('mousedown', syncMenuDocListener);
+          document.addEventListener('mousedown', badgeMenuDocListener);
         }
-        syncMenu.focus();
-      } else if (syncMenuDocListener) {
-        document.removeEventListener('mousedown', syncMenuDocListener);
-        syncMenuDocListener = null;
-      }
-    };
-
-    const updateSyncTriggerText = () => {
-      const selectedValue = pane.syncedToPaneId || '';
-      const selectedOption = syncOptions.find((option) => option.value === selectedValue);
-      syncTrigger.textContent = selectedOption
-        ? selectedOption.label
-        : I18n.t('commentarySyncNone');
-    };
-
-    const updateSyncMenuSelection = () => {
-      const selectedValue = pane.syncedToPaneId || '';
-      for (const item of syncMenu.children) {
-        const selected = item.dataset.value === selectedValue;
-        item.classList.toggle('is-selected', selected);
-        item.setAttribute('aria-checked', selected ? 'true' : 'false');
+        badgeMenu.focus();
+      } else if (badgeMenuDocListener) {
+        document.removeEventListener('mousedown', badgeMenuDocListener);
+        badgeMenuDocListener = null;
       }
     };
 
     const selectSyncTarget = (value) => {
       pane.syncedToPaneId = value || null;
-      if (biblePaneIds.length > 0) {
-        syncCommentaryToPane(paneId);
+      syncCommentaryToPane(paneId);
+      badgeBtn.textContent = getPaneDisplayLabel(paneId);
+      // Update menu selection marks
+      const selectedValue = pane.syncedToPaneId || '';
+      for (const item of badgeMenu.children) {
+        const selected = item.dataset.value === selectedValue;
+        item.classList.toggle('is-selected', selected);
+        item.setAttribute('aria-checked', selected ? 'true' : 'false');
       }
-      updateSyncMenuSelection();
-      updateSyncTriggerText();
-      setSyncMenuOpen(false);
+      setBadgeMenuOpen(false);
       emitStateChange();
     };
+
+    const syncOptions = [
+      { value: '', label: I18n.t('commentarySyncNone') },
+      ...biblePaneIds.map((biblePaneId) => ({
+        value: biblePaneId,
+        label: `${I18n.t('commentarySyncBiblePrefix')} ${getPaneDisplayLabel(biblePaneId)}`,
+      })),
+    ];
 
     for (const option of syncOptions) {
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'commentary-sync-menu-item';
+      item.className = 'commentary-badge-menu-item';
       item.dataset.value = option.value;
       item.textContent = option.label;
       item.setAttribute('role', 'menuitemradio');
+      const selected = (pane.syncedToPaneId || '') === option.value;
+      item.classList.toggle('is-selected', selected);
+      item.setAttribute('aria-checked', selected ? 'true' : 'false');
       item.addEventListener('click', () => selectSyncTarget(option.value));
-      syncMenu.appendChild(item);
+      badgeMenu.appendChild(item);
     }
 
     if (biblePaneIds.length === 0) {
       pane.syncedToPaneId = null;
-      syncTrigger.classList.add('opacity-60', 'cursor-not-allowed');
-      syncTrigger.disabled = true;
+      badgeBtn.classList.add('opacity-60', 'cursor-not-allowed');
+      badgeBtn.disabled = true;
     }
 
-    updateSyncMenuSelection();
-    updateSyncTriggerText();
-
-    syncTrigger.addEventListener('click', () => {
-      if (syncTrigger.disabled) return;
-      setSyncMenuOpen(!isSyncMenuOpen);
+    badgeBtn.addEventListener('click', () => {
+      if (badgeBtn.disabled) return;
+      setBadgeMenuOpen(!isBadgeMenuOpen);
     });
 
-    syncTrigger.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown' && !isSyncMenuOpen) {
+    badgeBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' && !isBadgeMenuOpen) {
         e.preventDefault();
-        setSyncMenuOpen(true);
-      } else if (e.key === 'Escape' && isSyncMenuOpen) {
+        setBadgeMenuOpen(true);
+      } else if (e.key === 'Escape' && isBadgeMenuOpen) {
         e.preventDefault();
-        setSyncMenuOpen(false);
+        setBadgeMenuOpen(false);
       }
     });
 
-    syncMenu.addEventListener('keydown', (e) => {
+    badgeMenu.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        setSyncMenuOpen(false);
-        syncTrigger.focus();
+        setBadgeMenuOpen(false);
+        badgeBtn.focus();
       }
     });
 
-    syncWrap.addEventListener('focusout', () => {
-      if (!isSyncMenuOpen) return;
+    badgeWrap.addEventListener('focusout', () => {
+      if (!isBadgeMenuOpen) return;
       setTimeout(() => {
-        if (!syncWrap.contains(document.activeElement)) setSyncMenuOpen(false);
+        if (!badgeWrap.contains(document.activeElement)) setBadgeMenuOpen(false);
       }, 0);
     });
 
-    syncWrap.append(syncTrigger, syncMenu);
+    badgeWrap.append(badgeBtn, badgeMenu);
 
     // Coverage info button
     const infoBtn = document.createElement('button');
@@ -826,11 +819,7 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    const idBadge = document.createElement('span');
-    idBadge.className = 'pane-id-badge';
-    idBadge.textContent = getPaneDisplayLabel(paneId);
-
-    toolbar.append(idBadge, select, navLabel, spacer, syncWrap, infoBtn, closeBtn);
+    toolbar.append(badgeWrap, select, navLabel, spacer, infoBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
