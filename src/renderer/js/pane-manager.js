@@ -1710,17 +1710,33 @@ export const PaneManager = (() => {
         section.className = 'mb-6 last:mb-0';
 
         const heading = document.createElement('h3');
-        heading.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600';
-        heading.textContent = mod.name || mod.id;
+        heading.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600 cursor-pointer flex items-center gap-1.5 select-none';
+
+        const chevron = Icons.create('chevron-right');
+        chevron.style.transition = 'transform 0.15s';
+        chevron.style.transform = 'rotate(0deg)';
+        chevron.style.flexShrink = '0';
+        heading.appendChild(chevron);
+        heading.appendChild(document.createTextNode(mod.name || mod.id));
         section.appendChild(heading);
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.style.display = 'none';
 
         for (const entry of entries) {
           const entryDiv = document.createElement('div');
           entryDiv.className = 'commentary-body text-sm mb-2';
           entryDiv.innerHTML = Sanitize.sanitizeHtml(entry.text || '');
-          section.appendChild(entryDiv);
+          contentWrapper.appendChild(entryDiv);
         }
 
+        heading.addEventListener('click', () => {
+          const collapsed = contentWrapper.style.display === 'none';
+          contentWrapper.style.display = collapsed ? 'block' : 'none';
+          chevron.style.transform = collapsed ? 'rotate(90deg)' : 'rotate(0deg)';
+        });
+
+        section.appendChild(contentWrapper);
         body.appendChild(section);
       }
     }
