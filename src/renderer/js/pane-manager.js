@@ -811,6 +811,14 @@ const PaneManager = (() => {
     infoBtn.title = I18n.t('commentaryCoverage');
     infoBtn.addEventListener('click', () => openCommentaryCoverageModal(paneId));
 
+    // All commentaries button
+    const allCommBtn = document.createElement('button');
+    allCommBtn.className =
+      'cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
+    allCommBtn.appendChild(Icons.create('book-open'));
+    allCommBtn.title = I18n.t('allCommentaries');
+    allCommBtn.addEventListener('click', () => openAllCommentariesModal(paneId));
+
     // Close button
     const closeBtn = document.createElement('button');
     closeBtn.className =
@@ -819,7 +827,7 @@ const PaneManager = (() => {
     closeBtn.title = I18n.t('closePane');
     closeBtn.addEventListener('click', () => closePane(paneId));
 
-    toolbar.append(badgeWrap, select, navLabel, spacer, infoBtn, closeBtn);
+    toolbar.append(badgeWrap, select, navLabel, spacer, allCommBtn, infoBtn, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -1624,6 +1632,102 @@ const PaneManager = (() => {
     50,40,27,36,34,24,21,4,31,24,22,25,29,36,10,13,10,42,150,31,12,8,66,52,5,48,12,14,3,9,1,4,7,3,3,3,2,14,4,
     28,16,24,21,28,16,16,13,6,6,4,4,5,3,6,4,3,1,13,5,5,3,5,1,1,1,22,
   ];
+
+  async function openAllCommentariesModal(paneId) {
+    const pane = panes[paneId];
+    if (!pane || pane.paneType !== 'commentary') return;
+
+    const { bookNumber, chapter } = pane;
+    const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
+    const verse = selectedVerse || (pane.entries && pane.entries.length > 0 ? pane.entries[0].verseFrom : 1);
+
+    const bookName = I18n.bookName(bookNumber);
+    const refLabel = `${bookName.short} ${chapter}:${verse}`;
+
+    // Fetch commentary entries from all modules in parallel
+    const results = await Promise.all(
+      commentaryModules.map(async (mod) => {
+        try {
+          const entries = await window.api.getCommentary(mod.id, bookNumber, chapter);
+          const matching = entries.filter(
+            (e) => e.verseFrom <= verse && (e.verseTo >= verse || e.verseTo === 0)
+          );
+          return { module: mod, entries: matching };
+        } catch {
+          return { module: mod, entries: [] };
+        }
+      })
+    );
+
+    const withEntries = results.filter((r) => r.entries.length > 0);
+
+    // Build overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-40 bg-black/50 flex items-center justify-center';
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    const modal = document.createElement('div');
+    modal.className =
+      'bg-brand-50 dark:bg-night-800 shadow-2xl w-[720px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden break-words';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between min-w-0';
+    const title = document.createElement('h2');
+    title.className = 'text-lg font-semibold min-w-0 truncate';
+    title.textContent = `${I18n.t('allCommentaries')} — ${refLabel}`;
+    const closeBtn = document.createElement('button');
+    closeBtn.className =
+      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 cursor-pointer transition-colors inline-flex items-center justify-center';
+    closeBtn.appendChild(Icons.create('x'));
+    closeBtn.addEventListener('click', () => overlay.remove());
+    header.append(title, closeBtn);
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'p-4 overflow-y-auto flex-1 min-w-0 overflow-x-hidden';
+
+    if (withEntries.length === 0) {
+      const msg = document.createElement('p');
+      msg.className = 'text-brand-500 dark:text-night-400 text-sm italic';
+      msg.textContent = I18n.t('allCommentariesNoResults');
+      body.appendChild(msg);
+    } else {
+      for (const { module: mod, entries } of withEntries) {
+        const section = document.createElement('div');
+        section.className = 'mb-6 last:mb-0';
+
+        const heading = document.createElement('h3');
+        heading.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600';
+        heading.textContent = mod.name || mod.id;
+        section.appendChild(heading);
+
+        for (const entry of entries) {
+          const entryDiv = document.createElement('div');
+          entryDiv.className = 'commentary-body text-sm mb-2';
+          entryDiv.innerHTML = Sanitize.sanitizeHtml(entry.text || '');
+          section.appendChild(entryDiv);
+        }
+
+        body.appendChild(section);
+      }
+    }
+
+    modal.append(header, body);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Close on Escape
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+  }
 
   async function openCommentaryCoverageModal(paneId) {
     const pane = panes[paneId];
