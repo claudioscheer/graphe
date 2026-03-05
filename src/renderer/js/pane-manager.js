@@ -1254,6 +1254,8 @@ const PaneManager = (() => {
       if (!el) return;
 
       const content = el.querySelector('.pane-content');
+      const scrollRatio =
+        content.scrollHeight > 0 ? content.scrollTop / content.scrollHeight : 0;
       const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
       pane.bookShortName = I18n.bookName(pane.bookNumber).short;
       BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
@@ -1312,7 +1314,8 @@ const PaneManager = (() => {
       }
 
       if (scrollToVerse) {
-        setTimeout(() => BibleView.scrollToVerse(content, scrollToVerse), 100);
+        content.scrollTop = scrollRatio * content.scrollHeight;
+        BibleView.scrollToVerse(content, scrollToVerse);
       } else {
         content.scrollTop = 0;
       }
