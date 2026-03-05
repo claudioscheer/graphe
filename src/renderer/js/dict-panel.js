@@ -20,9 +20,8 @@ export const DictPanel = (() => {
   let autocompleteTimer = null;
   let activeAutocompleteIdx = -1;
 
-  // Navigation history
-  const STRONG_HISTORY_KEY = '__strong__';
-  const historyByKey = new Map();
+  // Navigation history (single unified list)
+  let history = { entries: [], idx: -1 };
   let navBackBtn, navForwardBtn;
   let dictHeightRatio = null;
   let resizeBound = false;
@@ -592,30 +591,8 @@ export const DictPanel = (() => {
 
   // --- Navigation history ---
 
-  function getHistoryKey(entry) {
-    if (!entry || entry.type === 'strong') return STRONG_HISTORY_KEY;
-    return entry.moduleId || selectedModuleId || resolveSelectedModuleId(null) || STRONG_HISTORY_KEY;
-  }
-
-  function getHistoryState(key) {
-    const resolvedKey = key || selectedModuleId || resolveSelectedModuleId(null) || STRONG_HISTORY_KEY;
-    let state = historyByKey.get(resolvedKey);
-    if (!state) {
-      state = { entries: [], idx: -1 };
-      historyByKey.set(resolvedKey, state);
-    }
-    return state;
-  }
-
-  function getActiveHistoryKey() {
-    if (currentLookup?.type === 'strong') return STRONG_HISTORY_KEY;
-    return selectedModuleId || currentLookup?.moduleId || resolveSelectedModuleId(null) || STRONG_HISTORY_KEY;
-  }
-
   function pushHistory(entry) {
-    const key = getHistoryKey(entry);
-    const state = getHistoryState(key);
-    const prev = state.entries[state.idx];
+    const prev = history.entries[history.idx];
     if (
       prev &&
       prev.type === entry.type &&
@@ -626,40 +603,32 @@ export const DictPanel = (() => {
       (prev.context?.sourceModuleId || null) === (entry.context?.sourceModuleId || null)
     )
       return;
-    state.entries.splice(state.idx + 1);
-    state.entries.push(entry);
-    state.idx = state.entries.length - 1;
+    history.entries.splice(history.idx + 1);
+    history.entries.push(entry);
+    history.idx = history.entries.length - 1;
     updateNavButtons();
   }
 
   function updateNavButtons() {
-    const key = getActiveHistoryKey();
-    const state = getHistoryState(key);
-    if (navBackBtn) navBackBtn.disabled = state.idx <= 0;
-    if (navForwardBtn) navForwardBtn.disabled = state.idx >= state.entries.length - 1;
+    if (navBackBtn) navBackBtn.disabled = history.idx <= 0;
+    if (navForwardBtn) navForwardBtn.disabled = history.idx >= history.entries.length - 1;
   }
 
   function navBack() {
-    const key = getActiveHistoryKey();
-    const state = getHistoryState(key);
-    if (state.idx <= 0) return;
-    state.idx--;
+    if (history.idx <= 0) return;
+    history.idx--;
     replayHistory();
   }
 
   function navForward() {
-    const key = getActiveHistoryKey();
-    const state = getHistoryState(key);
-    if (state.idx >= state.entries.length - 1) return;
-    state.idx++;
+    if (history.idx >= history.entries.length - 1) return;
+    history.idx++;
     replayHistory();
   }
 
   function replayHistory() {
-    const key = getActiveHistoryKey();
-    const state = getHistoryState(key);
     updateNavButtons();
-    const entry = state.entries[state.idx];
+    const entry = history.entries[history.idx];
     if (!entry) return;
     if (entry.type === 'strong') {
       lookup(entry.topic, true, entry.context || null);
@@ -670,9 +639,10 @@ export const DictPanel = (() => {
 
   function ensureCurrentInHistory() {
     if (!currentLookup) return;
-    const key = getHistoryKey(currentLookup);
-    const state = getHistoryState(key);
-    if (state.idx >= 0 && state.entries.length > 0) return;
+    if (history.idx >= 0 && history.entries.length > 0) {
+      const cur = history.entries[history.idx];
+      if (cur && cur.type === currentLookup.type && cur.topic === currentLookup.topic) return;
+    }
     if (currentLookup.type === 'strong') {
       pushHistory({
         type: 'strong',
@@ -992,6 +962,7 @@ export const DictPanel = (() => {
       link.textContent = resolved.topicRef;
       link.addEventListener('click', (e) => {
         e.preventDefault();
+        ensureCurrentInHistory();
         lookupWord(resolved.topicRef, moduleId);
       });
       topicRow.append(key, document.createTextNode(' '), link);
@@ -1365,7 +1336,10 @@ export const DictPanel = (() => {
         span.className = 'dict-vcrossref';
         span.textContent = m[0];
         const topic = m[1].trim();
-        span.addEventListener('click', () => lookupWord(topic));
+        span.addEventListener('click', () => {
+          ensureCurrentInHistory();
+          lookupWord(topic);
+        });
         frag.appendChild(span);
         lastIdx = m.index + m[0].length;
       }
