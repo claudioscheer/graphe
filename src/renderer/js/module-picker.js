@@ -368,6 +368,7 @@ const ModulePicker = (() => {
       setSelected,
       setModules,
       destroy,
+      open: openDropdown,
       _close,
       get _dropdown() {
         return dropdown ? dropdown.dd : null;

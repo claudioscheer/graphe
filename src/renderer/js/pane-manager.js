@@ -465,7 +465,7 @@ const PaneManager = (() => {
       modules: Utils.sortBibleModules(modules),
       selectedId: pane.moduleId,
       moduleType: 'bible',
-      className: 'pl-2 pr-6 py-0.5 rounded mr-1 text-xs',
+      className: 'rounded mr-1 text-xs',
       onChange: async (moduleId) => {
         // Push current state before switching translation
         pushNavHistory(paneId);
@@ -654,7 +654,7 @@ const PaneManager = (() => {
       modules: Utils.sortCommentaryModules(commentaryModules),
       selectedId: pane.moduleId,
       moduleType: 'commentary',
-      className: 'pl-2 pr-6 py-0.5 rounded mr-1 text-xs',
+      className: 'rounded mr-1 text-xs',
       onChange: async (moduleId) => {
         pane.moduleId = moduleId;
         pane.commentaryBooks = [];
@@ -1095,6 +1095,41 @@ const PaneManager = (() => {
     }
   }
 
+  function openPanePicker(paneId) {
+    const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
+    const pickerEl = paneEl?.querySelector('.module-picker-wrapper');
+    if (pickerEl && pickerEl.__pickerInstance) {
+      pickerEl.__pickerInstance.open();
+    }
+  }
+
+  async function switchPaneModule(paneId, moduleId) {
+    const pane = panes[paneId];
+    if (!pane || pane.paneType !== 'bible' || pane.moduleId === moduleId) return;
+    const mod = modules.find((m) => m.id === moduleId);
+    if (!mod) return;
+
+    pushNavHistory(paneId);
+    const paneEl = document.querySelector(`[data-pane-id="${paneId}"]`);
+    const selectedLine = paneEl?.querySelector('.pane-content .verse-line.verse-selected');
+    const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+
+    pane.moduleId = moduleId;
+    pane.hasStrongs = mod.hasStrongs || false;
+    pane.strongsPrefix = mod.strongsPrefix || null;
+    pane.books = [];
+    pane.verses = [];
+
+    const pickerEl = paneEl?.querySelector('.module-picker-wrapper');
+    if (pickerEl && pickerEl.__pickerInstance) {
+      pickerEl.__pickerInstance.setSelected(moduleId);
+    }
+    refreshQuickBarForPane(paneId);
+    await loadPaneData(paneId, selectedVerse);
+    pushNavHistory(paneId);
+    emitStateChange();
+  }
+
   function refreshAllQuickBars() {
     for (const pane of Object.values(panes)) {
       if (pane.paneType === 'bible') {
@@ -1250,26 +1285,28 @@ const PaneManager = (() => {
         if (prevBtnEl && prevLabelEl) {
           if (pane.chapter > 1) {
             prevLabelEl.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter - 1}`;
-            prevBtnEl.style.display = '';
+            prevBtnEl.disabled = false;
           } else if (bookIdx > 0) {
-            prevLabelEl.textContent = I18n.bookName(pane.books[bookIdx - 1].bookNumber).short;
-            prevBtnEl.style.display = '';
+            const prevBook = pane.books[bookIdx - 1];
+            const prevBookChapterCount = await window.api.getChapterCount(pane.moduleId, prevBook.bookNumber);
+            prevLabelEl.textContent = `${I18n.bookName(prevBook.bookNumber).short} ${prevBookChapterCount}`;
+            prevBtnEl.disabled = false;
           } else {
             prevLabelEl.textContent = '';
-            prevBtnEl.style.display = 'none';
+            prevBtnEl.disabled = true;
           }
         }
 
         if (nextBtnEl && nextLabelEl) {
           if (pane.chapter < chapterCount) {
             nextLabelEl.textContent = `${I18n.bookName(pane.bookNumber).short} ${pane.chapter + 1}`;
-            nextBtnEl.style.display = '';
+            nextBtnEl.disabled = false;
           } else if (bookIdx < pane.books.length - 1) {
             nextLabelEl.textContent = `${I18n.bookName(pane.books[bookIdx + 1].bookNumber).short} 1`;
-            nextBtnEl.style.display = '';
+            nextBtnEl.disabled = false;
           } else {
             nextLabelEl.textContent = '';
-            nextBtnEl.style.display = 'none';
+            nextBtnEl.disabled = true;
           }
         }
       }
@@ -1386,8 +1423,8 @@ const PaneManager = (() => {
     const nextBtnEl = el.querySelector('.nav-next-btn');
     const prevLabelEl = el.querySelector('.nav-prev-label');
     const nextLabelEl = el.querySelector('.nav-next-label');
-    if (prevBtnEl) prevBtnEl.classList.add('hidden');
-    if (nextBtnEl) nextBtnEl.classList.add('hidden');
+    if (prevBtnEl) prevBtnEl.disabled = true;
+    if (nextBtnEl) nextBtnEl.disabled = true;
     if (prevLabelEl) prevLabelEl.textContent = '';
     if (nextLabelEl) nextLabelEl.textContent = '';
   }
@@ -1745,5 +1782,7 @@ const PaneManager = (() => {
     getNavigationTarget,
     getLinkTargetPaneId,
     notifyVerseClick,
+    openPanePicker,
+    switchPaneModule,
   };
 })();

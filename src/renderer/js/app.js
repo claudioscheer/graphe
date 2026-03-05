@@ -732,6 +732,32 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Ctrl+T — Open translation picker on active bible pane
+  if (String(e.key).toLowerCase() === 't' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    const paneId = PaneManager.getActivePaneId();
+    const pane = PaneManager.getPane(paneId);
+    if (pane && pane.paneType !== 'commentary') {
+      PaneManager.openPanePicker(paneId);
+    }
+    return;
+  }
+
+  // Ctrl+Shift+T — Cycle through favorite translations
+  if (String(e.key).toLowerCase() === 't' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    const paneId = PaneManager.getActivePaneId();
+    const pane = PaneManager.getPane(paneId);
+    if (pane && pane.paneType !== 'commentary') {
+      const favs = (AppStateStore.getSettings().favoriteModules || {}).bible || [];
+      if (favs.length < 2) return;
+      const idx = favs.indexOf(pane.moduleId);
+      const nextIdx = (idx + 1) % favs.length;
+      PaneManager.switchPaneModule(paneId, favs[nextIdx]);
+    }
+    return;
+  }
+
   if (inputFocused || overlayOpen) return;
 
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'a') {

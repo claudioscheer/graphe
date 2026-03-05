@@ -95,6 +95,23 @@ Após a instalação, acesse as **Configurações** para verificar e organizar o
 - Seleção e cópia de versículos com `Ctrl+C`
 - Atalhos de teclado para navegação rápida
 
+### Atalhos de Teclado
+
+| Atalho | Ação |
+| --- | --- |
+| `Ctrl+Shift+F` | Focar no campo de pesquisa |
+| `F3` | Abrir diálogo de navegação (livro/capítulo/versículo) |
+| `Ctrl+T` | Abrir seletor de tradução no painel ativo |
+| `Ctrl+Shift+T` | Alternar entre traduções favoritas |
+| `Ctrl+A` | Selecionar todos os versículos no painel ativo |
+| `Ctrl+C` | Copiar versículos selecionados |
+| `Tab` | Alternar entre painéis |
+| `↑` / `↓` | Navegar entre versículos |
+| `Shift+↑` / `Shift+↓` | Estender seleção de versículos |
+| `Escape` | Fechar diálogos/overlays/popovers |
+
+> No macOS, use `Cmd` no lugar de `Ctrl`.
+
 ## Problemas ou Sugestões
 
 Encontrou um bug ou tem uma ideia para melhorar o Graphe? Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues).
