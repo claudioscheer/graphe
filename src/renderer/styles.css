@@ -2519,19 +2519,51 @@ el {
     0 1px 4px rgb(0 0 0 / 0.2);
 }
 
-.module-picker-search {
+.module-picker-search-wrapper {
+  position: relative;
   margin: 6px;
-  padding: 6px 10px;
+  flex-shrink: 0;
+}
+
+.module-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 28px 6px 10px;
   font-size: 13px;
   border: 1px solid var(--ui-border-soft);
   border-radius: 4px;
   background: var(--ui-surface);
   color: var(--ui-text);
   outline: none;
-  flex-shrink: 0;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
+}
+
+.module-picker-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ui-text-subtle);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.module-picker-search-clear:hover {
+  color: var(--ui-text-muted);
+}
+
+.dark .module-picker-search-clear {
+  color: var(--ui-text-muted);
+}
+
+.dark .module-picker-search-clear:hover {
+  color: var(--ui-text-subtle);
 }
 
 .module-picker-search:focus {
