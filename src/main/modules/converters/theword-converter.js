@@ -122,6 +122,11 @@ async function convert(inputPath, outputDir, onProgress) {
     const handle = thewordTwm.load(inputPath);
     if (!handle) throw new Error(`Cannot load TWM module: ${path.basename(inputPath)}`);
 
+    if (handle.config.secure === '1') {
+      thewordTwm.close(handle);
+      throw new Error(`Encrypted TheWord TWM module: ${path.basename(inputPath)}`);
+    }
+
     try {
       if (handle.isDictionary) {
         return await convertDictionary(handle, inputPath, outputDir, onProgress);
@@ -274,7 +279,7 @@ async function convertCommentaryType2(handle, inputPath, outputDir, onProgress) 
       .prepare('SELECT topic_id, bi, ci, fvi, tvi FROM bible_refs ORDER BY bi, ci, fvi')
       .all();
 
-    const isRtf = (handle.config['content.type'] || '').toLowerCase() === 'rtf';
+    const configIsRtf = (handle.config['content.type'] || '').toLowerCase() === 'rtf';
     const insertComm = db.prepare(
       'INSERT INTO commentaries (book_number, chapter_number_from, verse_number_from, chapter_number_to, verse_number_to, is_preceding, marker, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
@@ -293,19 +298,31 @@ async function convertCommentaryType2(handle, inputPath, outputDir, onProgress) 
 
       let text = '';
       try {
-        if (isRtf) {
-          const content = handle.db
-            .prepare('SELECT data FROM content WHERE topic_id = ?')
-            .get(row.topic_id);
-          if (content && content.data) {
+        const content = handle.db
+          .prepare('SELECT data FROM content WHERE topic_id = ?')
+          .get(row.topic_id);
+        if (content && content.data) {
+          const dataStr = String(content.data);
+          const isRtf = configIsRtf || dataStr.startsWith('{\\rtf');
+          if (isRtf) {
             try {
-              text = await thewordTwm.convertRtfToHtml(String(content.data));
+              text = await thewordTwm.convertRtfToHtml(dataStr);
             } catch (_) {
+              // RTF conversion threw
+            }
+            if (!text) {
               text = thewordTwm.extractPlainText(handle, row.topic_id) || '';
             }
+          } else {
+            text = thewordTwm.extractPlainText(handle, row.topic_id) || '';
+            if (!text && dataStr.trim()) {
+              try {
+                text = await thewordTwm.convertRtfToHtml('{\\rtf1\\ansi\\deff0 ' + dataStr + '}');
+              } catch (_) {
+                text = dataStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              }
+            }
           }
-        } else {
-          text = thewordTwm.extractPlainText(handle, row.topic_id) || '';
         }
       } catch (_) {}
 

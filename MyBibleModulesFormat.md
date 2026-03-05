@@ -2,6 +2,8 @@
 
 Revision 2025-06-15
 
+Link to the document: https://docs.google.com/document/d/12rf4Pqy13qhnAW31uKkaWNTBDTtRbNW0s7cM0vcimlA/edit
+
 # **History of Changes**
 
 Revision 2025-06-15

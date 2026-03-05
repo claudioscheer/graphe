@@ -362,7 +362,7 @@ async function getCommentary(handle, bookNumber, chapter) {
 
   if (rows.length === 0) return [];
 
-  const isRtf = (handle.config['content.type'] || '').toLowerCase() === 'rtf';
+  const configIsRtf = (handle.config['content.type'] || '').toLowerCase() === 'rtf';
   const results = [];
 
   for (const row of rows) {
@@ -374,16 +374,28 @@ async function getCommentary(handle, bookNumber, chapter) {
         .get(row.topic_id);
 
       if (content && content.data) {
+        const dataStr = String(content.data);
+        const isRtf = configIsRtf || dataStr.startsWith('{\\rtf');
         if (isRtf) {
           try {
-            text = await convertRtfToHtml(String(content.data));
+            text = await convertRtfToHtml(dataStr);
           } catch (_) {
-            // If RTF conversion fails, try plain text fallback
-            text = extractPlainText(handle, row.topic_id) || escapeHtml(String(content.data));
+            // RTF conversion threw
+          }
+          if (!text) {
+            text = extractPlainText(handle, row.topic_id) || escapeHtml(dataStr);
           }
         } else {
           // RVF or unknown format — use plain text from content_search
           text = extractPlainText(handle, row.topic_id) || '';
+          // Fallback: try wrapping as RTF for RVF content without content_search
+          if (!text && dataStr.trim()) {
+            try {
+              text = await convertRtfToHtml('{\\rtf1\\ansi\\deff0 ' + dataStr + '}');
+            } catch (_) {
+              text = escapeHtml(dataStr);
+            }
+          }
         }
       }
     } catch (_) {}

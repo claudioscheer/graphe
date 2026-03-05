@@ -79,7 +79,7 @@ async function batchConvert() {
     } catch (err) {
       const msg = err.message || String(err);
 
-      if (/Encrypted TheWord Bible/i.test(msg)) {
+      if (/Encrypted TheWord/i.test(msg)) {
         console.log(`\r${label} ${file.filename} ... SKIPPED (encrypted)`);
         skipped.push({ filename: file.filename, category: file.category, reason: 'encrypted' });
       } else if (/Cannot load TWM module/i.test(msg)) {
