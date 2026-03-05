@@ -549,6 +549,8 @@ function selectAllInPane(paneEl) {
 
 // Left-click on a Strong's number → dictionary lookup
 document.addEventListener('click', (e) => {
+  const paneContent = e.target.closest('.pane-content');
+
   // Verse click → scroll synced commentary panes
   const verseLine = e.target.closest('.verse-line');
   if (verseLine && !e.target.closest('.crossref-link')) {
@@ -641,8 +643,17 @@ document.addEventListener('click', (e) => {
   const strongsEl = e.target.closest('.strongs');
   if (strongsEl) {
     e.preventDefault();
+    if (!paneContent) return;
     const strongsNumber = strongsEl.textContent.trim();
-    DictPanel.lookup(strongsNumber);
+    const paneEl = paneContent.closest('[data-pane-id]');
+    const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
+    const pane = PaneManager.getPane(paneId || PaneManager.getActivePaneId());
+    DictPanel.lookup(strongsNumber, false, {
+      paneId: paneId || PaneManager.getActivePaneId(),
+      sourceModuleId: pane?.paneType === 'bible' ? pane.moduleId : null,
+      morphCode: strongsEl.dataset.morph || null,
+      lemma: strongsEl.dataset.lemma || null,
+    });
   }
 });
 
@@ -682,7 +693,11 @@ window.api.onStrongsSearch(({ strongsNumber, paneId }) => {
 });
 
 window.api.onStrongsLookup(({ strongsNumber, paneId }) => {
-  DictPanel.lookup(strongsNumber);
+  const pane = PaneManager.getPane(paneId || PaneManager.getActivePaneId());
+  DictPanel.lookup(strongsNumber, false, {
+    paneId: paneId || PaneManager.getActivePaneId(),
+    sourceModuleId: pane?.paneType === 'bible' ? pane.moduleId : null,
+  });
 });
 
 document.addEventListener('keydown', (e) => {

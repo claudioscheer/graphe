@@ -18,6 +18,10 @@
     if (!map.has(lower)) map.set(lower, bookNum);
     const compact = lower.replace(/\s+/g, '');
     if (compact !== lower && !map.has(compact)) map.set(compact, bookNum);
+    const folded = foldDiacritics(alias);
+    if (folded && !map.has(folded)) map.set(folded, bookNum);
+    const foldedCompact = folded.replace(/\s+/g, '');
+    if (foldedCompact !== folded && !map.has(foldedCompact)) map.set(foldedCompact, bookNum);
   }
 
   function maybeRegisterCommonAliases(map, baseSet, shortName, longName, bookNum) {
@@ -117,9 +121,17 @@
 
           const compact = lower.replace(/\s+/g, '');
           if (compact !== lower && !abbrToBookNum.has(compact)) abbrToBookNum.set(compact, bookNum);
+          const folded = foldDiacritics(form);
+          if (folded) {
+            baseSet.add(folded);
+            const foldedCompact = folded.replace(/\s+/g, '');
+            if (foldedCompact) baseSet.add(foldedCompact);
+          }
 
           const m = lower.match(/^[123]\s*(.*)/);
           baseSet.add(m ? m[1] : lower);
+          const mFolded = folded && folded.match(/^[123]\s*(.*)/);
+          if (mFolded) baseSet.add(mFolded[1]);
         }
       }
     }
@@ -127,20 +139,23 @@
     const bases = [...baseSet].sort((a, b) => b.length - a.length);
     const pattern = bases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     const refRegex = new RegExp(
-      `\\b(?:([123])(?:\\1)?\\s*\\.?\\s*)?(${pattern})(?:\\s+|\\s*\\.\\s*)(\\d{1,3})(?:\\s*[.:]\\s*(?:[.:]\\s*)*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?)?`,
-      'gi'
+      `(?<![\\p{L}\\p{N}])(?:([123])(?:\\1)?\\s*\\.?\\s*)?(${pattern})(?:\\s+|\\s*\\.\\s*)(\\d{1,3})(?:\\s*[.:]\\s*(?:[.:]\\s*)*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?)?`,
+      'giu'
     );
 
     function resolveBook(prefix, abbrev) {
       const base = String(abbrev || '').toLowerCase();
+      const foldedBase = foldDiacritics(abbrev);
       if (prefix) {
         return (
           abbrToBookNum.get(prefix + base) ||
           abbrToBookNum.get(prefix + ' ' + base) ||
+          abbrToBookNum.get(prefix + foldedBase) ||
+          abbrToBookNum.get(prefix + ' ' + foldedBase) ||
           null
         );
       }
-      return abbrToBookNum.get(base) || null;
+      return abbrToBookNum.get(base) || abbrToBookNum.get(foldedBase) || null;
     }
 
     function findContinuations(text, context, options = {}) {
@@ -163,15 +178,19 @@
         const tail = input.slice(cursor);
         const continuationMatch = tail.match(
           requireSeparator
-            ? /^(\s*[;,]\s*(?:\.+\s*)?)(\d{1,3})(?:(?:\s*[.:]\s*(?:[.:]\s*)*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
+            ? /^((?:\s*\.\s*\d{1,3})*)(\s*[;,]\s*(?:\.+\s*)?)(\d{1,3})(?:(?:\s*[.:]\s*(?:[.:]\s*)*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
             : /^(\s*(?:[;,]\s*(?:\.+\s*)?)?)(\d{1,3})(?:(?:\s*[.:]\s*(?:[.:]\s*)*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?)|(?:\s*[-–]\s*(\d{1,3})))?/
         );
         if (!continuationMatch) break;
 
-        const [, leading, firstNum, explicitVerseFrom, explicitVerseTo, rangeVerseTo] =
-          continuationMatch;
-        const raw = continuationMatch[0].slice(leading.length);
-        const start = cursor + leading.length;
+        const skipped = requireSeparator ? continuationMatch[1] : '';
+        const leading = requireSeparator ? continuationMatch[2] : continuationMatch[1];
+        const firstNum = requireSeparator ? continuationMatch[3] : continuationMatch[2];
+        const explicitVerseFrom = requireSeparator ? continuationMatch[4] : continuationMatch[3];
+        const explicitVerseTo = requireSeparator ? continuationMatch[5] : continuationMatch[4];
+        const rangeVerseTo = requireSeparator ? continuationMatch[6] : continuationMatch[5];
+        const raw = continuationMatch[0].slice(skipped.length + leading.length);
+        const start = cursor + skipped.length + leading.length;
         const end = cursor + continuationMatch[0].length;
         if (start >= end) break;
         const trailing = tail.slice(continuationMatch[0].length);

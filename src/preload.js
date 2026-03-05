@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   getDictionaryCognates: (moduleId, strongsNumber) =>
     ipcRenderer.invoke('get-dictionary-cognates', moduleId, strongsNumber),
   getDictionaryMeta: (moduleId) => ipcRenderer.invoke('get-dictionary-meta', moduleId),
+  resolveMorphology: (params) => ipcRenderer.invoke('resolve-morphology', params),
   getDictionaryTopicCount: (moduleId) => ipcRenderer.invoke('get-dictionary-topic-count', moduleId),
   getDictionaryTopicsByPrefix: (moduleId, prefix, limit, offset) =>
     ipcRenderer.invoke('get-dictionary-topics-by-prefix', moduleId, prefix, limit, offset),

@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const Database = require('better-sqlite3');
 const sqliteProvider = require('./modules/sqlite-provider');
+const morphologyResolver = require('./modules/morphology-resolver');
 
 const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
 const handles = new Map();
@@ -33,7 +34,13 @@ function loadAll() {
 
     try {
       const db = new Database(filePath, { readonly: true });
-      handles.set(id, { format: 'sqlite3', db, filePath });
+      handles.set(id, {
+        format: 'sqlite3',
+        db,
+        filePath,
+        info: sqliteProvider.getInfo(db),
+        morphology: sqliteProvider.getMorphologyTableInfo(db),
+      });
     } catch (err) {
       console.error(`Failed to open module ${file}:`, err.message);
     }
@@ -70,7 +77,7 @@ function getModules() {
   const result = [];
 
   for (const [id, handle] of handles) {
-    const info = sqliteProvider.getInfo(handle.db);
+    const info = handle.info || sqliteProvider.getInfo(handle.db);
     const type = sqliteProvider.detectType(handle.db);
     if (!SUPPORTED_TYPES.has(type)) continue;
     const shortTitle = (info['short.title'] || info.short_title || '').trim();
@@ -202,6 +209,32 @@ function getDictionaryMeta(moduleId) {
     isStrongDict: (info.is_strong || '').toLowerCase() === 'true',
     info,
   };
+}
+
+function resolveMorphology(params = {}) {
+  const {
+    sourceModuleId,
+    strongDictModuleId,
+    morphCode,
+    uiLanguage,
+  } = params;
+
+  const bibleHandle = sourceModuleId ? handles.get(sourceModuleId) || null : null;
+  const dictHandle = strongDictModuleId ? handles.get(strongDictModuleId) || null : null;
+
+  if (bibleHandle && sqliteProvider.detectType(bibleHandle.db) !== 'bible') {
+    throw new Error(`Module is not a Bible: ${sourceModuleId}`);
+  }
+  if (dictHandle && sqliteProvider.detectType(dictHandle.db) !== 'dictionary') {
+    throw new Error(`Module is not a dictionary: ${strongDictModuleId}`);
+  }
+
+  return morphologyResolver.resolveMorphology({
+    bibleHandle,
+    dictHandle,
+    morphCode,
+    uiLanguage,
+  });
 }
 
 function getDictionaryTopicCount(moduleId) {
@@ -366,6 +399,7 @@ module.exports = {
   searchDictionaryTopics,
   getDictionaryCognates,
   getDictionaryMeta,
+  resolveMorphology,
   getDictionaryTopicCount,
   getDictionaryTopicsByPrefix,
   getDictionaryRandomTopics,

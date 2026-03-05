@@ -1353,6 +1353,50 @@
   margin-bottom: 8px;
 }
 
+.dict-morphology-section {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid rgb(var(--ui-link-rgb) / 0.35);
+  background: rgb(var(--ui-link-rgb) / 0.06);
+}
+
+.dict-morphology-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ui-text-subtle);
+  margin-bottom: 6px;
+}
+
+.dict-morphology-row {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-text);
+}
+
+.dict-morphology-key {
+  font-weight: 600;
+  color: var(--ui-text-muted);
+}
+
+.dict-morphology-value {
+  color: var(--ui-text);
+}
+
+.dark .dict-morphology-section {
+  border-left-color: rgb(var(--ui-link-soft-rgb) / 0.45);
+  background: rgb(var(--ui-link-soft-rgb) / 0.12);
+}
+
+.dark .dict-morphology-label {
+  color: var(--ui-text-muted);
+}
+
+.dark .dict-morphology-key {
+  color: var(--ui-text-subtle);
+}
+
 .dict-entry-definition {
   font-size: 13px;
   line-height: 1.6;
@@ -2509,14 +2553,21 @@ el {
 .module-picker {
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   width: 100%;
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   border-radius: 4px;
   padding-left: 8px !important;
+  padding-right: 1.9rem !important;
+}
+
+.module-picker-trigger-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .module-picker.is-open {

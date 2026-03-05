@@ -78,6 +78,9 @@ const ModulePicker = (() => {
     const trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.className = 'module-picker app-select ' + className;
+    const triggerLabel = document.createElement('span');
+    triggerLabel.className = 'module-picker-trigger-label';
+    trigger.appendChild(triggerLabel);
     updateTriggerText();
     wrapper.appendChild(trigger);
 
@@ -87,17 +90,17 @@ const ModulePicker = (() => {
 
     function updateTriggerText() {
       if (allowNone && !currentId) {
-        trigger.textContent = noneLabel;
+        triggerLabel.textContent = noneLabel;
         trigger.title = '';
         return;
       }
       const mod = modules.find((m) => m.id === currentId);
       if (mod) {
         const name = getDisplayName(mod);
-        trigger.textContent = Utils.truncateText(name, truncateLength);
+        triggerLabel.textContent = Utils.truncateText(name, truncateLength);
         trigger.title = name;
       } else {
-        trigger.textContent = currentId || '\u2014';
+        triggerLabel.textContent = currentId || '\u2014';
         trigger.title = '';
       }
     }

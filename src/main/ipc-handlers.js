@@ -43,6 +43,8 @@ function registerIpcHandlers() {
 
   ipcMain.handle('get-dictionary-meta', (_event, moduleId) => modules.getDictionaryMeta(moduleId));
 
+  ipcMain.handle('resolve-morphology', (_event, params) => modules.resolveMorphology(params));
+
   ipcMain.handle('get-dictionary-topic-count', (_event, moduleId) =>
     modules.getDictionaryTopicCount(moduleId)
   );

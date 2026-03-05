@@ -30,6 +30,14 @@ function hasCommentaryTable(db) {
   }
 }
 
+function hasMorphologyIndicationsTable(db) {
+  return tableExists(db, 'morphology_indications');
+}
+
+function hasMorphologyTopicsTable(db) {
+  return tableExists(db, 'morphology_topics');
+}
+
 function detectType(db) {
   if (hasCommentaryTable(db)) return 'commentary';
   if (hasDictionaryTable(db)) return 'dictionary';
@@ -217,6 +225,27 @@ function getDictionaryRandomTopics(db, limit) {
     .prepare('SELECT topic FROM dictionary ORDER BY RANDOM() LIMIT ?')
     .all(safeLimit)
     .map((r) => r.topic);
+}
+
+function getMorphologyTableInfo(db) {
+  if (!hasMorphologyIndicationsTable(db)) {
+    return {
+      hasIndications: false,
+      hasTopics: hasMorphologyTopicsTable(db),
+      hasLanguageColumn: false,
+    };
+  }
+
+  const cols = db.prepare('PRAGMA table_info(morphology_indications)').all();
+  const hasLanguageColumn = cols.some(
+    (row) => String(row.name || row[1] || '').toLowerCase() === 'language'
+  );
+
+  return {
+    hasIndications: true,
+    hasTopics: hasMorphologyTopicsTable(db),
+    hasLanguageColumn,
+  };
 }
 
 function getCrossReferences(db, book, chapter) {
@@ -455,9 +484,12 @@ module.exports = {
   getCommentaryCoverage,
   getCommentaryEntry,
   updateCommentaryText,
+  getMorphologyTableInfo,
   getEditableTableAvailability,
   isValidModule,
   hasDictionaryTable,
   hasCrossRefTable,
   hasCommentaryTable,
+  hasMorphologyIndicationsTable,
+  hasMorphologyTopicsTable,
 };

@@ -308,6 +308,138 @@ describe('commentary reference matcher - broader abbreviations', () => {
   });
 });
 
+describe('commentary reference matcher - noisy Portuguese references', () => {
+  const ptBookNames = {
+    pt: [
+      { short: 'Gn', long: 'Gênesis' },
+      { short: 'Êx', long: 'Êxodo' },
+      { short: 'Lv', long: 'Levítico' },
+      { short: 'Nm', long: 'Números' },
+      { short: 'Dt', long: 'Deuteronômio' },
+      { short: 'Js', long: 'Josué' },
+      { short: 'Jz', long: 'Juízes' },
+      { short: 'Rt', long: 'Rute' },
+      { short: '1Sm', long: '1 Samuel' },
+      { short: '2Sm', long: '2 Samuel' },
+      { short: '1Rs', long: '1 Reis' },
+      { short: '2Rs', long: '2 Reis' },
+      { short: '1Cr', long: '1 Crônicas' },
+      { short: '2Cr', long: '2 Crônicas' },
+      { short: 'Ed', long: 'Esdras' },
+      { short: 'Ne', long: 'Neemias' },
+      { short: 'Et', long: 'Ester' },
+      { short: 'Jó', long: 'Jó' },
+      { short: 'Sl', long: 'Salmos' },
+      { short: 'Pv', long: 'Provérbios' },
+      { short: 'Ec', long: 'Eclesiastes' },
+      { short: 'Ct', long: 'Cantares' },
+      { short: 'Is', long: 'Isaías' },
+      { short: 'Jr', long: 'Jeremias' },
+      { short: 'Lm', long: 'Lamentações' },
+      { short: 'Ez', long: 'Ezequiel' },
+      { short: 'Dn', long: 'Daniel' },
+      { short: 'Os', long: 'Oséias' },
+      { short: 'Jl', long: 'Joel' },
+      { short: 'Am', long: 'Amós' },
+      { short: 'Ob', long: 'Obadias' },
+      { short: 'Jn', long: 'Jonas' },
+      { short: 'Mq', long: 'Miquéias' },
+      { short: 'Na', long: 'Naum' },
+      { short: 'Hc', long: 'Habacuque' },
+      { short: 'Sf', long: 'Sofonias' },
+      { short: 'Ag', long: 'Ageu' },
+      { short: 'Zc', long: 'Zacarias' },
+      { short: 'Ml', long: 'Malaquias' },
+      { short: 'Mt', long: 'Mateus' },
+      { short: 'Mc', long: 'Marcos' },
+      { short: 'Lc', long: 'Lucas' },
+      { short: 'Jo', long: 'João' },
+      { short: 'At', long: 'Atos' },
+      { short: 'Rm', long: 'Romanos' },
+      { short: '1Co', long: '1 Coríntios' },
+      { short: '2Co', long: '2 Coríntios' },
+      { short: 'Gl', long: 'Gálatas' },
+      { short: 'Ef', long: 'Efésios' },
+      { short: 'Fp', long: 'Filipenses' },
+      { short: 'Cl', long: 'Colossenses' },
+      { short: '1Ts', long: '1 Tessalonicenses' },
+      { short: '2Ts', long: '2 Tessalonicenses' },
+      { short: '1Tm', long: '1 Timóteo' },
+      { short: '2Tm', long: '2 Timóteo' },
+      { short: 'Tt', long: 'Tito' },
+      { short: 'Fm', long: 'Filemom' },
+      { short: 'Hb', long: 'Hebreus' },
+      { short: 'Tg', long: 'Tiago' },
+      { short: '1Pe', long: '1 Pedro' },
+      { short: '2Pe', long: '2 Pedro' },
+      { short: '1Jo', long: '1 João' },
+      { short: '2Jo', long: '2 João' },
+      { short: '3Jo', long: '3 João' },
+      { short: 'Jd', long: 'Judas' },
+      { short: 'Ap', long: 'Apocalipse' },
+    ],
+  };
+  const ptBookNumbers = [
+    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240,
+    250, 260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460,
+    470, 480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650,
+    660, 670, 680, 690, 700, 710, 720, 730,
+  ];
+  const ptMatcher = parser.buildReferenceMatcher(ptBookNames, ptBookNumbers);
+
+  it('parses the noisy examples from patristic commentary text', () => {
+    expect(ptMatcher.findMatches('1Timóteo 4:10')).toMatchObject([
+      { bookNum: 610, chapter: 4, verseFrom: 10, verseTo: 10 },
+    ]);
+
+    expect(ptMatcher.findMatches('foi feito. [ João 1:1-3.] Homilias sobre o Gênesis 1.1. [FC 71:47.]')).toMatchObject([
+      { bookNum: 500, chapter: 1, verseFrom: 1, verseTo: 3 },
+      { bookNum: 10, chapter: 1, verseFrom: 1, verseTo: 1 },
+    ]);
+
+    expect(ptMatcher.findMatches('Colossenses 1:16 ]')).toMatchObject([
+      { bookNum: 580, chapter: 1, verseFrom: 16, verseTo: 16 },
+    ]);
+
+    expect(ptMatcher.findMatches('sobre Gênesis 1.8.3; 9.2. [FC 91:81.]')).toMatchObject([
+      { bookNum: 10, chapter: 1, verseFrom: 8, verseTo: 8 },
+      { bookNum: 10, chapter: 9, verseFrom: 2, verseTo: 2 },
+    ]);
+
+    expect(ptMatcher.findMatches('sobre Gênesis 1.14.1; 15.1. [FC')).toMatchObject([
+      { bookNum: 10, chapter: 1, verseFrom: 14, verseTo: 14 },
+      { bookNum: 10, chapter: 15, verseFrom: 1, verseTo: 1 },
+    ]);
+
+    expect(ptMatcher.findMatches('sobre João 18. [')).toMatchObject([
+      { bookNum: 500, chapter: 18, verseFrom: null, verseTo: null },
+    ]);
+
+    expect(ptMatcher.findMatches('João 51.6.')).toMatchObject([
+      { bookNum: 500, chapter: 51, verseFrom: 6, verseTo: 6 },
+    ]);
+  });
+
+  it('accepts unaccented forms for accented Portuguese book names', () => {
+    const refs = ptMatcher.findMatches('Genesis 1:1 Joao 3:16 1Timoteo 4:10');
+    expect(refs).toHaveLength(3);
+    expect(refs[0]).toMatchObject({ bookNum: 10, chapter: 1, verseFrom: 1, verseTo: 1 });
+    expect(refs[1]).toMatchObject({ bookNum: 500, chapter: 3, verseFrom: 16, verseTo: 16 });
+    expect(refs[2]).toMatchObject({ bookNum: 610, chapter: 4, verseFrom: 10, verseTo: 10 });
+  });
+
+  it('supports long-name references across the full Portuguese canon', () => {
+    const refs = ptMatcher.findMatches(
+      'Gênesis 1:1 Êxodo 2:2 Levítico 3:3 Números 4:4 Deuteronômio 5:5 Josué 6:6 Juízes 7:7 Rute 1:1 1Samuel 2:2 2Samuel 3:3 1Reis 4:4 2Reis 5:5 1Crônicas 6:6 2Crônicas 7:7 Esdras 8:8 Neemias 9:9 Ester 1:1 Jó 2:2 Salmos 3:3 Provérbios 4:4 Eclesiastes 5:5 Cantares 6:6 Isaías 7:7 Jeremias 8:8 Lamentações 9:9 Ezequiel 10:10 Daniel 11:11 Oséias 12:12 Joel 1:1 Amós 2:2 Obadias 1:1 Jonas 2:2 Miquéias 3:3 Naum 1:1 Habacuque 2:2 Sofonias 3:3 Ageu 1:1 Zacarias 2:2 Malaquias 3:3 Mateus 4:4 Marcos 5:5 Lucas 6:6 João 7:7 Atos 8:8 Romanos 9:9 1Coríntios 10:10 2Coríntios 11:11 Gálatas 1:1 Efésios 2:2 Filipenses 3:3 Colossenses 4:4 1Tessalonicenses 5:5 2Tessalonicenses 1:1 1Timóteo 2:2 2Timóteo 3:3 Tito 1:1 Filemom 1 Hebreus 2:2 Tiago 3:3 1Pedro 4:4 2Pedro 5:5 1João 1:1 2João 1:1 3João 1:1 Judas 1 Apocalipse 2:2'
+    );
+    expect(refs).toHaveLength(66);
+    expect(refs[0]).toMatchObject({ bookNum: 10, chapter: 1, verseFrom: 1, verseTo: 1 });
+    expect(refs[42]).toMatchObject({ bookNum: 500, chapter: 7, verseFrom: 7, verseTo: 7 });
+    expect(refs[53]).toMatchObject({ bookNum: 610, chapter: 2, verseFrom: 2, verseTo: 2 });
+    expect(refs[65]).toMatchObject({ bookNum: 730, chapter: 2, verseFrom: 2, verseTo: 2 });
+  });
+});
+
 describe('leading reference parser', () => {
   it('parses chapter/verse with dot separator after abbreviation', () => {
     expect(parser.parseLeadingReferenceFromPlainText('Mt.2:11 texto')).toEqual({

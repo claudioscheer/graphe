@@ -610,7 +610,10 @@ const DictPanel = (() => {
       prev &&
       prev.type === entry.type &&
       prev.topic === entry.topic &&
-      prev.moduleId === entry.moduleId
+      prev.moduleId === entry.moduleId &&
+      (prev.context?.morphCode || null) === (entry.context?.morphCode || null) &&
+      (prev.context?.lemma || null) === (entry.context?.lemma || null) &&
+      (prev.context?.sourceModuleId || null) === (entry.context?.sourceModuleId || null)
     )
       return;
     state.entries.splice(state.idx + 1);
@@ -649,7 +652,7 @@ const DictPanel = (() => {
     const entry = state.entries[state.idx];
     if (!entry) return;
     if (entry.type === 'strong') {
-      lookup(entry.topic, true);
+      lookup(entry.topic, true, entry.context || null);
     } else {
       lookupWord(entry.topic, entry.moduleId, true);
     }
@@ -661,7 +664,11 @@ const DictPanel = (() => {
     const state = getHistoryState(key);
     if (state.idx >= 0 && state.entries.length > 0) return;
     if (currentLookup.type === 'strong') {
-      pushHistory({ type: 'strong', topic: currentLookup.topic });
+      pushHistory({
+        type: 'strong',
+        topic: currentLookup.topic,
+        context: currentLookup.context || null,
+      });
       return;
     }
     pushHistory({
@@ -673,16 +680,49 @@ const DictPanel = (() => {
 
   // --- Strong's lookup (multi-dictionary) ---
 
-  async function lookup(strongsNumber, skipHistory) {
+  function isPseudoStrongsNumber(strongsNumber) {
+    const match = String(strongsNumber || '')
+      .trim()
+      .match(/^([HG])(\d+)(\w*)$/i);
+    if (!match) return false;
+    return Number.parseInt(match[2], 10) >= 9000;
+  }
+
+  function normalizeLookupContext(lookupContext) {
+    if (!lookupContext || typeof lookupContext !== 'object') return null;
+    const sourceModuleId =
+      typeof lookupContext.sourceModuleId === 'string' && lookupContext.sourceModuleId.trim()
+        ? lookupContext.sourceModuleId.trim()
+        : null;
+    const morphCode =
+      typeof lookupContext.morphCode === 'string' && lookupContext.morphCode.trim()
+        ? lookupContext.morphCode.trim()
+        : null;
+    const lemma =
+      typeof lookupContext.lemma === 'string' && lookupContext.lemma.trim()
+        ? lookupContext.lemma.trim()
+        : null;
+    const paneId =
+      typeof lookupContext.paneId === 'string' && lookupContext.paneId.trim()
+        ? lookupContext.paneId.trim()
+        : null;
+    if (!sourceModuleId && !morphCode && !lemma && !paneId) return null;
+    return { sourceModuleId, morphCode, lemma, paneId };
+  }
+
+  async function lookup(strongsNumber, skipHistory, lookupContext) {
     if (!panel) return;
+    const normalizedContext = normalizeLookupContext(lookupContext);
 
     searchInput.value = strongsNumber;
     if (dictClearBtn) dictClearBtn.style.display = strongsNumber ? '' : 'none';
     hideAutocomplete();
     contentEl.innerHTML = '';
 
-    if (!skipHistory) pushHistory({ type: 'strong', topic: strongsNumber });
-    currentLookup = { type: 'strong', topic: strongsNumber };
+    if (!skipHistory) {
+      pushHistory({ type: 'strong', topic: strongsNumber, context: normalizedContext });
+    }
+    currentLookup = { type: 'strong', topic: strongsNumber, context: normalizedContext };
     updateNavButtons();
 
     try {
@@ -716,8 +756,11 @@ const DictPanel = (() => {
 
       const results = await window.api.lookupAllStrongDicts(strongsNumber, [strongsDict]);
       if (results.length === 0) {
+        const message = isPseudoStrongsNumber(strongsNumber)
+          ? I18n.t('dictPseudoStrongsNoEntry')
+          : I18n.t('dictNoEntry');
         contentEl.innerHTML =
-          '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoEntry')) + '</div>';
+          '<div class="dict-placeholder">' + Utils.escapeHtml(message) + '</div>';
         return;
       }
 
@@ -728,7 +771,7 @@ const DictPanel = (() => {
         section.appendChild(createModuleHeader(moduleId));
 
         // Render entry based on module type
-        renderModuleEntry(section, moduleId, entry);
+        renderModuleEntry(section, moduleId, entry, normalizedContext);
         contentEl.appendChild(section);
       }
     } catch (err) {
@@ -790,7 +833,7 @@ const DictPanel = (() => {
 
   // --- Per-module rendering dispatch ---
 
-  function renderModuleEntry(container, moduleId, entry) {
+  function renderModuleEntry(container, moduleId, entry, lookupContext) {
     const mod = dictModules.find((m) => m.id === moduleId);
     const isStrongDict = mod ? mod.isStrongDict : false;
 
@@ -801,13 +844,13 @@ const DictPanel = (() => {
     container.appendChild(topicEl);
 
     if (isStrongDict) {
-      renderStrongEntry(container, moduleId, entry);
+      renderStrongEntry(container, moduleId, entry, lookupContext);
     } else {
       renderWordEntry(container, moduleId, entry);
     }
   }
 
-  function renderStrongEntry(container, moduleId, entry) {
+  function renderStrongEntry(container, moduleId, entry, lookupContext) {
     // Lexeme
     if (entry.lexeme) {
       const lexEl = document.createElement('div');
@@ -835,6 +878,12 @@ const DictPanel = (() => {
       container.appendChild(shortEl);
     }
 
+    if (lookupContext?.morphCode) {
+      const morphologyAnchor = document.createElement('div');
+      container.appendChild(morphologyAnchor);
+      loadMorphologyDetails(morphologyAnchor, moduleId, lookupContext);
+    }
+
     // Full definition
     if (entry.definition) {
       const defEl = document.createElement('div');
@@ -860,6 +909,101 @@ const DictPanel = (() => {
 
     // Cognates (async, appended after load)
     loadCognates(container, moduleId, entry.topic);
+  }
+
+  async function renderMorphologyDetails(moduleId, lookupContext) {
+    const morphCode = lookupContext?.morphCode;
+    if (!morphCode) return null;
+
+    let resolved = null;
+    try {
+      resolved = await window.api.resolveMorphology({
+        sourceModuleId: lookupContext.sourceModuleId || null,
+        strongDictModuleId: moduleId,
+        morphCode,
+        uiLanguage: I18n.getCurrentLang(),
+      });
+    } catch (err) {
+      console.warn('Failed to resolve morphology:', err);
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dict-morphology-section';
+
+    const label = document.createElement('div');
+    label.className = 'dict-morphology-label';
+    label.textContent = I18n.t('dictMorphology');
+    wrap.appendChild(label);
+
+    const codeRow = document.createElement('div');
+    codeRow.className = 'dict-morphology-row';
+    codeRow.innerHTML =
+      '<span class="dict-morphology-key">' +
+      Utils.escapeHtml(I18n.t('dictMorphCode')) +
+      ':</span> ' +
+      '<span class="dict-morphology-value">' +
+      Utils.escapeHtml(morphCode) +
+      '</span>';
+    wrap.appendChild(codeRow);
+
+    if (lookupContext.lemma) {
+      const lemmaRow = document.createElement('div');
+      lemmaRow.className = 'dict-morphology-row';
+      lemmaRow.innerHTML =
+        '<span class="dict-morphology-key">' +
+        Utils.escapeHtml(I18n.t('dictMorphLemma')) +
+        ':</span> ' +
+        '<span class="dict-morphology-value">' +
+        Utils.escapeHtml(lookupContext.lemma) +
+        '</span>';
+      wrap.appendChild(lemmaRow);
+    }
+
+    const meaning = resolved?.displayText || morphCode;
+    const meaningRow = document.createElement('div');
+    meaningRow.className = 'dict-morphology-row';
+    meaningRow.innerHTML =
+      '<span class="dict-morphology-key">' +
+      Utils.escapeHtml(I18n.t('dictMorphMeaning')) +
+      ':</span> ' +
+      '<span class="dict-morphology-value">' +
+      Utils.escapeHtml(meaning) +
+      '</span>';
+    wrap.appendChild(meaningRow);
+
+    if (resolved?.topicRef) {
+      const topicRow = document.createElement('div');
+      topicRow.className = 'dict-morphology-row';
+      const key = document.createElement('span');
+      key.className = 'dict-morphology-key';
+      key.textContent = I18n.t('dictionary') + ':';
+      const link = document.createElement('a');
+      link.className = 'dict-crossref';
+      link.textContent = resolved.topicRef;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        lookupWord(resolved.topicRef, moduleId);
+      });
+      topicRow.append(key, document.createTextNode(' '), link);
+      wrap.appendChild(topicRow);
+    }
+
+    return wrap;
+  }
+
+  async function loadMorphologyDetails(container, moduleId, lookupContext) {
+    if (!lookupContext?.morphCode) return;
+    try {
+      const section = await renderMorphologyDetails(moduleId, lookupContext);
+      if (section) {
+        container.replaceWith(section);
+      } else if (container.parentNode) {
+        container.remove();
+      }
+    } catch (err) {
+      if (container.parentNode) container.remove();
+      console.warn('Failed to render morphology details:', err);
+    }
   }
 
   function renderWordEntry(container, moduleId, entry) {
