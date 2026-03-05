@@ -253,6 +253,8 @@ const Settings = (() => {
       moduleType: 'dictionary',
       truncateLength: 50,
       allowNone: true,
+      noneLabel: I18n.t('coverageNone'),
+      showFavorites: false,
       className: 'w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
       onChange: (moduleId) => {
         AppStateStore.setSettings({ strongsDicts: moduleId || null });

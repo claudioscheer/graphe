@@ -5,7 +5,7 @@ const ModuleEditor = (() => {
   let activeTab = 'info';
 
   let overlay;
-  let moduleSelect;
+  let modulePicker;
   let modulePathEl;
   let moduleTypeEl;
   let tabBar;
@@ -54,23 +54,18 @@ const ModuleEditor = (() => {
     const toolbar = document.createElement('div');
     toolbar.className = 'module-editor-toolbar';
 
-    moduleSelect = document.createElement('select');
-    moduleSelect.className =
-      'app-select pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50 cursor-pointer';
-    for (const mod of modules) {
-      const opt = document.createElement('option');
-      const displayName = Utils.getModuleDisplayName(mod);
-      opt.value = mod.id;
-      opt.textContent = Utils.truncateText(displayName, 50);
-      opt.title = displayName;
-      moduleSelect.appendChild(opt);
-    }
-    moduleSelect.addEventListener('change', () => open(moduleSelect.value, activeTab));
+    modulePicker = ModulePicker.create({
+      modules,
+      selectedId: modules[0]?.id,
+      showFavorites: false,
+      truncateLength: 50,
+      onChange: (moduleId) => open(moduleId, activeTab),
+    });
 
     modulePathEl = document.createElement('code');
     modulePathEl.className = 'module-editor-path';
 
-    toolbar.append(moduleSelect, modulePathEl);
+    toolbar.append(modulePicker.el, modulePathEl);
 
     tabBar = document.createElement('div');
     tabBar.className = 'module-editor-tabs';
@@ -107,7 +102,7 @@ const ModuleEditor = (() => {
   async function open(moduleId, tab) {
     if (!overlay || !moduleId) return;
     overlay.classList.remove('hidden');
-    moduleSelect.value = moduleId;
+    modulePicker.setSelected(moduleId);
     activeTab = tab || activeTab || 'info';
     showStatus('Loading module data...');
 

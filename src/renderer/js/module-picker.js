@@ -59,6 +59,8 @@ const ModulePicker = (() => {
       className = '',
       truncateLength = 80,
       allowNone = false,
+      noneLabel = '\u2014',
+      showFavorites = true,
     } = options;
 
     let currentId = selectedId;
@@ -85,7 +87,7 @@ const ModulePicker = (() => {
 
     function updateTriggerText() {
       if (allowNone && !currentId) {
-        trigger.textContent = '\u2014';
+        trigger.textContent = noneLabel;
         trigger.title = '';
         return;
       }
@@ -104,17 +106,37 @@ const ModulePicker = (() => {
       const dd = document.createElement('div');
       dd.className = 'module-picker-dropdown';
 
+      const searchWrapper = document.createElement('div');
+      searchWrapper.className = 'module-picker-search-wrapper';
+
       const search = document.createElement('input');
       search.type = 'text';
       search.className = 'module-picker-search';
       search.setAttribute('data-i18n-placeholder', 'searchPlaceholder');
       search.placeholder = typeof I18n !== 'undefined' ? I18n.t('searchPlaceholder') : 'Search...';
+
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'module-picker-search-clear';
+      clearBtn.textContent = '\u00d7';
+      clearBtn.style.display = 'none';
+      clearBtn.addEventListener('click', () => {
+        search.value = '';
+        searchValue = '';
+        clearBtn.style.display = 'none';
+        renderList();
+        search.focus();
+      });
+
       search.addEventListener('input', () => {
         searchValue = search.value;
+        clearBtn.style.display = searchValue ? '' : 'none';
         renderList();
       });
       search.addEventListener('keydown', onSearchKeydown);
-      dd.appendChild(search);
+
+      searchWrapper.appendChild(search);
+      searchWrapper.appendChild(clearBtn);
+      dd.appendChild(searchWrapper);
 
       const list = document.createElement('div');
       list.className = 'module-picker-list';
@@ -124,13 +146,13 @@ const ModulePicker = (() => {
     }
 
     function getItems() {
-      const favIds = getFavorites(moduleType);
+      const favIds = showFavorites ? getFavorites(moduleType) : [];
       const favSet = new Set(favIds);
       const query = searchValue.toLowerCase().trim();
 
       let allItems = [];
       if (allowNone) {
-        allItems.push({ id: '', name: '\u2014', isFav: false, isNone: true });
+        allItems.push({ id: '', name: noneLabel, isFav: false, isNone: true });
       }
       for (const m of modules) {
         const name = getDisplayName(m);
@@ -172,7 +194,7 @@ const ModulePicker = (() => {
         }
         row.dataset.idx = i;
 
-        if (!item.isNone) {
+        if (showFavorites && !item.isNone) {
           const star = document.createElement('button');
           star.type = 'button';
           star.className = 'module-picker-star' + (item.isFav ? ' is-fav' : '');
