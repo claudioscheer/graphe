@@ -3,6 +3,7 @@
  */
 import { AppStateStore } from './app-state-store.js';
 import { I18n } from './i18n.js';
+import { Icons } from './icons.js';
 import { Utils } from './utils.js';
 
 export const ModulePicker = (() => {
@@ -81,10 +82,13 @@ export const ModulePicker = (() => {
     // Trigger button
     const trigger = document.createElement('button');
     trigger.type = 'button';
-    trigger.className = 'module-picker app-select ' + className;
+    trigger.className = 'module-picker app-select app-select-with-icon ' + className;
     const triggerLabel = document.createElement('span');
     triggerLabel.className = 'module-picker-trigger-label';
     trigger.appendChild(triggerLabel);
+    const chevron = Icons.create('chevron-down', 'w-3 h-3 app-select-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
+    trigger.appendChild(chevron);
     updateTriggerText();
     wrapper.appendChild(trigger);
 

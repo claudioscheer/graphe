@@ -19,6 +19,14 @@ const UPDATE_CHECK_INITIAL_DELAY_MS = 3000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const UPDATE_CHECK_RETRY_MS = 5 * 60 * 1000;
 const UPDATE_REQUEST_TIMEOUT_MS = 10000;
+const PACKAGED_DEBUG_FLAG = '--graphe-debug';
+const isPackagedDebugEnabled =
+  process.env.GRAPHE_DEBUG_PACKAGED === '1' || process.argv.includes(PACKAGED_DEBUG_FLAG);
+
+function logPackagedDebug(...args) {
+  if (!isPackagedDebugEnabled) return;
+  console.error('[packaged-debug]', ...args);
+}
 
 function setupDevHotReload() {
   if (app.isPackaged) return;
@@ -70,6 +78,20 @@ function createWindow() {
     show: false,
   });
 
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('Main window failed to load:', {
+      errorCode,
+      errorDescription,
+      validatedURL,
+    });
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Main window render process gone:', details);
+  });
+  mainWindow.on('unresponsive', () => {
+    console.error('Main window became unresponsive.');
+  });
+
   mainWindow.loadFile(rendererHtml);
 
   // Block all navigation away from the app (defense-in-depth)
@@ -83,6 +105,9 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
     mainWindow.show();
+    if (isPackagedDebugEnabled) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
     setTimeout(() => triggerUpdateCheck(), UPDATE_CHECK_INITIAL_DELAY_MS);
   });
 }
@@ -313,7 +338,7 @@ function buildMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
-        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' }]),
+        ...(!app.isPackaged || isPackagedDebugEnabled ? [{ role: 'toggleDevTools' }] : []),
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
@@ -577,6 +602,11 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 app.whenReady().then(() => {
+  if (isPackagedDebugEnabled) {
+    logPackagedDebug('argv:', process.argv);
+    logPackagedDebug('app.isPackaged:', app.isPackaged);
+  }
+
   // In development, Electron launched by Forge does not need a dock icon override.
   // Skipping this avoids noisy warnings and keeps startup on the safest code path.
   if (

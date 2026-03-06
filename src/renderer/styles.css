@@ -825,15 +825,39 @@
   padding-bottom: 0;
   line-height: 1.2;
   padding-right: 1.4rem;
-  background-image: url('icons/chevron-down.svg');
-  background-repeat: no-repeat;
-  background-position: right 0.4rem center;
-  background-size: 8px 5px;
 }
 
 .dark .app-select {
-  background-image: url('icons/chevron-down-dark.svg');
   color-scheme: dark;
+}
+
+.app-select-with-icon {
+  padding-right: 1.9rem;
+}
+
+.app-select-native-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.app-select-native-wrap > .app-select {
+  width: 100%;
+  padding-right: 1.9rem;
+}
+
+.app-select-chevron {
+  color: var(--ui-text-subtle);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.app-select-native-wrap > .app-select-chevron {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .dark .app-select option,
@@ -2556,6 +2580,7 @@ el {
 .module-picker {
   text-align: left;
   cursor: pointer;
+  position: relative;
   width: 100%;
   display: inline-flex;
   align-items: center;
@@ -2571,6 +2596,13 @@ el {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.module-picker > .app-select-chevron {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .module-picker.is-open {

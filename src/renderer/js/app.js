@@ -13,6 +13,19 @@ import { PaneManager } from './pane-manager.js';
 import { SearchPanel } from './search-panel.js';
 import { Utils } from './utils.js';
 
+function decorateNativeSelect(selectEl) {
+  if (!selectEl || selectEl.parentElement?.classList.contains('app-select-native-wrap')) return;
+
+  const wrapper = document.createElement('span');
+  wrapper.className = 'app-select-native-wrap';
+  selectEl.parentNode.insertBefore(wrapper, selectEl);
+  wrapper.appendChild(selectEl);
+
+  const chevron = Icons.create('chevron-down', 'w-3 h-3 app-select-chevron');
+  chevron.setAttribute('aria-hidden', 'true');
+  wrapper.appendChild(chevron);
+}
+
 function renderNoModulesMessage() {
   const paneRoot = document.getElementById('pane-root');
   if (!paneRoot) return;
@@ -90,6 +103,9 @@ const Settings = (() => {
   }
 
   function init(initialSettings) {
+    decorateNativeSelect(langSelect);
+    decorateNativeSelect(fontSizeSelect);
+
     const initialTheme = initialSettings.theme || localStorage.getItem('graphe-theme');
     const initialLang = initialSettings.language || localStorage.getItem('graphe-lang') || 'pt';
 

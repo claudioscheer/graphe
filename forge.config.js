@@ -24,6 +24,7 @@ function getGitIgnoredDirectoryPatterns() {
     .map((line) => line.trim())
     .filter((line) => line.endsWith('/'))
     .filter((line) => line !== 'node_modules/')
+    .filter((line) => line !== 'dist/')
     .map((line) => `^/${line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 }
 
