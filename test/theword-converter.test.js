@@ -28,7 +28,9 @@ describe('convertTagsToMyBible', () => {
   it('converts multiple Strong numbers per word', () => {
     const input = '<wt>word<WH1234><WTmorph1 l="lem1"><WH5678><WTmorph2 l="lem2">';
     const result = convertTagsToMyBible(input);
-    expect(result).toBe('word<S>1234</S><m>morph1</m><l>lem1</l><S>5678</S><m>morph2</m><l>lem2</l>');
+    expect(result).toBe(
+      'word<S>1234</S><m>morph1</m><l>lem1</l><S>5678</S><m>morph2</m><l>lem2</l>'
+    );
   });
 
   it('handles Strong number without morph', () => {
@@ -262,7 +264,9 @@ describe('convertBible integration', () => {
 
       // Check verses table
       const verses = db
-        .prepare('SELECT verse, text FROM verses WHERE book_number = 10 AND chapter = 1 ORDER BY verse')
+        .prepare(
+          'SELECT verse, text FROM verses WHERE book_number = 10 AND chapter = 1 ORDER BY verse'
+        )
         .all();
       expect(verses.length).toBeGreaterThan(0);
       expect(verses[0].verse).toBe(1);
@@ -313,13 +317,17 @@ describe('convertBible integration', () => {
         expect(books.length).toBeGreaterThan(0);
         expect(books.some((b) => b.book_number === 10)).toBe(true);
 
-        const otRows = db.prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number < 470').get().c;
+        const otRows = db
+          .prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number < 470')
+          .get().c;
         expect(otRows).toBe(OT_VERSES);
 
         const totalRows = db.prepare('SELECT COUNT(*) AS c FROM verses').get().c;
         expect(totalRows).toBe(TOTAL_VERSES);
 
-        const ntRows = db.prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number >= 470').get().c;
+        const ntRows = db
+          .prepare('SELECT COUNT(*) AS c FROM verses WHERE book_number >= 470')
+          .get().c;
         expect(ntRows).toBe(TOTAL_VERSES - OT_VERSES);
       } finally {
         db.close();
@@ -336,7 +344,9 @@ describe('convertBible integration', () => {
     fs.writeFileSync(inputPath, `${verses.join('\n')}\ndescription=Empty\n`);
 
     try {
-      await expect(converter.convert(inputPath, sparseTmp)).rejects.toThrow(/no non-empty verse text/i);
+      await expect(converter.convert(inputPath, sparseTmp)).rejects.toThrow(
+        /no non-empty verse text/i
+      );
     } finally {
       fs.rmSync(sparseTmp, { recursive: true, force: true });
     }
@@ -456,7 +466,9 @@ describe('convertCommentary integration', () => {
       expect(info.description).toBeTruthy();
 
       const entries = db
-        .prepare('SELECT book_number, chapter_number_from, verse_number_from, text FROM commentaries LIMIT 5')
+        .prepare(
+          'SELECT book_number, chapter_number_from, verse_number_from, text FROM commentaries LIMIT 5'
+        )
         .all();
       expect(entries.length).toBeGreaterThan(0);
       expect(entries[0]).toHaveProperty('book_number');

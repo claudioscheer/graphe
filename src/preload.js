@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-commentary-entry', moduleId, bookNumber, chapter, verseFrom),
   saveCommentaryText: (moduleId, bookNumber, chapter, verseFrom, text) =>
     ipcRenderer.invoke('save-commentary-text', moduleId, bookNumber, chapter, verseFrom, text),
+  openXrayWindow: (opts) => ipcRenderer.send('open-xray-window', opts),
+  getVerseDossier: (opts) => ipcRenderer.invoke('get-verse-dossier', opts),
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   saveAppState: (state) => ipcRenderer.invoke('save-app-state', state),
   onOpenSettings: (callback) => setSingleListener('open-settings', callback),

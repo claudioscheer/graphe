@@ -298,7 +298,9 @@ function main() {
         ? { DEBUG: 'electron-forge:*,electron-installer-debian*' }
         : undefined;
 
-    console.log(`Building ${targetConfig.workflowName} artifacts with npm run ${targetConfig.npmScript}.`);
+    console.log(
+      `Building ${targetConfig.workflowName} artifacts with npm run ${targetConfig.npmScript}.`
+    );
     run('npm', ['run', targetConfig.npmScript], { env });
   }
 

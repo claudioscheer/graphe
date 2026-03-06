@@ -281,7 +281,11 @@ export const ModulePicker = (() => {
         updateHighlight();
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (highlightIdx >= 0 && filteredItems[highlightIdx] && !filteredItems[highlightIdx].divider) {
+        if (
+          highlightIdx >= 0 &&
+          filteredItems[highlightIdx] &&
+          !filteredItems[highlightIdx].divider
+        ) {
           const item = filteredItems[highlightIdx];
           selectItem(item.isNone ? '' : item.id);
         }

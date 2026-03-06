@@ -298,9 +298,13 @@ describe('commentary reference matcher - broader abbreviations', () => {
   });
 
   it('requires explicit separator for continuation-only chunks when requested', () => {
-    const refs = broadMatcher.findContinuations('01:05 A missão de Paulo', { bookNum: 470, chapter: 28 }, {
-      requireSeparator: true,
-    });
+    const refs = broadMatcher.findContinuations(
+      '01:05 A missão de Paulo',
+      { bookNum: 470, chapter: 28 },
+      {
+        requireSeparator: true,
+      }
+    );
     expect(refs).toHaveLength(0);
   });
 });
@@ -377,10 +381,10 @@ describe('commentary reference matcher - noisy Portuguese references', () => {
     ],
   };
   const ptBookNumbers = [
-    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240,
-    250, 260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460,
-    470, 480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650,
-    660, 670, 680, 690, 700, 710, 720, 730,
+    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240, 250,
+    260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460, 470,
+    480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650, 660,
+    670, 680, 690, 700, 710, 720, 730,
   ];
   const ptMatcher = parser.buildReferenceMatcher(ptBookNames, ptBookNumbers);
 
@@ -389,7 +393,9 @@ describe('commentary reference matcher - noisy Portuguese references', () => {
       { bookNum: 610, chapter: 4, verseFrom: 10, verseTo: 10 },
     ]);
 
-    expect(ptMatcher.findMatches('foi feito. [ João 1:1-3.] Homilias sobre o Gênesis 1.1. [FC 71:47.]')).toMatchObject([
+    expect(
+      ptMatcher.findMatches('foi feito. [ João 1:1-3.] Homilias sobre o Gênesis 1.1. [FC 71:47.]')
+    ).toMatchObject([
       { bookNum: 500, chapter: 1, verseFrom: 1, verseTo: 3 },
       { bookNum: 10, chapter: 1, verseFrom: 1, verseTo: 1 },
     ]);

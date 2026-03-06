@@ -20,7 +20,8 @@ function renderNoModulesMessage() {
   paneRoot.innerHTML = '';
   const wrapper = document.createElement('div');
   wrapper.id = 'no-modules-message';
-  wrapper.className = 'flex flex-col items-center justify-center h-full gap-4 text-brand-600 dark:text-night-300 text-lg';
+  wrapper.className =
+    'flex flex-col items-center justify-center h-full gap-4 text-brand-600 dark:text-night-300 text-lg';
 
   const message = document.createElement('div');
   message.setAttribute('data-i18n', 'noModules');
@@ -163,7 +164,7 @@ const Settings = (() => {
     list.innerHTML = '';
 
     const current = AppStateStore.getSettings().strongsDicts;
-    const currentId = Array.isArray(current) ? current[0] : (current || null);
+    const currentId = Array.isArray(current) ? current[0] : current || null;
 
     const strongsPicker = ModulePicker.create({
       modules: allDictModules,
@@ -173,7 +174,8 @@ const Settings = (() => {
       allowNone: true,
       noneLabel: I18n.t('coverageNone'),
       showFavorites: false,
-      className: 'w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
+      className:
+        'w-full pl-2 pr-8 py-1 rounded-sm border border-brand-400 dark:border-night-500 bg-brand-50 dark:bg-night-700 text-sm text-brand-900 dark:text-night-50',
       onChange: (moduleId) => {
         AppStateStore.setSettings({ strongsDicts: moduleId || null });
       },
@@ -597,7 +599,30 @@ document.addEventListener('contextmenu', (e) => {
   }
 
   const hasSelection = paneContent.querySelectorAll('.verse-selected').length > 0;
-  window.api.showVerseContextMenu({ hasSelection });
+
+  // Build X-Ray params from selected verse or first selected verse
+  let xrayParams = null;
+  const paneEl = paneContent.closest('[data-pane-id]');
+  const paneId = paneEl ? paneEl.getAttribute('data-pane-id') : null;
+  const pane = paneId ? PaneManager.getPane(paneId) : null;
+  if (pane && pane.paneType === 'bible' && pane.moduleId) {
+    const selectedLine = paneContent.querySelector('.verse-line.verse-selected');
+    const verseLine = selectedLine || e.target.closest('.verse-line');
+    if (verseLine && verseLine.dataset.verse) {
+      xrayParams = {
+        moduleId: pane.moduleId,
+        bookNumber: pane.bookNumber,
+        chapter: pane.chapter,
+        verse: Number(verseLine.dataset.verse),
+      };
+    }
+  }
+
+  window.api.showVerseContextMenu({
+    hasSelection,
+    xrayParams,
+    labels: { xray: I18n.t('verseXray') },
+  });
 });
 
 window.api.onContextMenuCopy(() => copySelectedVerses());
@@ -954,9 +979,7 @@ const ConvertModal = (() => {
           (errorCount > 0
             ? 'text-yellow-700 dark:text-yellow-300'
             : 'text-green-700 dark:text-green-300'),
-        I18n.t('convertDone')
-          .replace('{success}', successCount)
-          .replace('{errors}', errorCount)
+        I18n.t('convertDone').replace('{success}', successCount).replace('{errors}', errorCount)
       );
       statusArea.appendChild(summary);
 

@@ -1,7 +1,10 @@
 /**
  * commentary-view.js — Commentary rendering for commentary panes
  */
-import { buildReferenceMatcher, parseLeadingReferenceFromPlainText } from './commentary-ref-parser.mjs';
+import {
+  buildReferenceMatcher,
+  parseLeadingReferenceFromPlainText,
+} from './commentary-ref-parser.mjs';
 import { I18n } from './i18n.js';
 import { Sanitize } from './sanitize.js';
 
@@ -197,7 +200,9 @@ export const CommentaryView = (() => {
    */
   function scrollToVerse(container, verseNum) {
     const bodyAnchors = Array.from(
-      container.querySelectorAll('.commentary-body[data-body-verse-from], .commentary-body [data-body-verse-from]')
+      container.querySelectorAll(
+        '.commentary-body[data-body-verse-from], .commentary-body [data-body-verse-from]'
+      )
     );
     let bodyAnchor = bodyAnchors.find(
       (el) =>
@@ -206,7 +211,9 @@ export const CommentaryView = (() => {
           verseNum
     );
     if (!bodyAnchor) {
-      bodyAnchor = bodyAnchors.find((el) => matchesVerse(el, verseNum, 'bodyVerseFrom', 'bodyVerseTo'));
+      bodyAnchor = bodyAnchors.find((el) =>
+        matchesVerse(el, verseNum, 'bodyVerseFrom', 'bodyVerseTo')
+      );
     }
     if (bodyAnchor) {
       requestAnimationFrame(() => {
@@ -218,8 +225,10 @@ export const CommentaryView = (() => {
     const entries = Array.from(container.querySelectorAll('.commentary-entry'));
     let entry = entries.find((el) => parseVerseNumber(el.dataset.verseFrom) === verseNum);
     if (!entry) entry = entries.find((el) => matchesVerse(el, verseNum, 'verseFrom', 'verseTo'));
-    if (!entry) entry = entries.find((el) => parseVerseNumber(el.dataset.textVerseFrom) === verseNum);
-    if (!entry) entry = entries.find((el) => matchesVerse(el, verseNum, 'textVerseFrom', 'textVerseTo'));
+    if (!entry)
+      entry = entries.find((el) => parseVerseNumber(el.dataset.textVerseFrom) === verseNum);
+    if (!entry)
+      entry = entries.find((el) => matchesVerse(el, verseNum, 'textVerseFrom', 'textVerseTo'));
     if (!entry) return;
     requestAnimationFrame(() => {
       entry.scrollIntoView({ behavior: 'auto', block: 'start' });

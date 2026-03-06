@@ -21,7 +21,7 @@ module.exports = [
     files: ['src/renderer/js/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
-      sourceType: 'script',
+      sourceType: 'module',
     },
     rules: {
       'no-empty': ['warn', { allowEmptyCatch: true }],

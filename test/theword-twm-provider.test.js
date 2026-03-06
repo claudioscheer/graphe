@@ -186,19 +186,22 @@ describe('TWM type=1 (dictionary)', () => {
     expect(entry).toBeNull();
   });
 
-  it.skipIf(!fs.existsSync(strongPtFile))('decodes compressed content_search blobs for Strong topics', () => {
-    const strongHandle = provider.load(strongPtFile);
-    try {
-      expect(strongHandle).toBeTruthy();
-      const entry = provider.getDictionaryEntry(strongHandle, 'G3588');
-      expect(entry).toBeTruthy();
-      expect(entry.topic).toBe('G3588');
-      expect(entry.definition).toContain('artigo definido');
-      expect(entry.definition).toContain('<p>');
-    } finally {
-      if (strongHandle) provider.close(strongHandle);
+  it.skipIf(!fs.existsSync(strongPtFile))(
+    'decodes compressed content_search blobs for Strong topics',
+    () => {
+      const strongHandle = provider.load(strongPtFile);
+      try {
+        expect(strongHandle).toBeTruthy();
+        const entry = provider.getDictionaryEntry(strongHandle, 'G3588');
+        expect(entry).toBeTruthy();
+        expect(entry.topic).toBe('G3588');
+        expect(entry.definition).toContain('artigo definido');
+        expect(entry.definition).toContain('<p>');
+      } finally {
+        if (strongHandle) provider.close(strongHandle);
+      }
     }
-  });
+  );
 });
 
 describe('isValidFile', () => {

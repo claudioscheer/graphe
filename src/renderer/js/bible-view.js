@@ -125,7 +125,10 @@ export const BibleView = (() => {
         .replace(/<(?:E|e|O|o|T|t|OG|og|OH|oh|TG|tg|TH|th)>/g, '');
 
       const top = `${translated}${trailing}`;
-      const hasAnnotations = strongDisplays.length > 0 || Boolean(original || transliteration) || Boolean(extAnnotations);
+      const hasAnnotations =
+        strongDisplays.length > 0 ||
+        Boolean(original || transliteration) ||
+        Boolean(extAnnotations);
       if (!hasAnnotations) {
         output += top;
       } else {
@@ -187,12 +190,26 @@ export const BibleView = (() => {
 
   function parseVerseText(text, showStrongs, strongsPrefix, footnotes) {
     // Replace <f>...</f> footnotes with superscript markers
-    const superDigits = ['\u2070', '\u00b9', '\u00b2', '\u00b3', '\u2074', '\u2075', '\u2076', '\u2077', '\u2078', '\u2079'];
+    const superDigits = [
+      '\u2070',
+      '\u00b9',
+      '\u00b2',
+      '\u00b3',
+      '\u2074',
+      '\u2075',
+      '\u2076',
+      '\u2077',
+      '\u2078',
+      '\u2079',
+    ];
     let fnIndex = 0;
     let html = text.replace(/<f>([\s\S]*?)<\/f>/gi, (_match, content) => {
       if (footnotes) footnotes.push(content.trim());
       fnIndex++;
-      const label = String(fnIndex).split('').map(d => superDigits[parseInt(d)]).join('');
+      const label = String(fnIndex)
+        .split('')
+        .map((d) => superDigits[parseInt(d)])
+        .join('');
       return `<sup class="verse-footnote-marker" data-fn-index="${fnIndex - 1}">${label}</sup>`;
     });
 
@@ -419,7 +436,10 @@ export const BibleView = (() => {
       wrapper.appendChild(popover);
       // Dismiss on Escape
       const onKey = (ev) => {
-        if (ev.key === 'Escape') { popover.remove(); document.removeEventListener('keydown', onKey); }
+        if (ev.key === 'Escape') {
+          popover.remove();
+          document.removeEventListener('keydown', onKey);
+        }
       };
       document.addEventListener('keydown', onKey);
     });
@@ -523,5 +543,13 @@ export const BibleView = (() => {
     return lines.join('\n');
   }
 
-  return { renderChapter, scrollToVerse, selectAdjacentVerse, getSelectedText, toggleVerseRefs };
+  return {
+    renderChapter,
+    scrollToVerse,
+    selectAdjacentVerse,
+    getSelectedText,
+    toggleVerseRefs,
+    parseVerseText,
+    normalizeTheWordWordAnnotations,
+  };
 })();

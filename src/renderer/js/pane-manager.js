@@ -94,7 +94,8 @@ export const PaneManager = (() => {
     paneCounter = Math.max(paneCounter, parsePaneNumber(id));
 
     const paneType = initial.paneType || 'bible';
-    const windowLabel = paneType === 'commentary' ? null : allocatePaneLabel(paneType, initial.windowLabel);
+    const windowLabel =
+      paneType === 'commentary' ? null : allocatePaneLabel(paneType, initial.windowLabel);
 
     if (paneType === 'commentary') {
       const moduleId = resolveCommentaryModuleId(initial.moduleId);
@@ -120,7 +121,7 @@ export const PaneManager = (() => {
         paneType: 'bible',
         moduleId,
         hasStrongs: mod ? mod.hasStrongs : false,
-        strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
+        strongsPrefix: mod ? mod.strongsPrefix || null : null,
         bookNumber: Number.isInteger(initial.bookNumber) ? initial.bookNumber : 10,
         chapter: Number.isInteger(initial.chapter) ? initial.chapter : 1,
         bookShortName: initial.bookShortName || '',
@@ -178,7 +179,11 @@ export const PaneManager = (() => {
     const pane = panes[paneId];
     if (!pane) return '';
     if (pane.paneType === 'commentary') {
-      if (pane.syncedToPaneId && panes[pane.syncedToPaneId] && panes[pane.syncedToPaneId].paneType === 'bible') {
+      if (
+        pane.syncedToPaneId &&
+        panes[pane.syncedToPaneId] &&
+        panes[pane.syncedToPaneId].paneType === 'bible'
+      ) {
         return getPaneDisplayLabel(pane.syncedToPaneId);
       }
       return '\u2013';
@@ -240,7 +245,7 @@ export const PaneManager = (() => {
           paneType: 'bible',
           moduleId,
           hasStrongs: mod ? mod.hasStrongs : false,
-          strongsPrefix: mod ? (mod.strongsPrefix || null) : null,
+          strongsPrefix: mod ? mod.strongsPrefix || null : null,
           bookNumber: Number.isInteger(raw.bookNumber) ? raw.bookNumber : 10,
           chapter: Number.isInteger(raw.chapter) ? raw.chapter : 1,
           bookShortName: raw.bookShortName || '',
@@ -486,7 +491,7 @@ export const PaneManager = (() => {
         pane.moduleId = moduleId;
         const mod = modules.find((m) => m.id === moduleId);
         pane.hasStrongs = mod ? mod.hasStrongs : false;
-        pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
+        pane.strongsPrefix = mod ? mod.strongsPrefix || null : null;
         pane.books = [];
         pane.verses = [];
         refreshQuickBarForPane(paneId);
@@ -924,7 +929,11 @@ export const PaneManager = (() => {
   // ---- Commentary data loading ----
 
   function getSelectedVerseFromSyncedBiblePane(commentaryPane) {
-    if (!commentaryPane || commentaryPane.paneType !== 'commentary' || !commentaryPane.syncedToPaneId) {
+    if (
+      !commentaryPane ||
+      commentaryPane.paneType !== 'commentary' ||
+      !commentaryPane.syncedToPaneId
+    ) {
       return null;
     }
     const sourcePane = panes[commentaryPane.syncedToPaneId];
@@ -1192,7 +1201,12 @@ export const PaneManager = (() => {
     pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
     // Avoid duplicate of current top
     const top = pane.navHistory[pane.navHistoryIdx];
-    if (top && top.moduleId === entry.moduleId && top.bookNumber === entry.bookNumber && top.chapter === entry.chapter) {
+    if (
+      top &&
+      top.moduleId === entry.moduleId &&
+      top.bookNumber === entry.bookNumber &&
+      top.chapter === entry.chapter
+    ) {
       return;
     }
     pane.navHistory.push(entry);
@@ -1229,7 +1243,7 @@ export const PaneManager = (() => {
       pane.moduleId = entry.moduleId;
       const mod = modules.find((m) => m.id === entry.moduleId);
       pane.hasStrongs = mod ? mod.hasStrongs : false;
-      pane.strongsPrefix = mod ? (mod.strongsPrefix || null) : null;
+      pane.strongsPrefix = mod ? mod.strongsPrefix || null : null;
       pane.books = [];
       pane.verses = [];
       const el = document.querySelector(`[data-pane-id="${paneId}"]`);
@@ -1272,8 +1286,7 @@ export const PaneManager = (() => {
       if (!el) return;
 
       const content = el.querySelector('.pane-content');
-      const scrollRatio =
-        content.scrollHeight > 0 ? content.scrollTop / content.scrollHeight : 0;
+      const scrollRatio = content.scrollHeight > 0 ? content.scrollTop / content.scrollHeight : 0;
       const book = pane.books.find((b) => b.bookNumber === pane.bookNumber);
       pane.bookShortName = I18n.bookName(pane.bookNumber).short;
       BibleView.renderChapter(content, verses, pane.hasStrongs, pane.bookNumber, {
@@ -1308,7 +1321,10 @@ export const PaneManager = (() => {
             prevBtnEl.disabled = false;
           } else if (bookIdx > 0) {
             const prevBook = pane.books[bookIdx - 1];
-            const prevBookChapterCount = await window.api.getChapterCount(pane.moduleId, prevBook.bookNumber);
+            const prevBookChapterCount = await window.api.getChapterCount(
+              pane.moduleId,
+              prevBook.bookNumber
+            );
             prevLabelEl.textContent = `${I18n.bookName(prevBook.bookNumber).short} ${prevBookChapterCount}`;
             prevBtnEl.disabled = false;
           } else {
@@ -1639,8 +1655,9 @@ export const PaneManager = (() => {
 
   // Chapter counts per book (index 0=Gen, 65=Rev) — standard KJV canon
   const CHAPTER_COUNTS = [
-    50,40,27,36,34,24,21,4,31,24,22,25,29,36,10,13,10,42,150,31,12,8,66,52,5,48,12,14,3,9,1,4,7,3,3,3,2,14,4,
-    28,16,24,21,28,16,16,13,6,6,4,4,5,3,6,4,3,1,13,5,5,3,5,1,1,1,22,
+    50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52,
+    5, 48, 12, 14, 3, 9, 1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5,
+    3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1, 1, 1, 22,
   ];
 
   async function openAllCommentariesModal(paneId) {
@@ -1649,7 +1666,8 @@ export const PaneManager = (() => {
 
     const { bookNumber, chapter } = pane;
     const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
-    const verse = selectedVerse || (pane.entries && pane.entries.length > 0 ? pane.entries[0].verseFrom : 1);
+    const verse =
+      selectedVerse || (pane.entries && pane.entries.length > 0 ? pane.entries[0].verseFrom : 1);
 
     const bookName = I18n.bookName(bookNumber);
     const refLabel = `${bookName.short} ${chapter}:${verse}`;
@@ -1684,7 +1702,8 @@ export const PaneManager = (() => {
 
     // Header
     const header = document.createElement('div');
-    header.className = 'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between min-w-0';
+    header.className =
+      'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between min-w-0';
     const title = document.createElement('h2');
     title.className = 'text-lg font-semibold min-w-0 truncate';
     title.textContent = `${I18n.t('allCommentaries')} — ${refLabel}`;
@@ -1710,7 +1729,8 @@ export const PaneManager = (() => {
         section.className = 'mb-6 last:mb-0';
 
         const heading = document.createElement('h3');
-        heading.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600 cursor-pointer flex items-center gap-1.5 select-none';
+        heading.className =
+          'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600 cursor-pointer flex items-center gap-1.5 select-none';
 
         const chevron = Icons.create('chevron-right');
         chevron.style.transition = 'transform 0.15s';
@@ -1775,7 +1795,8 @@ export const PaneManager = (() => {
 
     // Header
     const header = document.createElement('div');
-    header.className = 'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between';
+    header.className =
+      'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between';
     const title = document.createElement('h2');
     title.className = 'text-lg font-semibold';
     title.textContent = I18n.t('commentaryCoverage');

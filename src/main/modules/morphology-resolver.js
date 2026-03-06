@@ -129,9 +129,9 @@ const BUILTIN_LANGUAGE = {
         p1: '1ª',
         p2: '2ª',
         p3: '3ª',
-        '1': '1ª',
-        '2': '2ª',
-        '3': '3ª',
+        1: '1ª',
+        2: '2ª',
+        3: '3ª',
       },
       gender: {
         m: 'Masculino',
@@ -298,9 +298,9 @@ const BUILTIN_LANGUAGE = {
         p1: '1st',
         p2: '2nd',
         p3: '3rd',
-        '1': '1st',
-        '2': '2nd',
-        '3': '3rd',
+        1: '1st',
+        2: '2nd',
+        3: '3rd',
       },
       gender: {
         m: 'Masculine',
@@ -467,9 +467,9 @@ const BUILTIN_LANGUAGE = {
         p1: '1.ª',
         p2: '2.ª',
         p3: '3.ª',
-        '1': '1.ª',
-        '2': '2.ª',
-        '3': '3.ª',
+        1: '1.ª',
+        2: '2.ª',
+        3: '3.ª',
       },
       gender: {
         m: 'Masculino',
@@ -578,7 +578,11 @@ const ROBINSON_VALUES = {
     P: { en: 'Passive', pt: 'Passiva', es: 'Pasiva' },
     D: { en: 'Middle Deponent', pt: 'Depoente Médio', es: 'Deponente Medio' },
     E: { en: 'Middle or Passive', pt: 'Média ou Passiva', es: 'Media o Pasiva' },
-    N: { en: 'Middle/Passive Deponent', pt: 'Depoente Médio/Passivo', es: 'Deponente Medio/Pasivo' },
+    N: {
+      en: 'Middle/Passive Deponent',
+      pt: 'Depoente Médio/Passivo',
+      es: 'Deponente Medio/Pasivo',
+    },
     O: { en: 'Passive Deponent', pt: 'Depoente Passivo', es: 'Deponente Pasivo' },
     U: { en: 'Middle or Passive', pt: 'Média ou Passiva', es: 'Media o Pasiva' },
   },
@@ -595,9 +599,9 @@ const ROBINSON_VALUES = {
     U: { en: 'Supine', pt: 'Supino', es: 'Supino' },
   },
   person: {
-    '1': { en: '1st', pt: '1ª', es: '1.ª' },
-    '2': { en: '2nd', pt: '2ª', es: '2.ª' },
-    '3': { en: '3rd', pt: '3ª', es: '3.ª' },
+    1: { en: '1st', pt: '1ª', es: '1.ª' },
+    2: { en: '2nd', pt: '2ª', es: '2.ª' },
+    3: { en: '3rd', pt: '3ª', es: '3.ª' },
   },
 };
 
@@ -630,9 +634,7 @@ function buildResult(rawCode, source, segments, topicRef = null) {
 function decodeCompactCode(rawCode, lang) {
   const strings = getLangStrings(lang);
   const normalizedCode = String(rawCode || '').trim();
-  const tokens = normalizedCode
-    .split('.')
-    .filter(Boolean);
+  const tokens = normalizedCode.split('.').filter(Boolean);
   if (tokens.length === 0) return null;
 
   const [first, ...rest] = tokens;
@@ -660,7 +662,20 @@ function decodeCompactCode(rawCode, lang) {
     let kind = null;
     let value = null;
 
-    for (const candidate of ['stem', 'aspect', 'tense', 'voice', 'mood', 'person', 'gender', 'number', 'state', 'case', 'degree', 'suffix']) {
+    for (const candidate of [
+      'stem',
+      'aspect',
+      'tense',
+      'voice',
+      'mood',
+      'person',
+      'gender',
+      'number',
+      'state',
+      'case',
+      'degree',
+      'suffix',
+    ]) {
       const match = strings.values[candidate]?.[normalized];
       if (match) {
         kind = candidate;
@@ -690,7 +705,9 @@ function decodeCompactCode(rawCode, lang) {
 
 function decodeRobinsonCode(rawCode, lang) {
   const strings = getLangStrings(lang);
-  const code = String(rawCode || '').trim().toUpperCase();
+  const code = String(rawCode || '')
+    .trim()
+    .toUpperCase();
   if (!/^[A-Z](?:-[A-Z0-9]+)+$/.test(code)) return null;
 
   const [part, ...rest] = code.split('-');
@@ -790,9 +807,7 @@ function decodeBsbCode(rawCode, lang) {
   if (!part) return null;
 
   const normalizedPart = part.toLowerCase();
-  const partValue =
-    strings.values.partOfSpeech[normalizedPart] ||
-    part;
+  const partValue = strings.values.partOfSpeech[normalizedPart] || part;
   const segments = [
     {
       kind: 'partOfSpeech',
@@ -873,13 +888,19 @@ function decodeBsbCode(rawCode, lang) {
 }
 
 function parseMorphologyMeaning(rawCode, lang) {
-  return decodeCompactCode(rawCode, lang) || decodeRobinsonCode(rawCode, lang) || decodeBsbCode(rawCode, lang);
+  return (
+    decodeCompactCode(rawCode, lang) ||
+    decodeRobinsonCode(rawCode, lang) ||
+    decodeBsbCode(rawCode, lang)
+  );
 }
 
 function preferredLookupLanguages({ uiLanguage, dictLanguage }) {
   const langs = [];
   const push = (value) => {
-    const normalized = String(value || '').trim().toLowerCase();
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
     if (!normalized || langs.includes(normalized)) return;
     langs.push(normalized);
   };
@@ -972,10 +993,12 @@ function resolveFromModuleTables(db, rawCode, langs, hasLanguageColumn) {
 }
 
 function normalizeUiLanguage(value) {
-  return String(value || DEFAULT_LANG)
-    .trim()
-    .toLowerCase()
-    .slice(0, 2) || DEFAULT_LANG;
+  return (
+    String(value || DEFAULT_LANG)
+      .trim()
+      .toLowerCase()
+      .slice(0, 2) || DEFAULT_LANG
+  );
 }
 
 function resolveMorphology({ bibleHandle, dictHandle, morphCode, uiLanguage }) {

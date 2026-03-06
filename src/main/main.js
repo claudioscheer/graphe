@@ -8,6 +8,7 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 const stateStore = require('./state-store');
 
 let mainWindow;
+let xrayWindows = new Set();
 let reloadTimer = null;
 let updateCheckTimer = null;
 let pendingUpdate = null;
@@ -24,16 +25,20 @@ function setupDevHotReload() {
 
   const watchTargets = [
     path.join(__dirname, '..', 'renderer', 'index.html'),
+    path.join(__dirname, '..', 'renderer', 'xray.html'),
     path.join(__dirname, '..', 'renderer', 'dist.css'),
     path.join(__dirname, '..', 'renderer', 'js'),
   ];
 
   const reloadRenderer = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      mainWindow.webContents.reloadIgnoringCache();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+      for (const win of xrayWindows) {
+        if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
+      }
     }, 120);
   };
 
@@ -387,21 +392,28 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-ipcMain.on('show-verse-context-menu', (event, { hasSelection }) => {
+ipcMain.on('show-verse-context-menu', (event, { hasSelection, xrayParams, labels }) => {
   const targetWindow = BrowserWindow.fromWebContents(event.sender);
-  const menu = Menu.buildFromTemplate([
+  const menuItems = [
     {
       label: 'Copy',
       accelerator: 'CmdOrCtrl+C',
       enabled: hasSelection,
       click: () => event.sender.send('context-menu-copy'),
     },
-    { type: 'separator' },
-    {
-      label: 'Reload Modules',
-      click: () => reloadModulesAndRefresh(targetWindow),
-    },
-  ]);
+  ];
+  if (xrayParams) {
+    menuItems.push({
+      label: (labels && labels.xray) || 'Verse X-Ray',
+      click: () => createXrayWindow(xrayParams),
+    });
+  }
+  menuItems.push({ type: 'separator' });
+  menuItems.push({
+    label: 'Reload Modules',
+    click: () => reloadModulesAndRefresh(targetWindow),
+  });
+  const menu = Menu.buildFromTemplate(menuItems);
   menu.popup({ window: targetWindow });
 });
 
@@ -504,6 +516,50 @@ ipcMain.handle('cleanup-convert', () => {
     convertTmpDir = null;
   }
   return true;
+});
+
+function createXrayWindow({ moduleId, bookNumber, chapter, verse }) {
+  const xrayHtml = app.isPackaged
+    ? path.join(__dirname, '..', '..', 'dist', 'renderer', 'xray.html')
+    : path.join(__dirname, '..', 'renderer', 'xray.html');
+
+  const win = new BrowserWindow({
+    width: 900,
+    height: 700,
+    minWidth: 500,
+    minHeight: 400,
+    maximizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    icon: windowIconPath,
+    show: false,
+  });
+
+  win.setMenuBarVisibility(false);
+
+  win.loadFile(xrayHtml, {
+    query: {
+      moduleId,
+      bookNumber: String(bookNumber),
+      chapter: String(chapter),
+      verse: String(verse),
+    },
+  });
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => xrayWindows.delete(win));
+
+  // Block navigation away
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  xrayWindows.add(win);
+}
+
+ipcMain.on('open-xray-window', (_event, opts) => {
+  createXrayWindow(opts);
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());

@@ -148,9 +148,7 @@ export const Navigation = (() => {
 
     // Find book by localized abbreviation
     const bookNumber = I18n.findBookByAbbrev(abbrev);
-    const book = bookNumber != null
-      ? currentBooks.find((b) => b.bookNumber === bookNumber)
-      : null;
+    const book = bookNumber != null ? currentBooks.find((b) => b.bookNumber === bookNumber) : null;
 
     if (!book) return;
 

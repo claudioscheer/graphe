@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Ellipsis,
@@ -12,6 +13,7 @@ import {
   Pin,
   PinOff,
   Search,
+  Star,
   X,
   createElement,
 } from '../../../node_modules/lucide/dist/esm/lucide.js';
@@ -21,6 +23,7 @@ export const Icons = (() => {
     'arrow-left': ArrowLeft,
     'arrow-right': ArrowRight,
     'book-open': BookOpen,
+    'chevron-down': ChevronDown,
     'chevron-left': ChevronLeft,
     'chevron-right': ChevronRight,
     ellipsis: Ellipsis,
@@ -28,6 +31,7 @@ export const Icons = (() => {
     pin: Pin,
     'pin-off': PinOff,
     search: Search,
+    star: Star,
     x: X,
   };
 

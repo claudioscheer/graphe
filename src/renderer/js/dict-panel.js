@@ -34,7 +34,11 @@ export const DictPanel = (() => {
   function init(modules, savedState) {
     dictModules = modules;
     moduleSearchCache.clear();
-    if (savedState && savedState.moduleSearchCache && typeof savedState.moduleSearchCache === 'object') {
+    if (
+      savedState &&
+      savedState.moduleSearchCache &&
+      typeof savedState.moduleSearchCache === 'object'
+    ) {
       for (const [moduleId, topic] of Object.entries(savedState.moduleSearchCache)) {
         if (typeof topic === 'string' && topic.trim()) moduleSearchCache.set(moduleId, topic);
       }
@@ -516,7 +520,12 @@ export const DictPanel = (() => {
 
     const renderPage = async () => {
       const prefix = (browseInput.value || '').trim();
-      const topics = await window.api.getDictionaryTopicsByPrefix(moduleId, prefix, PAGE_SIZE, offset);
+      const topics = await window.api.getDictionaryTopicsByPrefix(
+        moduleId,
+        prefix,
+        PAGE_SIZE,
+        offset
+      );
       browseList.innerHTML = '';
       if (!topics.length) {
         const empty = document.createElement('div');
@@ -714,7 +723,9 @@ export const DictPanel = (() => {
         return;
       }
       const strongsDictSetting = AppStateStore.getSettings().strongsDicts;
-      const strongsDict = Array.isArray(strongsDictSetting) ? strongsDictSetting[0] : strongsDictSetting;
+      const strongsDict = Array.isArray(strongsDictSetting)
+        ? strongsDictSetting[0]
+        : strongsDictSetting;
       if (!strongsDict) {
         const placeholder = document.createElement('div');
         placeholder.className = 'dict-placeholder';
@@ -768,7 +779,9 @@ export const DictPanel = (() => {
     const resolvedModuleId = resolveSelectedModuleId(moduleId || selectedModuleId);
     if (!resolvedModuleId) {
       contentEl.innerHTML =
-        '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictNoModulesInstalled')) + '</div>';
+        '<div class="dict-placeholder">' +
+        Utils.escapeHtml(I18n.t('dictNoModulesInstalled')) +
+        '</div>';
       return;
     }
     if (dictPickerInstance) dictPickerInstance.setSelected(resolvedModuleId);
@@ -1297,10 +1310,10 @@ export const DictPanel = (() => {
 
   function mapCanonicalBookToGraphe(bookIndex) {
     const grapheBookNumbers = [
-      10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240, 250,
-      260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460, 470,
-      480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650, 660,
-      670, 680, 690, 700, 710, 720, 730,
+      10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240,
+      250, 260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460,
+      470, 480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650,
+      660, 670, 680, 690, 700, 710, 720, 730,
     ];
     if (!Number.isInteger(bookIndex) || bookIndex < 1 || bookIndex > grapheBookNumbers.length) {
       return null;

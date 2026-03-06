@@ -270,7 +270,8 @@ function load(filePath) {
     }
   }
 
-  const effectiveScope = hasOtText && hasNtText ? 'full' : hasOtText ? 'ot' : hasNtText ? 'nt' : scope;
+  const effectiveScope =
+    hasOtText && hasNtText ? 'full' : hasOtText ? 'ot' : hasNtText ? 'nt' : scope;
 
   // Detect Strong's by checking a sample of lines for <WH or <WG patterns
   let hasStrongs = false;

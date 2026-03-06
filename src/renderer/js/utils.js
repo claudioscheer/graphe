@@ -9,7 +9,9 @@ export const Utils = (() => {
   }
 
   function getModuleDisplayName(module) {
-    return module.listLabel || module.displayName || module.shortTitle || module.description || module.id;
+    return (
+      module.listLabel || module.displayName || module.shortTitle || module.description || module.id
+    );
   }
 
   function escapeHtml(str) {

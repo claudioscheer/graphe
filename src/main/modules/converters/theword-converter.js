@@ -7,7 +7,11 @@ const Database = require('better-sqlite3');
 const thewordBible = require('../theword-bible-provider');
 const thewordTwm = require('../theword-twm-provider');
 const { twBookToGraphe } = require('../book-map');
-const { normalizeStrongNumber, sanitizeStrongTags, sanitizeSupportedTags } = require('./tag-sanitizer');
+const {
+  normalizeStrongNumber,
+  sanitizeStrongTags,
+  sanitizeSupportedTags,
+} = require('./tag-sanitizer');
 
 /**
  * Convert TheWord inline tags to MyBible format.
@@ -218,9 +222,7 @@ function convertBible(inputPath, outputDir, onProgress) {
       }
 
       if (inserted === 0 || nonEmptyVerseCount === 0) {
-        throw new Error(
-          `TheWord module has no non-empty verse text: ${path.basename(inputPath)}`
-        );
+        throw new Error(`TheWord module has no non-empty verse text: ${path.basename(inputPath)}`);
       }
 
       for (const book of books) {
@@ -418,9 +420,7 @@ async function convertCommentaryType3(handle, inputPath, outputDir, onProgress) 
 
     db.transaction(() => {
       for (const [bookNumber, topicIds] of books) {
-        const texts = topicIds
-          .map((id) => thewordTwm.extractPlainText(handle, id))
-          .filter(Boolean);
+        const texts = topicIds.map((id) => thewordTwm.extractPlainText(handle, id)).filter(Boolean);
         if (texts.length === 0) continue;
 
         const text = texts.join('\n');

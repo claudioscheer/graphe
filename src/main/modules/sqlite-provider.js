@@ -257,6 +257,18 @@ function getCrossReferences(db, book, chapter) {
     .all();
 }
 
+function getReverseCrossReferences(db, bookTo, chapterTo, verseTo) {
+  return db
+    .prepare(
+      'SELECT book, chapter, verse, votes FROM cross_references ' +
+        'WHERE book_to = ? AND chapter_to = ? AND verse_to_start <= ? ' +
+        'AND (verse_to_end >= ? OR verse_to_end IS NULL OR verse_to_start = ?) ' +
+        'ORDER BY book, chapter, verse'
+    )
+    .bind(bookTo, chapterTo, verseTo, verseTo, verseTo)
+    .all();
+}
+
 function getCommentary(db, bookNumber, chapter) {
   return db
     .prepare(
@@ -408,9 +420,7 @@ function updateBookNames(db, bookNumber, fields = {}) {
   }
   if (updates.length === 0) throw new Error('No allowed fields provided');
 
-  const stmt = db.prepare(
-    `UPDATE ${targetTable} SET ${updates.join(', ')} WHERE book_number = ?`
-  );
+  const stmt = db.prepare(`UPDATE ${targetTable} SET ${updates.join(', ')} WHERE book_number = ?`);
   const res = stmt.run(...params, bookNumber);
   if (res.changes === 0) throw new Error('Book row not found');
   return true;
@@ -479,6 +489,7 @@ module.exports = {
   getDictionaryTopicsByPrefix,
   getDictionaryRandomTopics,
   getCrossReferences,
+  getReverseCrossReferences,
   getCommentary,
   getCommentaryBooks,
   getCommentaryCoverage,

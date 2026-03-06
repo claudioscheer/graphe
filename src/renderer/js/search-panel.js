@@ -390,8 +390,14 @@ export const SearchPanel = (() => {
     // We need to produce a clipped version that preserves those tags.
     // Strategy: strip tags from richHtml to get plain text, find snippet range, then slice with tags.
 
-    const plainFromRich = richHtml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    const cleanSnippet = snippet.replace(/^\.\.\./, '').replace(/\.\.\.$/, '').trim();
+    const plainFromRich = richHtml
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cleanSnippet = snippet
+      .replace(/^\.\.\./, '')
+      .replace(/\.\.\.$/, '')
+      .trim();
 
     if (!cleanSnippet) return snippet;
 

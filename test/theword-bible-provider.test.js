@@ -149,7 +149,10 @@ describe('legacy encoding handling', () => {
     const verses = Array.from({ length: NT_VERSES }, () => '');
     verses[0] = 'No princípio criou Deus o céu e a terra.';
     const content = `${verses.join('\n')}\n`;
-    fs.writeFileSync(inputPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(content, 'utf8')]));
+    fs.writeFileSync(
+      inputPath,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(content, 'utf8')])
+    );
 
     try {
       const handle = provider.load(inputPath);
@@ -341,9 +344,7 @@ describe('TheWord Bible integration', () => {
 
   it.skipIf(!hasStrongOntFile())('detects Strong numbers in a Strong bible', () => {
     const files = fs.readdirSync(MODULES_DIR);
-    const strongFile = files.find(
-      (f) => f.toLowerCase().endsWith('.ont') && /strong/i.test(f)
-    );
+    const strongFile = files.find((f) => f.toLowerCase().endsWith('.ont') && /strong/i.test(f));
     if (!strongFile) return;
     const handle = provider.load(path.join(MODULES_DIR, strongFile));
     expect(handle.hasStrongs).toBe(true);

@@ -22,6 +22,7 @@ npm run make         # Build distributable installers
 **Electron with strict context isolation** — main process (Node/SQLite) communicates with renderer (DOM) only through IPC via preload bridge (`window.api`).
 
 ### Main Process (`src/main/`)
+
 - `main.js` — Window lifecycle, menus, IPC setup, hot-reload watcher
 - `modules.js` — All data queries (Bible verses, dictionaries, commentaries, cross-refs)
 - `ipc-handlers.js` — Maps IPC channels to `modules.*` functions
@@ -29,6 +30,7 @@ npm run make         # Build distributable installers
 - `modules/` — SQLite providers per format (MyBible, TheWord, MySword) + converters
 
 ### Renderer (`src/renderer/`)
+
 - `js/app.js` — Entry point, settings, state management (AppStateStore singleton)
 - `js/pane-manager.js` — **Recursive binary tree** layout (Leaf | Split{direction, ratio, children})
 - `js/bible-view.js` — Verse rendering, Strong's tag parsing, keyboard nav
@@ -40,7 +42,9 @@ npm run make         # Build distributable installers
 - `js/navigation.js` — Quick book/chapter navigation dialog
 
 ### Code Pattern
+
 All renderer modules use the IIFE singleton pattern:
+
 ```javascript
 const MyModule = (() => {
   let privateState;
@@ -50,6 +54,7 @@ const MyModule = (() => {
 ```
 
 ### Data Layer
+
 - SQLite3 databases (MyBible format) in `~/.graphe/modules/`
 - Module type auto-detected from DB schema (which tables exist)
 - Strong's tags in verse text: `<S>H1234</S>`, `<WH1234>`, `<WG5678>`
@@ -61,7 +66,9 @@ const MyModule = (() => {
 - Custom brand/night color palettes in `@theme` block
 
 ### Design System: Follow VS Code
+
 UI should follow VS Code's design language — restrained, functional, minimal decoration:
+
 - **Border-radius scale**: 2px (inline marks, tooltips, tabs, badges), 4px (inputs, buttons, scrollbar thumbs, sections), 6px (floating surfaces: dropdowns, popovers, modals), 9999px (pill badges only)
 - **No 8px+ radius** on any element except intentional pills
 - Subtle borders and shadows — avoid heavy box-shadows or prominent outlines

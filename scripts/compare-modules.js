@@ -139,7 +139,9 @@ function compareBible(inputPath, outputPath) {
             const rawText = handle.lines[lineIdx];
             const expected = convertTagsToMyBible(rawText);
             const actual = db
-              .prepare('SELECT text FROM verses WHERE book_number = ? AND chapter = ? AND verse = ?')
+              .prepare(
+                'SELECT text FROM verses WHERE book_number = ? AND chapter = ? AND verse = ?'
+              )
               .get(firstBook.bookNumber, 1, v + 1);
             if (!actual) {
               result.status = 'mismatch';
@@ -160,9 +162,7 @@ function compareBible(inputPath, outputPath) {
     const outputHasStrongs = strongsInfo && strongsInfo.value === 'true';
     if (handle.hasStrongs !== outputHasStrongs) {
       result.status = 'mismatch';
-      result.issues.push(
-        `Strong's flag: source=${handle.hasStrongs}, output=${outputHasStrongs}`
-      );
+      result.issues.push(`Strong's flag: source=${handle.hasStrongs}, output=${outputHasStrongs}`);
     }
   } finally {
     db.close();
@@ -210,9 +210,7 @@ function compareCommentary(inputPath, outputPath) {
         if (hasContent) result.sourceEntryCount++;
       }
     } else {
-      const rows = handle.db
-        .prepare('SELECT topic_id FROM bible_refs ORDER BY bi, ci, fvi')
-        .all();
+      const rows = handle.db.prepare('SELECT topic_id FROM bible_refs ORDER BY bi, ci, fvi').all();
       for (const row of rows) {
         const text = thewordTwm.extractPlainText(handle, row.topic_id);
         if (text) result.sourceEntryCount++;
@@ -316,9 +314,7 @@ function compareDictionary(inputPath, outputPath) {
     const outputIsStrong = outputInfo.is_strong === 'true';
     if (sourceIsStrong !== outputIsStrong) {
       result.status = 'mismatch';
-      result.issues.push(
-        `Strong's flag: source=${sourceIsStrong}, output=${outputIsStrong}`
-      );
+      result.issues.push(`Strong's flag: source=${sourceIsStrong}, output=${outputIsStrong}`);
     }
 
     // Spot check: first 3 topics exist and have definitions
@@ -448,7 +444,11 @@ function main() {
   const reportPath = path.join(OUTPUT_DIR, 'comparison-report.json');
   fs.writeFileSync(
     reportPath,
-    JSON.stringify({ summary: { passCount, mismatchCount, errorCount, notConvertedCount }, results }, null, 2)
+    JSON.stringify(
+      { summary: { passCount, mismatchCount, errorCount, notConvertedCount }, results },
+      null,
+      2
+    )
   );
   console.log(`\nReport written to ${reportPath}`);
 

@@ -63,11 +63,11 @@ Use o instalador de módulos do próprio Graphe:
 
 Os arquivos selecionados são copiados automaticamente para a pasta de módulos do Graphe:
 
-| Sistema  | Caminho                           |
-| -------- | --------------------------------- |
-| Linux    | `~/.graphe/modules/`              |
-| macOS    | `~/.graphe/modules/`              |
-| Windows  | `%USERPROFILE%\\.graphe\\modules\\` |
+| Sistema | Caminho                             |
+| ------- | ----------------------------------- |
+| Linux   | `~/.graphe/modules/`                |
+| macOS   | `~/.graphe/modules/`                |
+| Windows | `%USERPROFILE%\\.graphe\\modules\\` |
 
 O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
 
@@ -99,18 +99,18 @@ Após a instalação, acesse as **Configurações** para verificar e organizar o
 
 ### Atalhos de Teclado
 
-| Atalho | Ação |
-| --- | --- |
-| `Ctrl+Shift+F` | Focar no campo de pesquisa |
-| `F3` | Abrir diálogo de navegação (livro/capítulo/versículo) |
-| `Ctrl+T` | Abrir seletor de tradução no painel ativo |
-| `Ctrl+Shift+T` | Alternar entre traduções favoritas |
-| `Ctrl+A` | Selecionar todos os versículos no painel ativo |
-| `Ctrl+C` | Copiar versículos selecionados |
-| `Tab` | Alternar entre painéis |
-| `↑` / `↓` | Navegar entre versículos |
-| `Shift+↑` / `Shift+↓` | Estender seleção de versículos |
-| `Escape` | Fechar diálogos/overlays/popovers |
+| Atalho                | Ação                                                  |
+| --------------------- | ----------------------------------------------------- |
+| `Ctrl+Shift+F`        | Focar no campo de pesquisa                            |
+| `F3`                  | Abrir diálogo de navegação (livro/capítulo/versículo) |
+| `Ctrl+T`              | Abrir seletor de tradução no painel ativo             |
+| `Ctrl+Shift+T`        | Alternar entre traduções favoritas                    |
+| `Ctrl+A`              | Selecionar todos os versículos no painel ativo        |
+| `Ctrl+C`              | Copiar versículos selecionados                        |
+| `Tab`                 | Alternar entre painéis                                |
+| `↑` / `↓`             | Navegar entre versículos                              |
+| `Shift+↑` / `Shift+↓` | Estender seleção de versículos                        |
+| `Escape`              | Fechar diálogos/overlays/popovers                     |
 
 > No macOS, use `Cmd` no lugar de `Ctrl`.
 

@@ -23,8 +23,9 @@ function maybeRegisterCommonAliases(map, baseSet, shortName, longName, bookNum) 
   const shortFold = foldDiacritics(shortName);
   const longFold = foldDiacritics(longName);
   const numberedPrefix =
-    (shortLower.match(/^([123])\s*/) || longLower.match(/^([123])\s*/) || longFold.match(/^([123])\s*/))?.[1] ||
-    '';
+    (shortLower.match(/^([123])\s*/) ||
+      longLower.match(/^([123])\s*/) ||
+      longFold.match(/^([123])\s*/))?.[1] || '';
   const registerBookAlias = (alias, { numberedOnly = false } = {}) => {
     if (!alias) return;
     if (numberedOnly && numberedPrefix) {
@@ -273,7 +274,10 @@ function buildReferenceMatcher(bookNamesByLang, bookNumbers) {
 }
 
 function parseLeadingReferenceFromPlainText(text) {
-  const firstLine = String(text || '').trimStart().split(/\r?\n/, 1)[0].trim();
+  const firstLine = String(text || '')
+    .trimStart()
+    .split(/\r?\n/, 1)[0]
+    .trim();
   const match = firstLine.match(
     /^(?:[\[({]\s*)?(?:(?:[1-3]\s*)?[A-Za-zÀ-ÖØ-öø-ÿ.]+(?:\s+|\s*\.\s*))?(\d{1,3})(?:\s*[:.]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?)?\b/
   );

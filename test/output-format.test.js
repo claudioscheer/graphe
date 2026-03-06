@@ -63,36 +63,30 @@ describe('Bible verse output shape', () => {
     if (sqlDb) sqlDb.close();
   });
 
-  it.skipIf(!sqliteBibleFile)(
-    'SQLite bible returns {verse, text}',
-    () => {
-      const sqlBooks = sqliteProvider.getBooks(sqlDb);
-      const sqlVerses = sqliteProvider.getChapter(sqlDb, sqlBooks[0].bookNumber, 1);
+  it.skipIf(!sqliteBibleFile)('SQLite bible returns {verse, text}', () => {
+    const sqlBooks = sqliteProvider.getBooks(sqlDb);
+    const sqlVerses = sqliteProvider.getChapter(sqlDb, sqlBooks[0].bookNumber, 1);
 
-      expect(sqlVerses.length).toBeGreaterThan(0);
-      expect(sqlVerses[0]).toHaveProperty('verse');
-      expect(sqlVerses[0]).toHaveProperty('text');
+    expect(sqlVerses.length).toBeGreaterThan(0);
+    expect(sqlVerses[0]).toHaveProperty('verse');
+    expect(sqlVerses[0]).toHaveProperty('text');
+  });
+
+  it.skipIf(!sqliteBibleFile)('Strong tags use <S> format', () => {
+    const strongFile = findFile(MODULES_DIR, /\+\.SQLite3$/i);
+    if (!strongFile) return;
+
+    const sqlStrongDb = new Database(strongFile, { readonly: true });
+    try {
+      const sqlBooks = sqliteProvider.getBooks(sqlStrongDb);
+      if (sqlBooks.length === 0) return;
+      const sqlVerses = sqliteProvider.getChapter(sqlStrongDb, sqlBooks[0].bookNumber, 1);
+      const hasSqlStrong = sqlVerses.some((v) => /<S[ >]/.test(v.text));
+      expect(hasSqlStrong).toBe(true);
+    } finally {
+      sqlStrongDb.close();
     }
-  );
-
-  it.skipIf(!sqliteBibleFile)(
-    'Strong tags use <S> format',
-    () => {
-      const strongFile = findFile(MODULES_DIR, /\+\.SQLite3$/i);
-      if (!strongFile) return;
-
-      const sqlStrongDb = new Database(strongFile, { readonly: true });
-      try {
-        const sqlBooks = sqliteProvider.getBooks(sqlStrongDb);
-        if (sqlBooks.length === 0) return;
-        const sqlVerses = sqliteProvider.getChapter(sqlStrongDb, sqlBooks[0].bookNumber, 1);
-        const hasSqlStrong = sqlVerses.some((v) => /<S[ >]/.test(v.text));
-        expect(hasSqlStrong).toBe(true);
-      } finally {
-        sqlStrongDb.close();
-      }
-    }
-  );
+  });
 });
 
 describe('Dictionary output shape', () => {
@@ -106,18 +100,14 @@ describe('Dictionary output shape', () => {
     if (sqlDb) sqlDb.close();
   });
 
-  it.skipIf(!sqliteDictFile)(
-    'SQLite dictionary returns entries with topic',
-    () => {
-      const sqlCols = sqliteProvider.getDictColumns(sqlDb);
-      const sqlTopics = sqliteProvider.searchDictionaryTopics(sqlDb, '', 1);
-      const sqlEntry = sqlTopics.length > 0
-        ? sqliteProvider.getDictionaryEntry(sqlDb, sqlCols, sqlTopics[0])
-        : null;
+  it.skipIf(!sqliteDictFile)('SQLite dictionary returns entries with topic', () => {
+    const sqlCols = sqliteProvider.getDictColumns(sqlDb);
+    const sqlTopics = sqliteProvider.searchDictionaryTopics(sqlDb, '', 1);
+    const sqlEntry =
+      sqlTopics.length > 0 ? sqliteProvider.getDictionaryEntry(sqlDb, sqlCols, sqlTopics[0]) : null;
 
-      if (sqlEntry) {
-        expect(sqlEntry).toHaveProperty('topic');
-      }
+    if (sqlEntry) {
+      expect(sqlEntry).toHaveProperty('topic');
     }
-  );
+  });
 });

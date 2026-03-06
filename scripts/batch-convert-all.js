@@ -100,7 +100,11 @@ async function convertAll(files) {
         skipped.push({ filename: file.filename, category: file.category, reason: 'encrypted' });
       } else if (/Cannot load TWM module/i.test(msg)) {
         console.log(`\r${label} ${file.filename} ... SKIPPED (unsupported TWM type)`);
-        skipped.push({ filename: file.filename, category: file.category, reason: 'unsupported TWM type' });
+        skipped.push({
+          filename: file.filename,
+          category: file.category,
+          reason: 'unsupported TWM type',
+        });
       } else if (/no non-empty verse text/i.test(msg)) {
         console.log(`\r${label} ${file.filename} ... SKIPPED (empty module)`);
         skipped.push({ filename: file.filename, category: file.category, reason: 'empty module' });
@@ -218,9 +222,7 @@ function verifyBible(inputPath, outputPath) {
     const outputHasStrongs = strongsInfo && strongsInfo.value === 'true';
     if (handle.hasStrongs !== outputHasStrongs) {
       result.status = 'mismatch';
-      result.issues.push(
-        `Strong's flag: source=${handle.hasStrongs}, output=${outputHasStrongs}`
-      );
+      result.issues.push(`Strong's flag: source=${handle.hasStrongs}, output=${outputHasStrongs}`);
     }
   } finally {
     db.close();
@@ -264,9 +266,7 @@ function verifyCommentary(inputPath, outputPath) {
         if (hasContent) result.sourceEntryCount++;
       }
     } else {
-      const rows = handle.db
-        .prepare('SELECT topic_id FROM bible_refs ORDER BY bi, ci, fvi')
-        .all();
+      const rows = handle.db.prepare('SELECT topic_id FROM bible_refs ORDER BY bi, ci, fvi').all();
       for (const row of rows) {
         const text = thewordTwm.extractPlainText(handle, row.topic_id);
         if (text) result.sourceEntryCount++;
@@ -361,9 +361,7 @@ function verifyDictionary(inputPath, outputPath) {
     const outputIsStrong = outputInfo.is_strong === 'true';
     if (sourceIsStrong !== outputIsStrong) {
       result.status = 'mismatch';
-      result.issues.push(
-        `Strong's flag: source=${sourceIsStrong}, output=${outputIsStrong}`
-      );
+      result.issues.push(`Strong's flag: source=${sourceIsStrong}, output=${outputIsStrong}`);
     }
 
     // Spot-check first 3 topics

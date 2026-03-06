@@ -121,9 +121,7 @@ function buildTopicBookMap(db) {
     const allRoots = db
       .prepare('SELECT id, subject FROM topics WHERE pid = 0 ORDER BY rel_order')
       .all();
-    rootTopics = allRoots.filter(
-      (t) => collectDescendantContentIds(db, t.id).length > 0
-    );
+    rootTopics = allRoots.filter((t) => collectDescendantContentIds(db, t.id).length > 0);
   }
 
   // Check if bible_link_search table exists

@@ -61,9 +61,7 @@ describe('convertMySwordTags', () => {
   });
 
   it('preserves plain text without tags', () => {
-    expect(convertMySwordTags('In the beginning God created')).toBe(
-      'In the beginning God created'
-    );
+    expect(convertMySwordTags('In the beginning God created')).toBe('In the beginning God created');
   });
 
   it('handles empty input', () => {
@@ -135,8 +133,7 @@ describe('convertMySwordTags', () => {
   });
 
   it('converts full NA28-style verse', () => {
-    const input =
-      '「<T>biblos<t><G>βιβλοσ<g><W>1<w>」\n「<T>geneseōs<t><G>γενεσεωσ<g><W>2<w>」';
+    const input = '「<T>biblos<t><G>βιβλοσ<g><W>1<w>」\n「<T>geneseōs<t><G>γενεσεωσ<g><W>2<w>」';
     const result = convertMySwordTags(input);
     expect(result).not.toContain('「');
     expect(result).not.toContain('」');
@@ -276,9 +273,7 @@ describe('convertBible integration', () => {
       expect(info.description).toBeTruthy();
 
       // Check books — NA28 is NT only (books 40-66 → Graphe 470-730)
-      const books = db
-        .prepare('SELECT book_number FROM books ORDER BY book_number')
-        .all();
+      const books = db.prepare('SELECT book_number FROM books ORDER BY book_number').all();
       expect(books.length).toBeGreaterThan(0);
       for (const b of books) {
         expect(b.book_number).toBeGreaterThanOrEqual(470);
@@ -311,17 +306,13 @@ describe('convertBible integration', () => {
 
     const db = new Database(outputPath, { readonly: true });
     try {
-      const books = db
-        .prepare('SELECT book_number FROM books ORDER BY book_number')
-        .all();
+      const books = db.prepare('SELECT book_number FROM books ORDER BY book_number').all();
       // Should have both OT and NT books
       expect(books.some((b) => b.book_number < 470)).toBe(true);
       expect(books.some((b) => b.book_number >= 470)).toBe(true);
 
       // Check book number mapping: source book 1 → Graphe 10 (Genesis)
-      const gen = db
-        .prepare('SELECT COUNT(*) as c FROM verses WHERE book_number = 10')
-        .get().c;
+      const gen = db.prepare('SELECT COUNT(*) as c FROM verses WHERE book_number = 10').get().c;
       expect(gen).toBeGreaterThan(0);
 
       // Strong's info
@@ -601,9 +592,7 @@ describe('mysword-provider', () => {
   });
 
   it('loads dictionary .dct.mybible', () => {
-    const handle = myswordProvider.load(
-      path.join(TEST_SUPPORT, 'Berean Strongs.dct.mybible')
-    );
+    const handle = myswordProvider.load(path.join(TEST_SUPPORT, 'Berean Strongs.dct.mybible'));
     try {
       expect(handle).not.toBeNull();
       expect(handle.type).toBe('dictionary');
@@ -614,9 +603,7 @@ describe('mysword-provider', () => {
   });
 
   it('handles lowercase table names', () => {
-    const handle = myswordProvider.load(
-      path.join(TEST_SUPPORT, 'THOMPSON.dct.mybible')
-    );
+    const handle = myswordProvider.load(path.join(TEST_SUPPORT, 'THOMPSON.dct.mybible'));
     try {
       expect(handle).not.toBeNull();
       expect(handle.type).toBe('dictionary');
@@ -627,9 +614,7 @@ describe('mysword-provider', () => {
   });
 
   it('detects lexeme column when present', () => {
-    const handle = myswordProvider.load(
-      path.join(TEST_SUPPORT, 'Léxico Gesenius.dct.mybible')
-    );
+    const handle = myswordProvider.load(path.join(TEST_SUPPORT, 'Léxico Gesenius.dct.mybible'));
     try {
       expect(handle.hasLexeme).toBe(true);
     } finally {

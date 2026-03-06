@@ -554,7 +554,10 @@ export const ModuleEditor = (() => {
           return;
         }
         text.value = entry.text || '';
-        showStatus(`Loaded commentary ${I18n.bookName(bookNumber).short} ${chapter}:${verseFrom}`, true);
+        showStatus(
+          `Loaded commentary ${I18n.bookName(bookNumber).short} ${chapter}:${verseFrom}`,
+          true
+        );
       } catch (err) {
         showStatus(`Failed to load commentary: ${err.message || err}`, false);
       }
@@ -570,9 +573,18 @@ export const ModuleEditor = (() => {
       }
 
       try {
-        await window.api.saveCommentaryText(state.moduleId, bookNumber, chapter, verseFrom, text.value);
+        await window.api.saveCommentaryText(
+          state.moduleId,
+          bookNumber,
+          chapter,
+          verseFrom,
+          text.value
+        );
         if (onSaved) onSaved(state.moduleId);
-        showStatus(`Saved commentary ${I18n.bookName(bookNumber).short} ${chapter}:${verseFrom}`, true);
+        showStatus(
+          `Saved commentary ${I18n.bookName(bookNumber).short} ${chapter}:${verseFrom}`,
+          true
+        );
       } catch (err) {
         showStatus(`Failed to save commentary: ${err.message || err}`, false);
       }

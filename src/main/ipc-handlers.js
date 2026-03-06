@@ -1,6 +1,7 @@
 const { ipcMain } = require('electron');
 const modules = require('./modules');
 const stateStore = require('./state-store');
+const { assembleVerseDossier } = require('./xray-assembler');
 
 function registerIpcHandlers() {
   ipcMain.handle('get-modules', () => modules.getModules());
@@ -95,11 +96,11 @@ function registerIpcHandlers() {
   ipcMain.handle('get-commentary-entry', (_event, moduleId, bookNumber, chapter, verseFrom) =>
     modules.getCommentaryEntry(moduleId, bookNumber, chapter, verseFrom)
   );
-  ipcMain.handle(
-    'save-commentary-text',
-    (_event, moduleId, bookNumber, chapter, verseFrom, text) =>
-      modules.saveCommentaryText(moduleId, bookNumber, chapter, verseFrom, text)
+  ipcMain.handle('save-commentary-text', (_event, moduleId, bookNumber, chapter, verseFrom, text) =>
+    modules.saveCommentaryText(moduleId, bookNumber, chapter, verseFrom, text)
   );
+
+  ipcMain.handle('get-verse-dossier', (_event, params) => assembleVerseDossier(params));
 
   ipcMain.handle('get-app-state', () => stateStore.loadState());
 

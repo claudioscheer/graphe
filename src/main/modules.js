@@ -212,12 +212,7 @@ function getDictionaryMeta(moduleId) {
 }
 
 function resolveMorphology(params = {}) {
-  const {
-    sourceModuleId,
-    strongDictModuleId,
-    morphCode,
-    uiLanguage,
-  } = params;
+  const { sourceModuleId, strongDictModuleId, morphCode, uiLanguage } = params;
 
   const bibleHandle = sourceModuleId ? handles.get(sourceModuleId) || null : null;
   const dictHandle = strongDictModuleId ? handles.get(strongDictModuleId) || null : null;
@@ -277,6 +272,22 @@ function lookupAllCrossRefModules(book, chapter, allowedModuleIds) {
   return results;
 }
 
+function lookupAllReverseCrossRefs(bookTo, chapterTo, verseTo, allowedModuleIds) {
+  if (!allowedModuleIds || allowedModuleIds.length === 0) return [];
+  const results = [];
+  for (const id of allowedModuleIds) {
+    const handle = handles.get(id);
+    if (!handle || !sqliteProvider.hasCrossRefTable(handle.db)) continue;
+    try {
+      const refs = sqliteProvider.getReverseCrossReferences(handle.db, bookTo, chapterTo, verseTo);
+      for (const ref of refs) {
+        results.push(ref);
+      }
+    } catch (_) {}
+  }
+  return results;
+}
+
 function getCommentary(moduleId, bookNumber, chapter) {
   const handle = getHandle(moduleId);
   return sqliteProvider.getCommentary(handle.db, bookNumber, chapter);
@@ -331,7 +342,12 @@ function saveBookNames(moduleId, bookNumber, fields) {
 
 function getVerseRecord(moduleId, bookNumber, chapter, verse) {
   const handle = getHandle(moduleId);
-  return sqliteProvider.getVerseRecord(handle.db, Number(bookNumber), Number(chapter), Number(verse));
+  return sqliteProvider.getVerseRecord(
+    handle.db,
+    Number(bookNumber),
+    Number(chapter),
+    Number(verse)
+  );
 }
 
 function saveVerseText(moduleId, bookNumber, chapter, verse, text) {
@@ -405,6 +421,7 @@ module.exports = {
   getDictionaryRandomTopics,
   getCrossReferences,
   lookupAllCrossRefModules,
+  lookupAllReverseCrossRefs,
   getCommentary,
   getCommentaryBooks,
   getCommentaryCoverage,

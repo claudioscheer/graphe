@@ -94,7 +94,9 @@ function detectScriptureColumn(db, bibleTable) {
 
 function detectStrongs(db, bibleTable, scriptureCol) {
   const sample = db
-    .prepare(`SELECT "${scriptureCol}" as text FROM "${bibleTable}" WHERE "${scriptureCol}" IS NOT NULL LIMIT 200`)
+    .prepare(
+      `SELECT "${scriptureCol}" as text FROM "${bibleTable}" WHERE "${scriptureCol}" IS NOT NULL LIMIT 200`
+    )
     .all();
   return sample.some((r) => /<W[HG]\d/i.test(r.text || ''));
 }

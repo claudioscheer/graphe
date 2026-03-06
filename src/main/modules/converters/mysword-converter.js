@@ -6,7 +6,11 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const myswordProvider = require('../mysword-provider');
 const { twBookToGraphe, GRAPHE_BOOK_NUMBERS, BOOK_NAMES } = require('../book-map');
-const { normalizeStrongNumber, sanitizeStrongTags, sanitizeSupportedTags } = require('./tag-sanitizer');
+const {
+  normalizeStrongNumber,
+  sanitizeStrongTags,
+  sanitizeSupportedTags,
+} = require('./tag-sanitizer');
 
 function normalizeConvertedVerse(text) {
   return String(text || '')
@@ -82,7 +86,10 @@ function convertMySwordTags(text) {
     // Louw-Nida: strip <a> tags, replace fullwidth comma
     const lnMatch = inner.match(/<LN>([\s\S]*?)<\/LN>/i);
     if (lnMatch) {
-      const ln = lnMatch[1].replace(/<[^>]+>/g, '').replace(/，/g, ', ').trim();
+      const ln = lnMatch[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/，/g, ', ')
+        .trim();
       if (ln) xParts.push(`ln=${ln}`);
     }
 
@@ -121,17 +128,14 @@ function convertMySwordTags(text) {
 
   // 6. Convert NA28-style bracketed interlinear units:
   // 「<T>translit<t><G>greek<g>」→ <E>greek<e><T>translit<t>
-  result = result.replace(
-    /「([^」]*?)<G>([\s\S]*?)<g>([^」]*?)」/g,
-    (_, before, greek, after) => {
-      const combined = before + after;
-      const translitMatch = combined.match(/<T>([\s\S]*?)<t>/i);
-      const translit = translitMatch ? translitMatch[1] : '';
-      let out = `<E>${greek}<e>`;
-      if (translit) out += `<T>${translit}<t>`;
-      return out + ' ';
-    }
-  );
+  result = result.replace(/「([^」]*?)<G>([\s\S]*?)<g>([^」]*?)」/g, (_, before, greek, after) => {
+    const combined = before + after;
+    const translitMatch = combined.match(/<T>([\s\S]*?)<t>/i);
+    const translit = translitMatch ? translitMatch[1] : '';
+    let out = `<E>${greek}<e>`;
+    if (translit) out += `<T>${translit}<t>`;
+    return out + ' ';
+  });
 
   // Fallback: convert remaining <G>...<g> outside brackets to <E>...<e>
   result = result.replace(/<G>([\s\S]*?)<g>/gi, '<E>$1<e>');
@@ -252,9 +256,7 @@ function convertBible(inputPath, outputDir, onProgress) {
       }
 
       if (inserted === 0 || nonEmpty === 0) {
-        throw new Error(
-          `MySword module has no non-empty verse text: ${path.basename(inputPath)}`
-        );
+        throw new Error(`MySword module has no non-empty verse text: ${path.basename(inputPath)}`);
       }
 
       for (const grapheBook of insertedBooks) {
@@ -313,9 +315,7 @@ function convertDictionary(inputPath, outputDir, onProgress) {
     // Build query — include lexeme if available, order by relativeorder if available
     const dictTable = handle.dictTableName;
     const orderCol = handle.hasRelativeOrder ? 'relativeorder' : 'rowid';
-    const selectCols = handle.hasLexeme
-      ? `word, data, lexeme`
-      : `word, data`;
+    const selectCols = handle.hasLexeme ? `word, data, lexeme` : `word, data`;
     const entries = handle.db
       .prepare(`SELECT ${selectCols} FROM "${dictTable}" ORDER BY "${orderCol}"`)
       .all();
@@ -329,14 +329,7 @@ function convertDictionary(inputPath, outputDir, onProgress) {
     outDb.transaction(() => {
       for (const entry of entries) {
         if (!entry.data) continue;
-        insertDict.run(
-          entry.word,
-          entry.data,
-          null,
-          entry.lexeme || null,
-          null,
-          null
-        );
+        insertDict.run(entry.word, entry.data, null, entry.lexeme || null, null, null);
         count++;
         if (onProgress && count % 100 === 0) onProgress(count, total);
       }
