@@ -31,6 +31,7 @@ function normalizeConvertedVerse(text) {
  *   - <WH1234> / <WG5678>  → Strong's numbers
  *   - <WG976><WTN-NSF l="βίβλος">  → Strong's + morphology + lemma
  *   - <W>1<w>  → word position (NOT Strong's, strip)
+ *   - <RF ...>footnote<Rf>  → footnote
  *   - <T>text<t>, <G>text<g>, <Q>text<q>  → case-paired interlinear tags (pass through)
  *   - <HEB>..., <TRA>..., <SEP>..., <ACF>...  → language section labels (strip tags)
  *   - 「」  → word delimiters (strip)
@@ -52,11 +53,14 @@ function convertMySwordTags(text) {
     }
   );
 
-  // 1a. Strip variant readings (OGNTe: ＊<Vr>...</vr>)
+  // 1a. Footnotes: <RF...>text<Rf> → <f>text</f>
+  result = result.replace(/<RF[^>]*>([\s\S]*?)<Rf>/gi, '<f>$1</f>');
+
+  // 1b. Strip variant readings (OGNTe: ＊<Vr>...</vr>)
   result = result.replace(/＊<Vr>[\s\S]*?<\/vr>/gi, '');
   result = result.replace(/＊/g, '');
 
-  // 1b. Convert OGNTe brackets (discriminated by <Mn> inside)
+  // 1c. Convert OGNTe brackets (discriminated by <Mn> inside)
   result = result.replace(/「([\s\S]*?)」/g, (match, inner) => {
     if (!/<Mn>/i.test(inner)) return match;
 
@@ -104,7 +108,7 @@ function convertMySwordTags(text) {
     return out;
   });
 
-  // 1c. Clean inter-word separators before <E> tags
+  // 1d. Clean inter-word separators before <E> tags
   result = result.replace(/,&?\s*(?=<E>)/g, ' ');
 
   // 2. Insert space at word boundaries: <q> closes a Hebrew word, <Q> opens one

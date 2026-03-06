@@ -922,15 +922,30 @@
 
 /* Footnote marker */
 .verse-footnote-marker {
-  color: var(--brand-500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3em;
+  border-radius: 999px;
+  background: var(--ui-accent-bg-soft);
+  color: var(--ui-warn-text);
   cursor: pointer;
-  opacity: 0.75;
-  font-size: 0.75em;
-  margin: 0 1px;
+  opacity: 1;
+  font-size: 0.5em;
+  vertical-align: 0.5em;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-highlight-rgb) / 0.22);
   user-select: none;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
 }
 .verse-footnote-marker:hover {
-  opacity: 1;
+  transform: translateY(-1px);
+  background: var(--ui-accent-bg);
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-highlight-rgb) / 0.38);
 }
 
 /* Footnote popover */

@@ -1,4 +1,3 @@
 - onboarding first time the user opens the app
 - custom formating rules for translations (???)
   - you define a pattern and apply a css to it. then on each verse of that translation we apply that style
-- add button to show in a modal all comments for that verse

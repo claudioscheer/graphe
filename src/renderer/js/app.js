@@ -759,7 +759,6 @@ document.addEventListener('keydown', (e) => {
     if (el && el.querySelectorAll('.verse-selected').length) {
       e.preventDefault();
       copySelectedVerses(paneId);
-      el.querySelectorAll('.verse-selected').forEach((v) => v.classList.remove('verse-selected'));
     }
     return;
   }

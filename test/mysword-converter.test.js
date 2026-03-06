@@ -55,6 +55,11 @@ describe('convertMySwordTags', () => {
     expect(convertMySwordTags('line1<br/>line2')).toContain('<pb/>');
   });
 
+  it('converts footnotes with RF attributes to <f>', () => {
+    const result = convertMySwordTags('text <RF q=✮>footnote content<Rf> more');
+    expect(result).toBe('text <f>footnote content</f> more');
+  });
+
   it('preserves case-paired interlinear tags', () => {
     const result = convertMySwordTags('<T>lógos<t>');
     expect(result).toContain('<T>lógos<t>');

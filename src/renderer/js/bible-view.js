@@ -189,27 +189,12 @@ export const BibleView = (() => {
   }
 
   function parseVerseText(text, showStrongs, strongsPrefix, footnotes) {
-    // Replace <f>...</f> footnotes with superscript markers
-    const superDigits = [
-      '\u2070',
-      '\u00b9',
-      '\u00b2',
-      '\u00b3',
-      '\u2074',
-      '\u2075',
-      '\u2076',
-      '\u2077',
-      '\u2078',
-      '\u2079',
-    ];
+    // Replace <f>...</f> footnotes with numbered markers
     let fnIndex = 0;
     let html = text.replace(/<f>([\s\S]*?)<\/f>/gi, (_match, content) => {
       if (footnotes) footnotes.push(content.trim());
       fnIndex++;
-      const label = String(fnIndex)
-        .split('')
-        .map((d) => superDigits[parseInt(d)])
-        .join('');
+      const label = String(fnIndex);
       return `<sup class="verse-footnote-marker" data-fn-index="${fnIndex - 1}">${label}</sup>`;
     });
 
