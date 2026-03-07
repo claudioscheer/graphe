@@ -764,12 +764,16 @@ export const I18n = (() => {
     return names[idx] || { short: String(bookNumber), long: String(bookNumber) };
   }
 
+  function stripDiacritics(str) {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
   function findBookByAbbrev(abbrev) {
     const lang = getCurrentLang();
     const names = bookNames[lang] || bookNames.en;
-    const lower = abbrev.toLowerCase();
+    const lower = stripDiacritics(abbrev.toLowerCase());
     for (let i = 0; i < names.length; i++) {
-      const s = names[i].short.toLowerCase();
+      const s = stripDiacritics(names[i].short.toLowerCase());
       if (s === lower || s.startsWith(lower)) return BOOK_NUMBERS[i];
     }
     return null;
