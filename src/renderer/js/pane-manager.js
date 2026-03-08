@@ -127,6 +127,7 @@ export const PaneManager = (() => {
         bookShortName: initial.bookShortName || '',
         books: [],
         verses: [],
+        selectedVerse: null,
         navHistory: [],
         navHistoryIdx: -1,
       };
@@ -251,6 +252,7 @@ export const PaneManager = (() => {
           bookShortName: raw.bookShortName || '',
           books: [],
           verses: [],
+          selectedVerse: null,
           navHistory: [],
           navHistoryIdx: -1,
         };
@@ -1061,6 +1063,7 @@ export const PaneManager = (() => {
   }
 
   function notifyVerseClick(paneId, verseNum) {
+    if (panes[paneId]) panes[paneId].selectedVerse = verseNum;
     for (const pane of Object.values(panes)) {
       if (pane.paneType === 'commentary' && pane.syncedToPaneId === paneId) {
         const el = document.querySelector(`[data-pane-id="${pane.id}"] .pane-content`);
@@ -1196,9 +1199,7 @@ export const PaneManager = (() => {
   function pushNavHistory(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
-    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
-    const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
-    const verse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+    const verse = pane.selectedVerse || null;
     const entry = { moduleId: pane.moduleId, bookNumber: pane.bookNumber, chapter: pane.chapter, verse };
     // Truncate any forward history
     pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
@@ -1357,6 +1358,7 @@ export const PaneManager = (() => {
       } else {
         content.scrollTop = 0;
       }
+      pane.selectedVerse = scrollToVerse || null;
       notifyChapterChange(paneId, scrollToVerse);
     } catch (err) {
       console.error('Failed to load chapter:', err);
@@ -1407,6 +1409,7 @@ export const PaneManager = (() => {
     if (!pane) return;
     if (!pane.books.find((b) => b.bookNumber === pane.bookNumber)) return;
 
+    pushNavHistory(paneId);
     if (pane.chapter > 1) {
       pane.chapter--;
     } else {
@@ -1419,6 +1422,7 @@ export const PaneManager = (() => {
       }
     }
     await loadChapter(paneId);
+    pushNavHistory(paneId);
     emitStateChange();
   }
 
@@ -1427,6 +1431,7 @@ export const PaneManager = (() => {
     if (!pane) return;
     if (!pane.books.find((b) => b.bookNumber === pane.bookNumber)) return;
 
+    pushNavHistory(paneId);
     const count = await window.api.getChapterCount(pane.moduleId, pane.bookNumber);
     if (pane.chapter < count) {
       pane.chapter++;
@@ -1438,6 +1443,7 @@ export const PaneManager = (() => {
       }
     }
     await loadChapter(paneId);
+    pushNavHistory(paneId);
     emitStateChange();
   }
 

@@ -769,6 +769,10 @@ document.addEventListener('keydown', (e) => {
     const el = document.querySelector(`[data-pane-id="${paneId}"] .pane-content`);
     if (el) {
       BibleView.selectAdjacentVerse(el, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+      const newSelected = el.querySelector('.verse-line.verse-selected');
+      if (newSelected) {
+        PaneManager.notifyVerseClick(paneId, parseInt(newSelected.dataset.verse, 10));
+      }
     }
   }
 });

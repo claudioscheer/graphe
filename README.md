@@ -1,6 +1,6 @@
 # Graphe
 
-Mais informacoes e atualizacoes: [Telegram do Graphe](https://t.me/graphegrupo)
+Mais informações e atualizações: [Telegram do Graphe](https://t.me/graphegrupo)
 
 Um aplicativo moderno para estudo bíblico, com foco em leitura, comparação e pesquisa das Escrituras.
 

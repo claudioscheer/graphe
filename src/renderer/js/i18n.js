@@ -772,9 +772,15 @@ export const I18n = (() => {
     const lang = getCurrentLang();
     const names = bookNames[lang] || bookNames.en;
     const lower = stripDiacritics(abbrev.toLowerCase());
+    // Exact match first (e.g. "jo" → "Jo" João, not "Jó" Job)
     for (let i = 0; i < names.length; i++) {
       const s = stripDiacritics(names[i].short.toLowerCase());
-      if (s === lower || s.startsWith(lower)) return BOOK_NUMBERS[i];
+      if (s === lower) return BOOK_NUMBERS[i];
+    }
+    // Then prefix match
+    for (let i = 0; i < names.length; i++) {
+      const s = stripDiacritics(names[i].short.toLowerCase());
+      if (s.startsWith(lower)) return BOOK_NUMBERS[i];
     }
     return null;
   }
