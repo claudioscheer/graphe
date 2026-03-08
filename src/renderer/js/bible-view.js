@@ -520,7 +520,7 @@ export const BibleView = (() => {
       let text = '';
       if (content) {
         const clone = content.cloneNode(true);
-        clone.querySelectorAll('.strongs, .verse-annotation').forEach((s) => s.remove());
+        clone.querySelectorAll('.strongs, .verse-annotation, .verse-footnote-marker').forEach((s) => s.remove());
         text = clone.textContent.trim();
       }
       lines.push(`[${bookShort} ${chapter}:${verse}] ${text}`);

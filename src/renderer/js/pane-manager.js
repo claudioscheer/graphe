@@ -1196,7 +1196,10 @@ export const PaneManager = (() => {
   function pushNavHistory(paneId) {
     const pane = panes[paneId];
     if (!pane) return;
-    const entry = { moduleId: pane.moduleId, bookNumber: pane.bookNumber, chapter: pane.chapter };
+    const el = document.querySelector(`[data-pane-id="${paneId}"]`);
+    const selectedLine = el?.querySelector('.pane-content .verse-line.verse-selected');
+    const verse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
+    const entry = { moduleId: pane.moduleId, bookNumber: pane.bookNumber, chapter: pane.chapter, verse };
     // Truncate any forward history
     pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
     // Avoid duplicate of current top
@@ -1205,7 +1208,8 @@ export const PaneManager = (() => {
       top &&
       top.moduleId === entry.moduleId &&
       top.bookNumber === entry.bookNumber &&
-      top.chapter === entry.chapter
+      top.chapter === entry.chapter &&
+      top.verse === entry.verse
     ) {
       return;
     }
@@ -1252,9 +1256,9 @@ export const PaneManager = (() => {
         pickerEl.__pickerInstance.setSelected(entry.moduleId);
       }
       refreshQuickBarForPane(paneId);
-      await loadPaneData(paneId);
+      await loadPaneData(paneId, entry.verse);
     } else {
-      await loadChapter(paneId);
+      await loadChapter(paneId, entry.verse);
     }
   }
 
