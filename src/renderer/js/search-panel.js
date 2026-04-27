@@ -7,29 +7,23 @@ import { ModulePicker } from './module-picker.js';
 import { PaneManager } from './pane-manager.js';
 import { Utils } from './utils.js';
 import { VerseUtils } from './verse-utils.js';
+import { WorkbenchShell } from './workbench-shell.js';
 
 export const SearchPanel = (() => {
   let modules = [];
   let selectedModuleId = null;
   let booksCache = {};
   let onStateChange = null;
-  let widthRatio = null;
-  let resizeBound = false;
 
   // DOM refs
-  let sidebar, panel, divider, input, select, resultsList, statusEl, searchClearBtn, pickerInstance;
+  let panel, input, select, resultsList, statusEl, searchClearBtn, pickerInstance;
 
-  const MIN_WIDTH = 200;
-  const MAX_WIDTH_RATIO = 0.6;
-  const DEFAULT_WIDTH = 280;
   const PREVIEW_MAX_CHARS = 160;
 
-  function init(moduleList, savedState) {
+  function init(moduleList, savedState, mountEl) {
     modules = moduleList;
     selectedModuleId = savedState?.moduleId || (modules[0] && modules[0].id) || null;
-    widthRatio = resolveInitialWidthRatio(savedState);
-    const width = Math.round(getViewportWidth() * widthRatio);
-    buildDOM(width);
+    buildDOM(mountEl);
     prefetchBooks();
     // Restore last search query
     const savedQuery = savedState?.query || '';
@@ -41,45 +35,10 @@ export const SearchPanel = (() => {
     emitStateChange();
   }
 
-  function getViewportWidth() {
-    return Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-  }
-
-  function resolveInitialWidthRatio(savedState) {
-    if (savedState && Number.isFinite(savedState.widthRatio)) {
-      return Math.min(0.9, Math.max(0.1, Number(savedState.widthRatio)));
-    }
-    return Math.min(0.9, Math.max(0.1, DEFAULT_WIDTH / getViewportWidth()));
-  }
-
-  function setupResizeSync() {
-    if (resizeBound) return;
-    resizeBound = true;
-    window.addEventListener('resize', () => {
-      if (!sidebar) return;
-      const next = clampWidth(Math.round(getViewportWidth() * (widthRatio || 0.25)));
-      sidebar.style.width = next + 'px';
-    });
-  }
-
-  function getSidebar() {
-    return sidebar;
-  }
-
-  function buildDOM(width) {
-    const paneRoot = document.getElementById('pane-root');
-    const body = paneRoot.parentElement;
-
-    // Create layout wrapper
-    const layout = document.createElement('div');
-    layout.id = 'app-layout';
-    layout.className = 'flex flex-row flex-1 overflow-hidden';
-
-    // Create left sidebar wrapper
-    sidebar = document.createElement('div');
-    sidebar.id = 'left-sidebar';
-    sidebar.style.width = clampWidth(width) + 'px';
-    setupResizeSync();
+  function buildDOM(mountEl) {
+    const host = mountEl || document.getElementById('pane-root')?.parentElement;
+    if (!host) return;
+    host.innerHTML = '';
 
     // Build search panel
     panel = document.createElement('div');
@@ -171,20 +130,7 @@ export const SearchPanel = (() => {
     resultsList.className = 'search-panel-results';
     panel.appendChild(resultsList);
 
-    // Divider (between left sidebar and pane-root)
-    divider = document.createElement('div');
-    divider.className = 'split-divider split-divider-h';
-    setupDividerDrag();
-
-    // Assemble: search panel into sidebar
-    sidebar.appendChild(panel);
-
-    // Reparent: remove pane-root from body, put it inside layout
-    body.removeChild(paneRoot);
-    layout.appendChild(sidebar);
-    layout.appendChild(divider);
-    layout.appendChild(paneRoot);
-    body.appendChild(layout);
+    host.appendChild(panel);
 
     showHint();
   }
@@ -196,36 +142,6 @@ export const SearchPanel = (() => {
     hint.setAttribute('data-i18n', 'searchHint');
     hint.textContent = I18n.t('searchHint');
     resultsList.appendChild(hint);
-  }
-
-  function setupDividerDrag() {
-    divider.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      divider.classList.add('dragging');
-      const startX = e.clientX;
-      const startWidth = sidebar.offsetWidth;
-
-      const onMove = (e2) => {
-        const newWidth = clampWidth(startWidth + (e2.clientX - startX));
-        sidebar.style.width = newWidth + 'px';
-        widthRatio = Math.min(0.9, Math.max(0.1, newWidth / getViewportWidth()));
-      };
-
-      const onUp = () => {
-        divider.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        emitStateChange();
-      };
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  }
-
-  function clampWidth(w) {
-    const maxWidth = Math.max(MIN_WIDTH + 40, Math.floor(getViewportWidth() * MAX_WIDTH_RATIO));
-    return Math.max(MIN_WIDTH, Math.min(maxWidth, Math.round(w)));
   }
 
   async function prefetchBooks() {
@@ -604,6 +520,7 @@ export const SearchPanel = (() => {
   }
 
   function search(query) {
+    WorkbenchShell.activateSidebar('search', { focus: true });
     if (input) {
       input.value = query;
       if (searchClearBtn) searchClearBtn.style.display = query ? '' : 'none';
@@ -612,6 +529,7 @@ export const SearchPanel = (() => {
   }
 
   function focusInput() {
+    WorkbenchShell.activateSidebar('search', { focus: true });
     if (input) input.focus();
   }
 
@@ -621,20 +539,14 @@ export const SearchPanel = (() => {
 
   function emitStateChange() {
     if (!onStateChange) return;
-    const width = sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH;
-    widthRatio = Math.min(0.9, Math.max(0.1, width / getViewportWidth()));
     onStateChange({
-      widthRatio,
       moduleId: selectedModuleId,
       query: input ? input.value.trim() : '',
     });
   }
 
   function getState() {
-    const width = sidebar ? sidebar.offsetWidth : DEFAULT_WIDTH;
-    widthRatio = Math.min(0.9, Math.max(0.1, width / getViewportWidth()));
     return {
-      widthRatio,
       moduleId: selectedModuleId,
       query: input ? input.value.trim() : '',
     };
@@ -647,6 +559,5 @@ export const SearchPanel = (() => {
     setSelectedModule,
     setStateChangeListener,
     getState,
-    getSidebar,
   };
 })();

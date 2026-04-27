@@ -8,8 +8,8 @@ import { Icons } from './icons.js';
 import { ModulePicker } from './module-picker.js';
 import { PaneManager } from './pane-manager.js';
 import { Sanitize } from './sanitize.js';
-import { SearchPanel } from './search-panel.js';
 import { Utils } from './utils.js';
+import { WorkbenchShell } from './workbench-shell.js';
 
 export const DictPanel = (() => {
   let dictModules = [];
@@ -23,15 +23,13 @@ export const DictPanel = (() => {
   // Navigation history (single unified list)
   let history = { entries: [], idx: -1 };
   let navBackBtn, navForwardBtn;
-  let dictHeightRatio = null;
-  let resizeBound = false;
   let bibleRefMatcher = null;
   let bibleRefMatcherLang = null;
 
   // DOM refs
   let panel, contentEl, searchInput, autocompleteEl, dictClearBtn, moduleSelect, dictPickerInstance;
 
-  function init(modules, savedState) {
+  function init(modules, savedState, mountEl) {
     dictModules = modules;
     moduleSearchCache.clear();
     if (
@@ -44,10 +42,7 @@ export const DictPanel = (() => {
       }
     }
     selectedModuleId = resolveSelectedModuleId(savedState?.selectedModuleId);
-    if (savedState && Number.isFinite(savedState.dictHeightRatio)) {
-      dictHeightRatio = Math.min(0.9, Math.max(0.1, Number(savedState.dictHeightRatio)));
-    }
-    buildDOM(savedState);
+    buildDOM(mountEl);
     restoreSelectedModuleSearch();
     emitStateChange();
   }
@@ -67,23 +62,14 @@ export const DictPanel = (() => {
     return Utils.getModuleDisplayName(mod);
   }
 
-  function buildDOM(savedState) {
-    const sidebar = SearchPanel.getSidebar();
-    if (!sidebar) return;
-
-    // Vertical split divider between search and dict
-    const divider = document.createElement('div');
-    divider.className = 'split-divider split-divider-v';
-    setupVerticalDivider(divider);
+  function buildDOM(mountEl) {
+    const host = mountEl || document.getElementById('pane-root')?.parentElement;
+    if (!host) return;
+    host.innerHTML = '';
 
     // Dict panel
     panel = document.createElement('div');
     panel.id = 'dict-panel';
-    const savedHeight = resolveInitialHeight(sidebar);
-    if (savedHeight) {
-      panel.style.flex = 'none';
-      panel.style.height = savedHeight + 'px';
-    }
 
     // Header
     const header = document.createElement('div');
@@ -202,67 +188,11 @@ export const DictPanel = (() => {
       '<div class="dict-placeholder">' + Utils.escapeHtml(I18n.t('dictSelectTopic')) + '</div>';
     panel.appendChild(contentEl);
 
-    sidebar.appendChild(divider);
-    sidebar.appendChild(panel);
-    setupResizeSync();
+    host.appendChild(panel);
 
     // Close autocomplete when clicking outside
     document.addEventListener('click', (e) => {
       if (!searchWrapper.contains(e.target)) hideAutocomplete();
-    });
-  }
-
-  function setupVerticalDivider(divider) {
-    divider.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      divider.classList.add('dragging');
-      const startY = e.clientY;
-      const sidebar = SearchPanel.getSidebar();
-      if (!sidebar) return;
-      const startDictH = panel.offsetHeight;
-
-      const onMove = (e2) => {
-        const delta = e2.clientY - startY;
-        const sidebarH = Math.max(1, sidebar.clientHeight || 1);
-        const minDictH = 80;
-        const maxDictH = Math.max(minDictH, sidebarH - 100);
-        const newDictH = Math.min(maxDictH, Math.max(minDictH, startDictH - delta));
-        panel.style.flex = 'none';
-        panel.style.height = newDictH + 'px';
-        dictHeightRatio = Math.min(0.9, Math.max(0.1, newDictH / sidebarH));
-      };
-
-      const onUp = () => {
-        divider.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        emitStateChange();
-      };
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  }
-
-  function resolveInitialHeight(sidebar) {
-    if (!Number.isFinite(dictHeightRatio)) return null;
-    const sidebarHeight = Math.max(1, sidebar?.clientHeight || 1);
-    const minDictH = 80;
-    const maxDictH = Math.max(minDictH, sidebarHeight - 100);
-    return Math.min(maxDictH, Math.max(minDictH, Math.round(sidebarHeight * dictHeightRatio)));
-  }
-
-  function setupResizeSync() {
-    if (resizeBound) return;
-    resizeBound = true;
-    window.addEventListener('resize', () => {
-      if (!panel || !Number.isFinite(dictHeightRatio)) return;
-      const sidebar = SearchPanel.getSidebar();
-      if (!sidebar) return;
-      const nextHeight = resolveInitialHeight(sidebar);
-      if (!nextHeight) return;
-      panel.style.flex = 'none';
-      panel.style.height = nextHeight + 'px';
     });
   }
 
@@ -409,7 +339,7 @@ export const DictPanel = (() => {
     }
     searchInput.value = cachedTopic;
     if (dictClearBtn) dictClearBtn.style.display = '';
-    lookupWord(cachedTopic, moduleId, true);
+    lookupWord(cachedTopic, moduleId, true, { preserveActivity: true });
   }
 
   async function openDictionaryInfoModal() {
@@ -701,6 +631,8 @@ export const DictPanel = (() => {
 
   async function lookup(strongsNumber, skipHistory, lookupContext) {
     if (!panel) return;
+    WorkbenchShell.activateSidebar('dictionary', { focus: true });
+    WorkbenchShell.setCurrentLookup(strongsNumber);
     const normalizedContext = normalizeLookupContext(lookupContext);
 
     searchInput.value = strongsNumber;
@@ -773,8 +705,12 @@ export const DictPanel = (() => {
 
   // --- Word lookup (Almeida-style dictionaries) ---
 
-  async function lookupWord(topic, moduleId, skipHistory) {
+  async function lookupWord(topic, moduleId, skipHistory, options = {}) {
     if (!panel) return;
+    if (!options.preserveActivity) {
+      WorkbenchShell.activateSidebar('dictionary', { focus: true });
+    }
+    WorkbenchShell.setCurrentLookup(topic);
 
     const resolvedModuleId = resolveSelectedModuleId(moduleId || selectedModuleId);
     if (!resolvedModuleId) {
@@ -1548,15 +1484,7 @@ export const DictPanel = (() => {
   }
 
   function getState() {
-    const sidebar = SearchPanel.getSidebar();
-    const sidebarHeight = Math.max(1, sidebar?.clientHeight || 1);
-    const dictHeight = panel ? panel.offsetHeight : null;
-    dictHeightRatio =
-      Number.isFinite(dictHeight) && dictHeight > 0
-        ? Math.min(0.9, Math.max(0.1, dictHeight / sidebarHeight))
-        : dictHeightRatio;
     return {
-      dictHeightRatio,
       selectedModuleId: selectedModuleId || null,
       moduleSearchCache: Object.fromEntries(moduleSearchCache),
     };

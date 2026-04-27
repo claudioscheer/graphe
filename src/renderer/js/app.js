@@ -12,6 +12,7 @@ import { Navigation, setNavigationPaneManager } from './navigation.js';
 import { PaneManager } from './pane-manager.js';
 import { SearchPanel } from './search-panel.js';
 import { Utils } from './utils.js';
+import { WorkbenchShell } from './workbench-shell.js';
 
 function decorateNativeSelect(selectEl) {
   if (!selectEl || selectEl.parentElement?.classList.contains('app-select-native-wrap')) return;
@@ -139,6 +140,7 @@ const Settings = (() => {
     localStorage.setItem('graphe-theme', theme);
     AppStateStore.setSettings({ theme });
     updateThemeLabel();
+    WorkbenchShell.updateStatus(PaneManager.getPane(PaneManager.getActivePaneId()));
   });
 
   // Language change
@@ -150,6 +152,7 @@ const Settings = (() => {
     if (!document.getElementById('no-modules-message')) {
       PaneManager.render();
     }
+    WorkbenchShell.refreshLabels();
     updateThemeLabel();
   });
 
@@ -437,6 +440,16 @@ function copySelectedVerses(paneId = PaneManager.getActivePaneId()) {
   return true;
 }
 
+function openNavigationForActivePane() {
+  const paneId = PaneManager.getActivePaneId();
+  const pane = PaneManager.getPane(paneId);
+  if (!pane || !pane.moduleId) return;
+  window.api
+    .getBooks(pane.moduleId)
+    .then((books) => Navigation.open(paneId, books))
+    .catch((err) => console.warn('Failed to open navigation:', err));
+}
+
 const lastMousePosition = { x: null, y: null };
 
 document.addEventListener(
@@ -695,14 +708,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === 'F3') {
     e.preventDefault();
-    const paneId = PaneManager.getActivePaneId();
-    const pane = PaneManager.getPane(paneId);
-    if (pane) {
-      window.api
-        .getBooks(pane.moduleId)
-        .then((books) => Navigation.open(paneId, books))
-        .catch((err) => console.warn('Failed to open navigation:', err));
-    }
+    openNavigationForActivePane();
     return;
   }
 
@@ -1070,8 +1076,32 @@ window.api
     setNavigationPaneManager(PaneManager);
     Navigation.init();
 
+    WorkbenchShell.setStateChangeListener((workbenchState) => {
+      AppStateStore.setWorkbench(workbenchState);
+    });
+    WorkbenchShell.init(AppStateStore.getWorkbench(), {
+      modules,
+      bibleModules,
+      dictModules,
+      commentaryModules: commentaryModulesList,
+      crossRefModules,
+      handlers: {
+        openSettings: () => Settings.open(),
+        openAbout: () => AboutDialog.open(),
+        openNavigation: () => openNavigationForActivePane(),
+        openConvertModules: () => ConvertModal.open(),
+        openModuleEditor: (moduleId) => ModuleEditor.open(moduleId, 'info'),
+      },
+    });
+
+    const updateWorkbenchStatus = () => {
+      WorkbenchShell.updateStatus(PaneManager.getPane(PaneManager.getActivePaneId()));
+    };
+    document.addEventListener('graphe:pane-active-change', updateWorkbenchStatus);
+
     PaneManager.setStateChangeListener((paneState) => {
       AppStateStore.setPaneManager(paneState);
+      updateWorkbenchStatus();
     });
 
     PaneManager.init(bibleModules, AppStateStore.getPaneManager(), commentaryModulesList);
@@ -1088,17 +1118,26 @@ window.api
     SearchPanel.setStateChangeListener((searchState) => {
       AppStateStore.setSearchPanel(searchState);
     });
-    SearchPanel.init(bibleModules, AppStateStore.getSearchPanel());
+    SearchPanel.init(
+      bibleModules,
+      AppStateStore.getSearchPanel(),
+      WorkbenchShell.getViewContainer('search')
+    );
 
     DictPanel.setStateChangeListener((dictState) => {
       AppStateStore.setDictPanel(dictState);
     });
-    DictPanel.init(dictModules, AppStateStore.getDictPanel());
+    DictPanel.init(
+      dictModules,
+      AppStateStore.getDictPanel(),
+      WorkbenchShell.getViewContainer('dictionary')
+    );
 
     Settings.initStrongsDicts(dictModules);
     Settings.initCrossRefModules(crossRefModules);
 
     await PaneManager.waitForInitialLoad();
+    updateWorkbenchStatus();
   } finally {
     LoadingScreen.hide();
   }

@@ -407,6 +407,7 @@ export const PaneManager = (() => {
     activePaneId = paneId;
     const next = document.querySelector(`[data-pane-id="${paneId}"]`);
     if (next) next.classList.add('pane-active');
+    document.dispatchEvent(new CustomEvent('graphe:pane-active-change', { detail: { paneId } }));
   }
 
   // ---- Rendering the tree into DOM ----
@@ -1200,7 +1201,12 @@ export const PaneManager = (() => {
     const pane = panes[paneId];
     if (!pane) return;
     const verse = pane.selectedVerse || null;
-    const entry = { moduleId: pane.moduleId, bookNumber: pane.bookNumber, chapter: pane.chapter, verse };
+    const entry = {
+      moduleId: pane.moduleId,
+      bookNumber: pane.bookNumber,
+      chapter: pane.chapter,
+      verse,
+    };
     // Truncate any forward history
     pane.navHistory = pane.navHistory.slice(0, pane.navHistoryIdx + 1);
     // Avoid duplicate of current top

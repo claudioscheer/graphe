@@ -10,6 +10,7 @@ export const AppStateStore = (() => {
       favoriteModules: {},
     },
     paneManager: null,
+    workbench: null,
     searchPanel: null,
     dictPanel: null,
   };
@@ -25,8 +26,28 @@ export const AppStateStore = (() => {
         ...state.settings,
         ...(loadedState.settings || {}),
       },
+      workbench: normalizeWorkbenchState(loadedState.workbench, loadedState.searchPanel),
       searchPanel: loadedState.searchPanel || null,
       dictPanel: loadedState.dictPanel || null,
+    };
+  }
+
+  function normalizeWorkbenchState(workbenchState, legacySearchState) {
+    const currentVersion = 1;
+    const source = workbenchState && typeof workbenchState === 'object' ? workbenchState : {};
+    const activeView =
+      typeof source.activeView === 'string' && source.activeView ? source.activeView : 'search';
+    const widthRatio = Number.isFinite(source.widthRatio)
+      ? source.widthRatio
+      : Number.isFinite(legacySearchState?.widthRatio)
+        ? legacySearchState.widthRatio
+        : null;
+
+    return {
+      version: currentVersion,
+      activeView,
+      collapsed: source.collapsed === true,
+      widthRatio: widthRatio == null ? null : Math.min(0.6, Math.max(0.12, Number(widthRatio))),
     };
   }
 
@@ -60,6 +81,19 @@ export const AppStateStore = (() => {
     return state.paneManager;
   }
 
+  function setWorkbench(nextWorkbench) {
+    state.workbench = {
+      ...(state.workbench || { version: 1 }),
+      ...nextWorkbench,
+      version: 1,
+    };
+    scheduleSave();
+  }
+
+  function getWorkbench() {
+    return state.workbench;
+  }
+
   function setSearchPanel(nextSearchPanel) {
     state.searchPanel = nextSearchPanel;
     scheduleSave();
@@ -84,6 +118,8 @@ export const AppStateStore = (() => {
     setPaneManager,
     getSettings,
     getPaneManager,
+    setWorkbench,
+    getWorkbench,
     setSearchPanel,
     getSearchPanel,
     setDictPanel,
