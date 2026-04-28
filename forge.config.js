@@ -74,7 +74,7 @@ module.exports = {
       '^/data($|/)',
       '^/README\\.md$',
       '^/CLAUDE\\.md$',
-      '^/MyBibleModulesFormat\\.md$',
+      '^/docs/MyBibleModulesFormat\\.md$',
       '^/TODO\\.md$',
       '^/package-lock\\.json$',
       '^/eslint\\.config\\.js$',
