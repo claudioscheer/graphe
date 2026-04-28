@@ -581,7 +581,6 @@ export const PaneManager = (() => {
     const navBtn = document.createElement('button');
     navBtn.className =
       'nav-btn cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
-    navBtn.appendChild(Icons.create('ellipsis', 'w-4 h-4 text-brand-600 dark:text-night-300'));
     const navBtnLabel = document.createElement('span');
     navBtnLabel.className = 'nav-btn-label';
     navBtnLabel.textContent = '...';
@@ -614,26 +613,41 @@ export const PaneManager = (() => {
     navGroup.append(prevBtn, navBtn, nextBtn);
 
     const backBtn = document.createElement('button');
+    backBtn.type = 'button';
     backBtn.className =
-      'pane-back-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+      'pane-back-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
     backBtn.disabled = true;
     backBtn.appendChild(Icons.create('arrow-left', 'w-3.5 h-3.5'));
+    const backBtnLabel = document.createElement('span');
+    backBtnLabel.className = 'pane-options-menu-label';
+    backBtnLabel.textContent = I18n.t('crossRefBackTooltip');
+    backBtn.appendChild(backBtnLabel);
     backBtn.title = I18n.t('crossRefBackTooltip');
     attachNavHistoryLongPress(backBtn, paneId, 'back');
 
     const forwardBtn = document.createElement('button');
+    forwardBtn.type = 'button';
     forwardBtn.className =
-      'pane-forward-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+      'pane-forward-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
     forwardBtn.disabled = true;
     forwardBtn.appendChild(Icons.create('arrow-right', 'w-3.5 h-3.5'));
+    const forwardBtnLabel = document.createElement('span');
+    forwardBtnLabel.className = 'pane-options-menu-label';
+    forwardBtnLabel.textContent = I18n.t('crossRefForwardTooltip');
+    forwardBtn.appendChild(forwardBtnLabel);
     forwardBtn.title = I18n.t('crossRefForwardTooltip');
     attachNavHistoryLongPress(forwardBtn, paneId, 'forward');
 
     const pinBtn = document.createElement('button');
+    pinBtn.type = 'button';
     pinBtn.className =
-      'pane-pin-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+      'pane-pin-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
     const isPinned = linkTargetPaneId === paneId;
     pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
+    const pinBtnLabel = document.createElement('span');
+    pinBtnLabel.className = 'pane-options-menu-label';
+    pinBtnLabel.textContent = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
+    pinBtn.appendChild(pinBtnLabel);
     pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
     if (isPinned) pinBtn.classList.add('pane-link-target');
     pinBtn.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -644,6 +658,81 @@ export const PaneManager = (() => {
         setLinkTarget(paneId);
       }
     });
+
+    const optionsWrap = document.createElement('div');
+    optionsWrap.className = 'pane-options-control';
+    optionsWrap.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    const optionsBtn = document.createElement('button');
+    optionsBtn.type = 'button';
+    optionsBtn.className =
+      'pane-options-btn cursor-pointer transition-colors inline-flex items-center justify-center';
+    optionsBtn.appendChild(Icons.create('ellipsis'));
+    optionsBtn.title = I18n.t('paneOptions');
+    optionsBtn.setAttribute('aria-haspopup', 'menu');
+    optionsBtn.setAttribute('aria-expanded', 'false');
+
+    const optionsMenu = document.createElement('div');
+    optionsMenu.className = 'pane-options-menu hidden';
+    optionsMenu.setAttribute('role', 'menu');
+    optionsMenu.tabIndex = -1;
+
+    let isOptionsMenuOpen = false;
+    let optionsMenuDocListener = null;
+
+    const setOptionsMenuOpen = (open) => {
+      isOptionsMenuOpen = open;
+      optionsMenu.classList.toggle('hidden', !open);
+      optionsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        if (!optionsMenuDocListener) {
+          optionsMenuDocListener = (e) => {
+            if (!optionsWrap.isConnected) {
+              document.removeEventListener('mousedown', optionsMenuDocListener);
+              optionsMenuDocListener = null;
+              return;
+            }
+            if (!optionsWrap.contains(e.target)) setOptionsMenuOpen(false);
+          };
+          document.addEventListener('mousedown', optionsMenuDocListener);
+        }
+        optionsMenu.focus();
+      } else if (optionsMenuDocListener) {
+        document.removeEventListener('mousedown', optionsMenuDocListener);
+        optionsMenuDocListener = null;
+      }
+    };
+
+    [backBtn, forwardBtn, pinBtn].forEach((btn) => {
+      btn.setAttribute('role', 'menuitem');
+      btn.addEventListener('click', () => setOptionsMenuOpen(false));
+    });
+
+    optionsBtn.addEventListener('click', () => setOptionsMenuOpen(!isOptionsMenuOpen));
+    optionsBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' && !isOptionsMenuOpen) {
+        e.preventDefault();
+        setOptionsMenuOpen(true);
+      } else if (e.key === 'Escape' && isOptionsMenuOpen) {
+        e.preventDefault();
+        setOptionsMenuOpen(false);
+      }
+    });
+    optionsMenu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOptionsMenuOpen(false);
+        optionsBtn.focus();
+      }
+    });
+    optionsWrap.addEventListener('focusout', () => {
+      if (!isOptionsMenuOpen) return;
+      setTimeout(() => {
+        if (!optionsWrap.contains(document.activeElement)) setOptionsMenuOpen(false);
+      }, 0);
+    });
+    optionsMenu.append(backBtn, forwardBtn, pinBtn);
+    optionsWrap.append(optionsBtn, optionsMenu);
 
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
@@ -659,7 +748,7 @@ export const PaneManager = (() => {
     idBadge.className = 'pane-id-badge';
     idBadge.textContent = getPaneDisplayLabel(paneId);
 
-    toolbar.append(idBadge, select, navGroup, spacer, backBtn, forwardBtn, pinBtn, closeBtn);
+    toolbar.append(idBadge, select, navGroup, spacer, optionsWrap, closeBtn);
 
     const content = document.createElement('div');
     content.className = 'pane-content flex-1 overflow-y-auto';
@@ -1755,7 +1844,12 @@ export const PaneManager = (() => {
       const btn = el.querySelector('.pane-pin-btn');
       if (!btn) return;
       const pinned = id === linkTargetPaneId;
+      const label = btn.querySelector('.pane-options-menu-label');
       btn.replaceChildren(Icons.create(pinned ? 'pin' : 'pin-off'));
+      if (label) {
+        label.textContent = pinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
+        btn.appendChild(label);
+      }
       if (pinned) {
         btn.classList.add('pane-link-target');
         btn.title = I18n.t('unpinLinkTarget');

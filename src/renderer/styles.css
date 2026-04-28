@@ -1285,6 +1285,10 @@ body > .workbench-shell {
 }
 
 /* Pane toolbar */
+.pane-shell {
+  container-type: inline-size;
+}
+
 .pane-toolbar {
   min-height: 44px;
 }
@@ -1309,6 +1313,68 @@ body > .workbench-shell {
 .dark .pane-toolbar button:hover:not(:disabled) {
   color: var(--ui-text-muted);
   background-color: transparent;
+}
+
+.pane-options-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.pane-options-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 70;
+  width: min(230px, calc(100vw - 12px));
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface-elevated);
+  box-shadow: 0 10px 26px rgb(var(--ui-shadow-rgb) / 0.18);
+}
+
+.pane-options-menu.hidden {
+  display: none;
+}
+
+.pane-options-menu .pane-options-menu-item {
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--ui-text-muted);
+  text-align: left;
+  border-radius: 4px;
+}
+
+.pane-options-menu .pane-options-menu-item:hover:not(:disabled),
+.pane-options-menu .pane-options-menu-item:focus:not(:disabled) {
+  color: var(--ui-text);
+  background: rgb(var(--ui-surface-rgb) / 0.42);
+  outline: none;
+}
+
+.pane-options-menu .pane-options-menu-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pane-options-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark .pane-options-menu .pane-options-menu-item:hover:not(:disabled),
+.dark .pane-options-menu .pane-options-menu-item:focus:not(:disabled) {
+  background: rgb(var(--ui-surface-rgb) / 0.22);
 }
 
 /* Keep module selectors compact in pane toolbars (Bible/commentary). */
@@ -1420,6 +1486,74 @@ body > .workbench-shell {
 .dark .nav-prev-label,
 .dark .nav-next-label {
   color: var(--ui-text-subtle);
+}
+
+@container (max-width: 560px) {
+  .pane-toolbar {
+    gap: 2px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .pane-toolbar > .app-select,
+  .pane-toolbar > .module-picker-wrapper {
+    width: clamp(5.5rem, 28cqw, 8rem);
+  }
+
+  .nav-group {
+    width: 150px;
+  }
+
+  .nav-prev-btn,
+  .nav-next-btn {
+    flex-basis: 32px;
+    padding: 2px;
+  }
+
+  .nav-prev-label,
+  .nav-next-label,
+  .nav-prev-btn::after,
+  .nav-next-btn::before {
+    display: none;
+  }
+}
+
+@container (max-width: 420px) {
+  .pane-toolbar > .app-select,
+  .pane-toolbar > .module-picker-wrapper {
+    width: 5rem;
+  }
+
+  .nav-group {
+    width: 118px;
+    gap: 0;
+  }
+
+  .nav-btn {
+    min-width: 56px;
+    font-size: 12px;
+  }
+
+  .pane-id-badge {
+    display: none;
+  }
+}
+
+@container (max-width: 330px) {
+  .pane-toolbar > .app-select,
+  .pane-toolbar > .module-picker-wrapper {
+    width: 4.25rem;
+  }
+
+  .nav-group {
+    width: 104px;
+  }
+
+  .nav-btn-label {
+    max-width: 42px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* Shared select styling for clearer arrow spacing */
