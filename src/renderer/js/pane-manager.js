@@ -38,7 +38,7 @@ export const PaneManager = (() => {
     commentaryModules = commentaryModuleList || [];
 
     if (!restoreState(savedState)) {
-      initializeDefaultState({ includeCommentary: true });
+      initializeDefaultState({ includeCommentary: false });
     }
 
     resetInitialLoadPromise();
