@@ -4,7 +4,6 @@
 import { Icons } from './icons.js';
 import { I18n } from './i18n.js';
 import { ModulePicker } from './module-picker.js';
-import { PaneManager } from './pane-manager.js';
 import { Utils } from './utils.js';
 import { VerseUtils } from './verse-utils.js';
 import { WorkbenchShell } from './workbench-shell.js';
@@ -14,14 +13,16 @@ export const SearchPanel = (() => {
   let selectedModuleId = null;
   let booksCache = {};
   let onStateChange = null;
+  let onOpenResult = null;
 
   // DOM refs
   let panel, input, select, resultsList, statusEl, searchClearBtn, pickerInstance;
 
   const PREVIEW_MAX_CHARS = 160;
 
-  function init(moduleList, savedState, mountEl) {
+  function init(moduleList, savedState, mountEl, options = {}) {
     modules = moduleList;
+    onOpenResult = typeof options.onOpenResult === 'function' ? options.onOpenResult : null;
     selectedModuleId = savedState?.moduleId || (modules[0] && modules[0].id) || null;
     buildDOM(mountEl);
     prefetchBooks();
@@ -221,14 +222,16 @@ export const SearchPanel = (() => {
   function createResultItem(row, terms, strongTerms) {
     const item = document.createElement('div');
     item.className = 'search-result-item';
-    item.addEventListener('click', () => {
-      const paneId = PaneManager.getActivePaneId();
-      PaneManager.navigatePane(
-        PaneManager.getNavigationTarget(paneId),
-        row.bookNumber,
-        row.chapter,
-        row.verse
-      );
+    item.addEventListener('click', (event) => {
+      if (onOpenResult) {
+        onOpenResult({
+          moduleId: selectedModuleId,
+          bookNumber: row.bookNumber,
+          chapter: row.chapter,
+          verse: row.verse,
+          openInNewWorkspace: event.ctrlKey || event.metaKey,
+        });
+      }
     });
 
     const top = document.createElement('div');

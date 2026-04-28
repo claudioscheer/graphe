@@ -29,7 +29,7 @@
     "make:mac": "npm run build:renderer && electron-forge make --platform=darwin --arch=universal",
     "make:desktop": "npm run make:linux && npm run make:win && npm run make:mac",
     "release:local": "node scripts/build-release.js",
-    "test": "npm rebuild better-sqlite3 && vitest run && npx electron-rebuild -f -w better-sqlite3",
+    "test": "npm rebuild better-sqlite3 && (vitest run; status=$?; electron-rebuild -f -w better-sqlite3; exit $status)",
     "convert:theword": "node scripts/batch-convert.js",
     "compare:theword": "node scripts/compare-modules.js"
   },

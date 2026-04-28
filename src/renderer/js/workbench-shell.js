@@ -21,6 +21,9 @@ export const WorkbenchShell = (() => {
   let editorEl = null;
   let commandLabelEl = null;
   let settingsButtonEl = null;
+  let workspaceTabsEl = null;
+  let workspaceTabsState = { activeWorkspaceId: null, items: [] };
+  let workspaceHandlers = {};
   let viewContainers = {};
   let activityButtons = {};
   let moduleLists = {
@@ -82,7 +85,7 @@ export const WorkbenchShell = (() => {
     editorEl.className = 'workbench-editor';
 
     body.removeChild(paneRoot);
-    editorEl.appendChild(paneRoot);
+    editorEl.append(createWorkspaceStrip(), paneRoot);
 
     mainEl.append(activityBarEl, sidebarEl, dividerEl, editorEl);
     rootEl.appendChild(mainEl);
@@ -98,6 +101,9 @@ export const WorkbenchShell = (() => {
     const top = document.createElement('header');
     top.className = 'workbench-top-strip';
 
+    const left = document.createElement('div');
+    left.className = 'workbench-top-left';
+
     const brand = document.createElement('div');
     brand.className = 'workbench-brand';
     const logo = document.createElement('img');
@@ -107,6 +113,7 @@ export const WorkbenchShell = (() => {
     const name = document.createElement('span');
     name.textContent = 'Graphe';
     brand.append(logo, name);
+    left.appendChild(brand);
 
     const command = document.createElement('button');
     command.type = 'button';
@@ -128,8 +135,22 @@ export const WorkbenchShell = (() => {
     });
     actions.appendChild(aboutBtn);
 
-    top.append(brand, command, actions);
+    top.append(left, command, actions);
     return top;
+  }
+
+  function createWorkspaceStrip() {
+    const strip = document.createElement('div');
+    strip.className = 'workbench-workspace-strip';
+
+    workspaceTabsEl = document.createElement('div');
+    workspaceTabsEl.className = 'workspace-tabs';
+    workspaceTabsEl.setAttribute('role', 'tablist');
+    workspaceTabsEl.setAttribute('aria-label', 'Workspaces');
+    strip.appendChild(workspaceTabsEl);
+
+    renderWorkspaceTabs();
+    return strip;
   }
 
   function createTopButton(iconName, title, onClick) {
@@ -362,6 +383,113 @@ export const WorkbenchShell = (() => {
     };
   }
 
+  function setWorkspaceTabs(tabState, handlers = {}) {
+    workspaceTabsState = {
+      activeWorkspaceId: tabState?.activeWorkspaceId || null,
+      items: Array.isArray(tabState?.items) ? tabState.items : [],
+    };
+    workspaceHandlers = handlers || {};
+    renderWorkspaceTabs();
+  }
+
+  function renderWorkspaceTabs() {
+    if (!workspaceTabsEl) return;
+    workspaceTabsEl.innerHTML = '';
+    const items = workspaceTabsState.items || [];
+    for (const item of items) {
+      workspaceTabsEl.appendChild(createWorkspaceTab(item, items.length));
+    }
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'workspace-tab-add';
+    addBtn.title = I18n.t('workspaceNew');
+    addBtn.setAttribute('aria-label', I18n.t('workspaceNew'));
+    addBtn.appendChild(Icons.create('plus', 'w-3.5 h-3.5'));
+    addBtn.addEventListener('click', () => {
+      if (typeof workspaceHandlers.create === 'function') workspaceHandlers.create();
+    });
+    workspaceTabsEl.appendChild(addBtn);
+  }
+
+  function createWorkspaceTab(item, itemCount) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'workspace-tab';
+    tab.dataset.workspaceId = item.id;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute(
+      'aria-selected',
+      item.id === workspaceTabsState.activeWorkspaceId ? 'true' : 'false'
+    );
+    tab.classList.toggle('is-active', item.id === workspaceTabsState.activeWorkspaceId);
+    tab.title = item.name;
+
+    const label = document.createElement('span');
+    label.className = 'workspace-tab-label';
+    label.textContent = item.name;
+    label.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      enterWorkspaceRename(tab, item);
+    });
+    tab.appendChild(label);
+
+    if (itemCount > 1) {
+      const closeBtn = document.createElement('span');
+      closeBtn.className = 'workspace-tab-close';
+      closeBtn.title = I18n.t('workspaceClose');
+      closeBtn.setAttribute('aria-label', I18n.t('workspaceClose'));
+      closeBtn.appendChild(Icons.create('x', 'w-3 h-3'));
+      closeBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof workspaceHandlers.close === 'function') workspaceHandlers.close(item.id);
+      });
+      tab.appendChild(closeBtn);
+    }
+
+    tab.addEventListener('click', () => {
+      if (typeof workspaceHandlers.activate === 'function') workspaceHandlers.activate(item.id);
+    });
+
+    return tab;
+  }
+
+  function enterWorkspaceRename(tab, item) {
+    tab.innerHTML = '';
+    tab.classList.add('is-renaming');
+    const input = document.createElement('input');
+    input.className = 'workspace-tab-input';
+    input.value = item.name;
+    input.setAttribute('aria-label', I18n.t('workspaceRename'));
+    tab.appendChild(input);
+
+    const commit = () => {
+      const nextName = input.value.trim();
+      if (nextName && typeof workspaceHandlers.rename === 'function') {
+        workspaceHandlers.rename(item.id, nextName);
+      } else {
+        renderWorkspaceTabs();
+      }
+    };
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        renderWorkspaceTabs();
+      }
+    });
+    input.addEventListener('blur', commit);
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  }
+
   function getViewportWidth() {
     return Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
   }
@@ -426,6 +554,7 @@ export const WorkbenchShell = (() => {
     }
     if (sidebarTitleEl) sidebarTitleEl.textContent = getViewLabel(activeView);
     renderModulesView();
+    renderWorkspaceTabs();
     applyActiveView();
   }
 
@@ -442,5 +571,6 @@ export const WorkbenchShell = (() => {
     setCurrentLookup,
     updateStatus,
     refreshLabels,
+    setWorkspaceTabs,
   };
 })();

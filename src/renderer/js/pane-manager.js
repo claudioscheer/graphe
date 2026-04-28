@@ -36,44 +36,62 @@ export const PaneManager = (() => {
     commentaryModules = commentaryModuleList || [];
 
     if (!restoreState(savedState)) {
-      if (commentaryModules.length > 0) {
-        // Default layout: Bible (65%) + Commentary (35%) side by side
-        const biblePaneId = createPaneState({ paneType: 'bible' });
-        const commentaryPaneId = createPaneState({
-          paneType: 'commentary',
-          moduleId: commentaryModules[0].id,
-          syncedToPaneId: biblePaneId,
-        });
-        tree = {
-          type: 'split',
-          direction: 'h',
-          children: [
-            { type: 'leaf', paneId: biblePaneId },
-            { type: 'leaf', paneId: commentaryPaneId },
-          ],
-          ratio: 0.65,
-        };
-        activePaneId = biblePaneId;
-      } else {
-        const paneId = createPaneState();
-        tree = { type: 'leaf', paneId };
-        activePaneId = paneId;
-      }
-    } else {
-      // Set first leaf as active
-      activePaneId = getFirstLeafId(tree);
+      initializeDefaultState({ includeCommentary: true });
     }
 
-    initialLoadPending = new Set(Object.keys(panes));
-    initialLoadPromise = new Promise((resolve) => {
-      resolveInitialLoad = resolve;
-      if (initialLoadPending.size === 0) resolve();
-    });
+    resetInitialLoadPromise();
 
     ModulePicker.onFavoritesChange(() => refreshAllQuickBars());
 
     render();
     emitStateChange();
+  }
+
+  function setState(savedState) {
+    if (!restoreState(savedState)) {
+      initializeDefaultState({ includeCommentary: false });
+    }
+    resetInitialLoadPromise();
+    render();
+    emitStateChange();
+  }
+
+  function initializeDefaultState({ includeCommentary }) {
+    panes = {};
+    tree = null;
+    paneCounter = 0;
+    linkTargetPaneId = null;
+    if (includeCommentary && commentaryModules.length > 0) {
+      // Default layout: Bible (65%) + Commentary (35%) side by side
+      const biblePaneId = createPaneState({ paneType: 'bible' });
+      const commentaryPaneId = createPaneState({
+        paneType: 'commentary',
+        moduleId: commentaryModules[0].id,
+        syncedToPaneId: biblePaneId,
+      });
+      tree = {
+        type: 'split',
+        direction: 'h',
+        children: [
+          { type: 'leaf', paneId: biblePaneId },
+          { type: 'leaf', paneId: commentaryPaneId },
+        ],
+        ratio: 0.65,
+      };
+      activePaneId = biblePaneId;
+      return;
+    }
+    const paneId = createPaneState();
+    tree = { type: 'leaf', paneId };
+    activePaneId = paneId;
+  }
+
+  function resetInitialLoadPromise() {
+    initialLoadPending = new Set(Object.keys(panes));
+    initialLoadPromise = new Promise((resolve) => {
+      resolveInitialLoad = resolve;
+      if (initialLoadPending.size === 0) resolve();
+    });
   }
 
   function markInitialLoaded(paneId) {
@@ -252,9 +270,9 @@ export const PaneManager = (() => {
           bookShortName: raw.bookShortName || '',
           books: [],
           verses: [],
-          selectedVerse: null,
-          navHistory: [],
-          navHistoryIdx: -1,
+          selectedVerse: Number.isInteger(raw.selectedVerse) ? raw.selectedVerse : null,
+          navHistory: sanitizeNavHistory(raw.navHistory),
+          navHistoryIdx: Number.isInteger(raw.navHistoryIdx) ? raw.navHistoryIdx : -1,
         };
       }
 
@@ -265,10 +283,43 @@ export const PaneManager = (() => {
     ensureWindowLabels();
     tree = restoredTree;
     paneCounter = maxCounter;
+    activePaneId =
+      typeof savedState.activePaneId === 'string' && nextPanes[savedState.activePaneId]
+        ? savedState.activePaneId
+        : getFirstLeafId(tree);
+    linkTargetPaneId = null;
     if (savedState.linkTargetPaneId && nextPanes[savedState.linkTargetPaneId]) {
       linkTargetPaneId = savedState.linkTargetPaneId;
     }
+    normalizeNavHistoryIndexes();
     return true;
+  }
+
+  function sanitizeNavHistory(rawHistory) {
+    if (!Array.isArray(rawHistory)) return [];
+    return rawHistory
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => ({
+        moduleId: typeof entry.moduleId === 'string' ? entry.moduleId : null,
+        bookNumber: Number.isInteger(entry.bookNumber) ? entry.bookNumber : 10,
+        chapter: Number.isInteger(entry.chapter) ? entry.chapter : 1,
+        verse: Number.isInteger(entry.verse) ? entry.verse : null,
+      }));
+  }
+
+  function normalizeNavHistoryIndexes() {
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType !== 'bible') continue;
+      if (!Array.isArray(pane.navHistory) || pane.navHistory.length === 0) {
+        pane.navHistory = [];
+        pane.navHistoryIdx = -1;
+        continue;
+      }
+      pane.navHistoryIdx = Math.min(
+        pane.navHistory.length - 1,
+        Math.max(0, Number.isInteger(pane.navHistoryIdx) ? pane.navHistoryIdx : 0)
+      );
+    }
   }
 
   function sanitizeTree(node, leafIds) {
@@ -330,11 +381,16 @@ export const PaneManager = (() => {
       };
       if (pane.paneType === 'commentary') {
         base.syncedToPaneId = pane.syncedToPaneId || null;
+      } else {
+        base.selectedVerse = Number.isInteger(pane.selectedVerse) ? pane.selectedVerse : null;
+        base.navHistory = Array.isArray(pane.navHistory) ? pane.navHistory : [];
+        base.navHistoryIdx = Number.isInteger(pane.navHistoryIdx) ? pane.navHistoryIdx : -1;
       }
       serializablePanes[pane.id] = base;
     }
 
     return {
+      activePaneId,
       tree: serializeTree(tree),
       panes: serializablePanes,
       linkTargetPaneId,
@@ -426,15 +482,15 @@ export const PaneManager = (() => {
           renderCommentaryUnavailable(pane.id);
           markInitialLoaded(pane.id);
         } else if (pane.commentaryBooks.length === 0) {
-          loadCommentaryData(pane.id);
+          loadCommentaryData(pane.id, pane.selectedVerse || null);
         } else {
           loadCommentaryChapter(pane.id);
         }
       } else {
         if (pane.books.length === 0 && pane.moduleId) {
-          loadPaneData(pane.id);
+          loadPaneData(pane.id, pane.selectedVerse || null);
         } else if (pane.books.length > 0) {
-          loadChapter(pane.id);
+          loadChapter(pane.id, pane.selectedVerse || null);
         }
       }
     }
@@ -1515,6 +1571,28 @@ export const PaneManager = (() => {
     return findFirstBiblePaneId() || fallbackPaneId;
   }
 
+  function ensureBiblePane() {
+    const existing = findFirstBiblePaneId();
+    if (existing) return existing;
+
+    const paneId = createPaneState({ paneType: 'bible' });
+    const newLeaf = { type: 'leaf', paneId };
+    if (!tree) {
+      tree = newLeaf;
+    } else {
+      tree = {
+        type: 'split',
+        direction: 'h',
+        children: [tree, newLeaf],
+        ratio: 0.65,
+      };
+    }
+    activePaneId = paneId;
+    render();
+    emitStateChange();
+    return paneId;
+  }
+
   function updatePinButtons() {
     document.querySelectorAll('[data-pane-id]').forEach((el) => {
       const id = el.getAttribute('data-pane-id');
@@ -1937,6 +2015,7 @@ export const PaneManager = (() => {
 
   return {
     init,
+    setState,
     waitForInitialLoad,
     getPane,
     navigatePane,
@@ -1950,6 +2029,7 @@ export const PaneManager = (() => {
     setActivePane,
     reloadAllChapters,
     getNavigationTarget,
+    ensureBiblePane,
     getLinkTargetPaneId,
     notifyVerseClick,
     openPanePicker,

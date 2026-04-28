@@ -13,6 +13,7 @@ import { PaneManager } from './pane-manager.js';
 import { SearchPanel } from './search-panel.js';
 import { Utils } from './utils.js';
 import { WorkbenchShell } from './workbench-shell.js';
+import { WorkspaceManager } from './workspace-manager.js';
 
 function decorateNativeSelect(selectEl) {
   if (!selectEl || selectEl.parentElement?.classList.contains('app-select-native-wrap')) return;
@@ -448,6 +449,45 @@ function openNavigationForActivePane() {
     .getBooks(pane.moduleId)
     .then((books) => Navigation.open(paneId, books))
     .catch((err) => console.warn('Failed to open navigation:', err));
+}
+
+async function openSearchResult(result) {
+  if (!result) return;
+  const location = {
+    moduleId: result.moduleId || null,
+    bookNumber: result.bookNumber,
+    chapter: result.chapter,
+    verse: result.verse,
+  };
+
+  if (result.openInNewWorkspace) {
+    WorkspaceManager.createWorkspace({
+      name: `${I18n.bookName(result.bookNumber).short} ${result.chapter}`,
+      location,
+    });
+    return;
+  }
+
+  const activePaneId = PaneManager.getActivePaneId();
+  let targetPaneId = PaneManager.getNavigationTarget(activePaneId);
+  let targetPane = PaneManager.getPane(targetPaneId);
+  if (!targetPane || targetPane.paneType !== 'bible') {
+    targetPaneId = PaneManager.ensureBiblePane();
+    targetPane = PaneManager.getPane(targetPaneId);
+  }
+  if (!targetPane || targetPane.paneType !== 'bible') return;
+
+  try {
+    const ok = await PaneManager.navigatePane(
+      targetPaneId,
+      result.bookNumber,
+      result.chapter,
+      result.verse
+    );
+    if (!ok) showTooltip(targetPaneId, I18n.t('refUnavailable'));
+  } catch (err) {
+    console.warn('Search result navigation failed:', err);
+  }
 }
 
 const lastMousePosition = { x: null, y: null };
@@ -1099,12 +1139,40 @@ window.api
     };
     document.addEventListener('graphe:pane-active-change', updateWorkbenchStatus);
 
+    const workspaceTabHandlers = {
+      activate: (workspaceId) => {
+        WorkspaceManager.activateWorkspace(workspaceId, PaneManager.getState());
+      },
+      create: () => {
+        WorkspaceManager.createWorkspace();
+      },
+      rename: (workspaceId, nextName) => {
+        WorkspaceManager.renameWorkspace(workspaceId, nextName);
+      },
+      close: (workspaceId) => {
+        const name = WorkspaceManager.getWorkspaceName(workspaceId);
+        const message = I18n.t('workspaceCloseConfirm').replace('{name}', name);
+        if (!window.confirm(message)) return;
+        WorkspaceManager.closeWorkspace(workspaceId, PaneManager.getState());
+      },
+    };
+
+    WorkspaceManager.setStateChangeListener((workspaceState, tabState) => {
+      AppStateStore.setWorkspaces(workspaceState);
+      WorkbenchShell.setWorkspaceTabs(tabState, workspaceTabHandlers);
+    });
+    WorkspaceManager.setActiveWorkspaceChangeListener((paneState) => {
+      PaneManager.setState(paneState);
+      updateWorkbenchStatus();
+    });
+    WorkspaceManager.init(AppStateStore.getWorkspaces(), AppStateStore.getPaneManager());
+
     PaneManager.setStateChangeListener((paneState) => {
-      AppStateStore.setPaneManager(paneState);
+      WorkspaceManager.updateActivePaneState(paneState);
       updateWorkbenchStatus();
     });
 
-    PaneManager.init(bibleModules, AppStateStore.getPaneManager(), commentaryModulesList);
+    PaneManager.init(bibleModules, WorkspaceManager.getActivePaneState(), commentaryModulesList);
     ModuleEditor.init(modules, {
       onSaved: () => PaneManager.reloadAllChapters(),
     });
@@ -1121,7 +1189,8 @@ window.api
     SearchPanel.init(
       bibleModules,
       AppStateStore.getSearchPanel(),
-      WorkbenchShell.getViewContainer('search')
+      WorkbenchShell.getViewContainer('search'),
+      { onOpenResult: openSearchResult }
     );
 
     DictPanel.setStateChangeListener((dictState) => {

@@ -10,6 +10,7 @@ export const AppStateStore = (() => {
       favoriteModules: {},
     },
     paneManager: null,
+    workspaces: null,
     workbench: null,
     searchPanel: null,
     dictPanel: null,
@@ -27,6 +28,7 @@ export const AppStateStore = (() => {
         ...(loadedState.settings || {}),
       },
       workbench: normalizeWorkbenchState(loadedState.workbench, loadedState.searchPanel),
+      workspaces: normalizeWorkspacesState(loadedState.workspaces),
       searchPanel: loadedState.searchPanel || null,
       dictPanel: loadedState.dictPanel || null,
     };
@@ -48,6 +50,32 @@ export const AppStateStore = (() => {
       activeView,
       collapsed: source.collapsed === true,
       widthRatio: widthRatio == null ? null : Math.min(0.6, Math.max(0.12, Number(widthRatio))),
+    };
+  }
+
+  function normalizeWorkspacesState(workspacesState) {
+    const currentVersion = 1;
+    if (!workspacesState || typeof workspacesState !== 'object') return null;
+    const rawItems = Array.isArray(workspacesState.items) ? workspacesState.items : [];
+    const items = rawItems
+      .filter((item) => item && typeof item === 'object' && typeof item.id === 'string')
+      .map((item, index) => ({
+        id: item.id,
+        name:
+          typeof item.name === 'string' && item.name.trim()
+            ? item.name.trim()
+            : `Workspace ${index + 1}`,
+        paneManager:
+          item.paneManager && typeof item.paneManager === 'object' ? item.paneManager : null,
+      }));
+    if (items.length === 0) return null;
+    const activeWorkspaceId = items.some((item) => item.id === workspacesState.activeWorkspaceId)
+      ? workspacesState.activeWorkspaceId
+      : items[0].id;
+    return {
+      version: currentVersion,
+      activeWorkspaceId,
+      items,
     };
   }
 
@@ -79,6 +107,15 @@ export const AppStateStore = (() => {
 
   function getPaneManager() {
     return state.paneManager;
+  }
+
+  function setWorkspaces(nextWorkspaces) {
+    state.workspaces = normalizeWorkspacesState(nextWorkspaces);
+    scheduleSave();
+  }
+
+  function getWorkspaces() {
+    return state.workspaces;
   }
 
   function setWorkbench(nextWorkbench) {
@@ -118,6 +155,8 @@ export const AppStateStore = (() => {
     setPaneManager,
     getSettings,
     getPaneManager,
+    setWorkspaces,
+    getWorkspaces,
     setWorkbench,
     getWorkbench,
     setSearchPanel,
