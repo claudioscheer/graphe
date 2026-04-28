@@ -7,6 +7,10 @@ const modules = require('./modules');
 const { registerIpcHandlers } = require('./ipc-handlers');
 const stateStore = require('./state-store');
 
+const APP_NAME = 'Graphe';
+app.setName(APP_NAME);
+process.title = APP_NAME;
+
 let mainWindow;
 let xrayWindows = new Set();
 let reloadTimer = null;
@@ -14,7 +18,7 @@ let updateCheckTimer = null;
 let pendingUpdate = null;
 let isCheckingForUpdates = false;
 const windowIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.png');
-const macDockIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe.icns');
+const macDockIconPath = path.join(__dirname, '..', '..', 'assets', 'graphe-dock.png');
 const UPDATE_CHECK_INITIAL_DELAY_MS = 3000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const UPDATE_CHECK_RETRY_MS = 5 * 60 * 1000;
@@ -275,7 +279,7 @@ function buildMenu() {
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: APP_NAME,
             submenu: [
               { label: 'About Graphe', click: openAboutDialog },
               { type: 'separator' },
@@ -602,15 +606,17 @@ ipcMain.handle('open-external', (_event, url) => {
 });
 
 app.whenReady().then(() => {
+  app.setAboutPanelOptions({
+    applicationName: APP_NAME,
+    applicationVersion: app.getVersion(),
+  });
+
   if (isPackagedDebugEnabled) {
     logPackagedDebug('argv:', process.argv);
     logPackagedDebug('app.isPackaged:', app.isPackaged);
   }
 
-  // In development, Electron launched by Forge does not need a dock icon override.
-  // Skipping this avoids noisy warnings and keeps startup on the safest code path.
   if (
-    app.isPackaged &&
     process.platform === 'darwin' &&
     app.dock &&
     typeof app.dock.setIcon === 'function'

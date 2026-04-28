@@ -1508,7 +1508,8 @@ body > .workbench-shell {
   font-size: 14px;
 }
 
-.nav-chapter-btn {
+.nav-chapter-btn,
+.nav-verse-btn {
   min-height: 44px;
   min-width: 44px;
   font-size: 16px;

@@ -13,6 +13,7 @@ export const Navigation = (() => {
   let activePaneId = null;
   let currentBooks = [];
   let selectedBook = null;
+  let selectedChapter = null;
 
   const overlay = () => document.getElementById('nav-overlay');
   const grid = () => document.getElementById('nav-grid');
@@ -22,7 +23,7 @@ export const Navigation = (() => {
 
   function init() {
     closeBtn().addEventListener('click', close);
-    backBtn().addEventListener('click', showBooks);
+    backBtn().addEventListener('click', handleBack);
     overlay().addEventListener('click', (e) => {
       if (e.target === overlay()) close();
     });
@@ -40,6 +41,7 @@ export const Navigation = (() => {
     activePaneId = paneId;
     currentBooks = books;
     selectedBook = null;
+    selectedChapter = null;
     overlay().classList.remove('hidden');
     input().value = '';
     input().focus();
@@ -49,10 +51,13 @@ export const Navigation = (() => {
   function close() {
     overlay().classList.add('hidden');
     activePaneId = null;
+    selectedBook = null;
+    selectedChapter = null;
   }
 
   function showBooks() {
     selectedBook = null;
+    selectedChapter = null;
     backBtn().classList.add('hidden');
     const g = grid();
     g.innerHTML = '';
@@ -98,12 +103,15 @@ export const Navigation = (() => {
 
   async function selectBook(book) {
     selectedBook = book;
+    selectedChapter = null;
     backBtn().classList.remove('hidden');
 
     const pane = paneManagerApi.getPane(activePaneId);
     if (!pane) return;
 
     const count = await window.api.getChapterCount(pane.moduleId, book.bookNumber);
+    if (selectedBook?.bookNumber !== book.bookNumber || selectedChapter !== null) return;
+
     const g = grid();
     g.innerHTML = '';
 
@@ -121,13 +129,69 @@ export const Navigation = (() => {
         'nav-chapter-btn rounded-sm bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
         'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
       btn.textContent = ch;
+      btn.addEventListener('click', () => selectChapter(book, ch));
+      container.appendChild(btn);
+    }
+    g.appendChild(container);
+  }
+
+  async function selectChapter(book, chapter) {
+    selectedBook = book;
+    selectedChapter = chapter;
+    backBtn().classList.remove('hidden');
+
+    const pane = paneManagerApi.getPane(activePaneId);
+    if (!pane) return;
+
+    const verses = await window.api.getChapter(pane.moduleId, book.bookNumber, chapter);
+    if (selectedBook?.bookNumber !== book.bookNumber || selectedChapter !== chapter) return;
+
+    const verseNumbers = [
+      ...new Set(
+        (verses || [])
+          .map((v) => parseInt(v.verse, 10))
+          .filter((verse) => Number.isFinite(verse))
+      ),
+    ];
+
+    if (verseNumbers.length === 0) {
+      paneManagerApi.navigatePane(activePaneId, book.bookNumber, chapter);
+      close();
+      return;
+    }
+
+    const g = grid();
+    g.innerHTML = '';
+
+    const label = document.createElement('div');
+    label.className = 'text-sm font-semibold text-brand-700 dark:text-night-200 mb-3';
+    label.textContent = `${I18n.bookName(book.bookNumber).long} ${chapter}`;
+    g.appendChild(label);
+
+    const container = document.createElement('div');
+    container.className = 'grid grid-cols-8 gap-1.5';
+
+    for (const verse of verseNumbers) {
+      const btn = document.createElement('button');
+      btn.className =
+        'nav-verse-btn rounded-sm bg-brand-100 dark:bg-night-700 hover:bg-brand-200 dark:hover:bg-night-600 ' +
+        'text-brand-800 dark:text-night-100 font-medium cursor-pointer transition-colors';
+      btn.textContent = verse;
       btn.addEventListener('click', () => {
-        paneManagerApi.navigatePane(activePaneId, book.bookNumber, ch);
+        paneManagerApi.navigatePane(activePaneId, book.bookNumber, chapter, verse);
         close();
       });
       container.appendChild(btn);
     }
     g.appendChild(container);
+  }
+
+  function handleBack() {
+    if (selectedBook && selectedChapter !== null) {
+      selectBook(selectedBook);
+      return;
+    }
+    showBooks();
   }
 
   async function handleQuickInput() {

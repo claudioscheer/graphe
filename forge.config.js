@@ -1,9 +1,35 @@
 const path = require('path');
+const fs = require('fs');
 const { spawnSync } = require('child_process');
+const plist = require('plist');
 
+const appName = 'Graphe';
 const appIconBase = path.join(__dirname, 'assets', 'graphe');
 const appIconPng = `${appIconBase}.png`;
 const executableName = 'graphe-bible';
+
+function patchMacAppName(buildPath, _electronVersion, platform, _arch, callback) {
+  if (platform !== 'darwin') {
+    callback();
+    return;
+  }
+
+  try {
+    const infoPlistPath = path.join(buildPath, `${appName}.app`, 'Contents', 'Info.plist');
+    if (!fs.existsSync(infoPlistPath)) {
+      callback();
+      return;
+    }
+
+    const info = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
+    info.CFBundleDisplayName = appName;
+    info.CFBundleName = appName;
+    fs.writeFileSync(infoPlistPath, plist.build(info));
+    callback();
+  } catch (err) {
+    callback(err);
+  }
+}
 
 function getGitIgnoredDirectoryPatterns() {
   const result = spawnSync(
@@ -30,9 +56,11 @@ function getGitIgnoredDirectoryPatterns() {
 
 module.exports = {
   packagerConfig: {
+    name: appName,
     asar: true,
     icon: appIconBase,
     executableName,
+    afterComplete: [patchMacAppName],
     ignore: [
       ...getGitIgnoredDirectoryPatterns(),
       '^/test($|/)',
