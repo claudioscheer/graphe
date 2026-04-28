@@ -27,7 +27,9 @@ export const PaneManager = (() => {
   let initialLoadPending = new Set();
   let initialLoadPromise = Promise.resolve();
   let resolveInitialLoad = null;
+  let activeNavHistoryMenu = null;
   const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const NAV_HISTORY_LONG_PRESS_MS = 450;
 
   const root = () => document.getElementById('pane-root');
 
@@ -617,7 +619,7 @@ export const PaneManager = (() => {
     backBtn.disabled = true;
     backBtn.appendChild(Icons.create('arrow-left', 'w-3.5 h-3.5'));
     backBtn.title = I18n.t('crossRefBackTooltip');
-    backBtn.addEventListener('click', () => navBack(paneId));
+    attachNavHistoryLongPress(backBtn, paneId, 'back');
 
     const forwardBtn = document.createElement('button');
     forwardBtn.className =
@@ -625,7 +627,7 @@ export const PaneManager = (() => {
     forwardBtn.disabled = true;
     forwardBtn.appendChild(Icons.create('arrow-right', 'w-3.5 h-3.5'));
     forwardBtn.title = I18n.t('crossRefForwardTooltip');
-    forwardBtn.addEventListener('click', () => navForward(paneId));
+    attachNavHistoryLongPress(forwardBtn, paneId, 'forward');
 
     const pinBtn = document.createElement('button');
     pinBtn.className =
@@ -1299,6 +1301,160 @@ export const PaneManager = (() => {
     await restoreNavEntry(paneId, entry);
     updateNavBtns(paneId);
     emitStateChange();
+  }
+
+  async function navToHistoryIndex(paneId, historyIndex) {
+    const pane = panes[paneId];
+    if (!pane || !Array.isArray(pane.navHistory)) return;
+    if (historyIndex < 0 || historyIndex >= pane.navHistory.length) return;
+    if (historyIndex === pane.navHistoryIdx) return;
+
+    pane.navHistoryIdx = historyIndex;
+    await restoreNavEntry(paneId, pane.navHistory[historyIndex]);
+    updateNavBtns(paneId);
+    emitStateChange();
+  }
+
+  function attachNavHistoryLongPress(button, paneId, direction) {
+    let longPressTimer = null;
+    let didOpenMenu = false;
+
+    const clearLongPress = () => {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+
+    button.addEventListener('pointerdown', (event) => {
+      if (button.disabled) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+      didOpenMenu = false;
+      clearLongPress();
+      longPressTimer = setTimeout(() => {
+        didOpenMenu = true;
+        showNavHistoryMenu(paneId, direction, button);
+      }, NAV_HISTORY_LONG_PRESS_MS);
+    });
+
+    button.addEventListener('pointerup', clearLongPress);
+    button.addEventListener('pointercancel', clearLongPress);
+    button.addEventListener('pointerleave', clearLongPress);
+
+    button.addEventListener('click', (event) => {
+      if (didOpenMenu) {
+        event.preventDefault();
+        event.stopPropagation();
+        didOpenMenu = false;
+        return;
+      }
+
+      if (direction === 'back') {
+        navBack(paneId);
+      } else {
+        navForward(paneId);
+      }
+    });
+  }
+
+  function getNavHistoryEntries(pane, direction) {
+    if (!pane || !Array.isArray(pane.navHistory)) return [];
+    if (direction === 'back') {
+      return pane.navHistory
+        .slice(0, pane.navHistoryIdx)
+        .map((entry, index) => ({ entry, index }))
+        .reverse();
+    }
+    return pane.navHistory
+      .slice(pane.navHistoryIdx + 1)
+      .map((entry, offset) => ({ entry, index: pane.navHistoryIdx + 1 + offset }));
+  }
+
+  function showNavHistoryMenu(paneId, direction, anchorEl) {
+    const pane = panes[paneId];
+    const entries = getNavHistoryEntries(pane, direction);
+    if (entries.length === 0) return;
+
+    closeNavHistoryMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'pane-history-menu';
+    menu.setAttribute('role', 'menu');
+
+    for (const item of entries) {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'pane-history-menu-item';
+      option.setAttribute('role', 'menuitem');
+      option.append(...buildNavHistoryItemContent(item.entry));
+      option.addEventListener('click', () => {
+        closeNavHistoryMenu();
+        navToHistoryIndex(paneId, item.index);
+      });
+      menu.appendChild(option);
+    }
+
+    document.body.appendChild(menu);
+    positionNavHistoryMenu(menu, anchorEl);
+    activeNavHistoryMenu = menu;
+
+    setTimeout(() => {
+      document.addEventListener('pointerdown', handleNavHistoryOutsidePointer, true);
+      document.addEventListener('keydown', handleNavHistoryKeydown, true);
+      window.addEventListener('resize', closeNavHistoryMenu, { once: true });
+    }, 0);
+  }
+
+  function buildNavHistoryItemContent(entry) {
+    const reference = document.createElement('span');
+    reference.className = 'pane-history-reference';
+    reference.textContent = formatNavHistoryReference(entry);
+
+    const module = modules.find((m) => m.id === entry.moduleId);
+    const moduleLabel = document.createElement('span');
+    moduleLabel.className = 'pane-history-module';
+    moduleLabel.textContent = module ? Utils.truncateText(Utils.getModuleDisplayName(module), 34) : '';
+
+    return moduleLabel.textContent ? [reference, moduleLabel] : [reference];
+  }
+
+  function formatNavHistoryReference(entry) {
+    const book = I18n.bookName(entry.bookNumber).short;
+    const chapter = Number.isInteger(entry.chapter) ? entry.chapter : 1;
+    const verse = Number.isInteger(entry.verse) ? `:${entry.verse}` : '';
+    return `${book} ${chapter}${verse}`;
+  }
+
+  function positionNavHistoryMenu(menu, anchorEl) {
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const margin = 6;
+    const menuRect = menu.getBoundingClientRect();
+    const top = Math.max(margin, anchorRect.top - menuRect.height - margin);
+    const left = Math.min(
+      window.innerWidth - menuRect.width - margin,
+      Math.max(margin, anchorRect.right - menuRect.width)
+    );
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+  }
+
+  function handleNavHistoryOutsidePointer(event) {
+    if (activeNavHistoryMenu && !activeNavHistoryMenu.contains(event.target)) {
+      closeNavHistoryMenu();
+    }
+  }
+
+  function handleNavHistoryKeydown(event) {
+    if (event.key === 'Escape') closeNavHistoryMenu();
+  }
+
+  function closeNavHistoryMenu() {
+    if (!activeNavHistoryMenu) return;
+    activeNavHistoryMenu.remove();
+    activeNavHistoryMenu = null;
+    document.removeEventListener('pointerdown', handleNavHistoryOutsidePointer, true);
+    document.removeEventListener('keydown', handleNavHistoryKeydown, true);
+    window.removeEventListener('resize', closeNavHistoryMenu);
   }
 
   async function restoreNavEntry(paneId, entry) {

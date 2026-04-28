@@ -529,8 +529,7 @@ body > .workbench-shell {
 }
 
 .workbench-activity-btn:hover {
-  color: var(--ui-text);
-  background: rgb(var(--ui-surface-rgb) / 0.5);
+  color: var(--ui-text-muted);
 }
 
 .workbench-activity-btn.is-active {
@@ -1299,6 +1298,16 @@ body > .workbench-shell {
   min-height: 28px;
   min-width: 28px;
   padding: 2px;
+  background-color: transparent;
+}
+
+.pane-toolbar button:hover:not(:disabled) {
+  color: var(--ui-text);
+  background-color: transparent;
+}
+
+.dark .pane-toolbar button:hover:not(:disabled) {
+  color: var(--ui-text-muted);
   background-color: transparent;
 }
 
@@ -2655,7 +2664,7 @@ el {
 
 .pane-back-btn:hover:not(:disabled),
 .pane-forward-btn:hover:not(:disabled) {
-  color: var(--ui-border-strong);
+  color: var(--ui-text);
   background: none;
 }
 
@@ -2672,7 +2681,61 @@ el {
 
 .dark .pane-back-btn:hover:not(:disabled),
 .dark .pane-forward-btn:hover:not(:disabled) {
-  color: var(--ui-border-soft);
+  color: var(--ui-text-muted);
+}
+
+.pane-history-menu {
+  position: fixed;
+  z-index: 80;
+  width: min(220px, calc(100vw - 12px));
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--ui-surface-elevated);
+  border: 1px solid var(--ui-border);
+  box-shadow: 0 10px 26px rgb(var(--ui-shadow-rgb) / 0.18);
+}
+
+.pane-history-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 6px;
+  color: var(--ui-text-muted);
+  background: transparent;
+  text-align: left;
+}
+
+.pane-history-menu-item:hover,
+.pane-history-menu-item:focus {
+  color: var(--ui-text);
+  background: rgb(var(--ui-surface-rgb) / 0.42);
+  outline: none;
+}
+
+.pane-history-reference {
+  flex: 0 0 auto;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pane-history-module {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-subtle);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dark .pane-history-menu-item:hover,
+.dark .pane-history-menu-item:focus {
+  background: rgb(var(--ui-surface-rgb) / 0.22);
 }
 
 /* Quick-switch bar for favorite translations */

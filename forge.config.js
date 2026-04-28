@@ -60,6 +60,11 @@ module.exports = {
     asar: true,
     icon: appIconBase,
     executableName,
+    appBundleId: 'graphe.com.br',
+    extendInfo: {
+      CFBundleDisplayName: appName,
+      CFBundleName: appName,
+    },
     afterComplete: [patchMacAppName],
     ignore: [
       ...getGitIgnoredDirectoryPatterns(),

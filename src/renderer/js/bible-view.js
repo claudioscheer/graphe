@@ -296,12 +296,29 @@ export const BibleView = (() => {
     return link;
   }
 
+  function getCrossRefTargetKey(ref) {
+    return [
+      ref.bookTo,
+      ref.chapterTo,
+      ref.verseToStart == null ? '' : ref.verseToStart,
+      ref.verseToEnd == null ? '' : ref.verseToEnd,
+    ].join(':');
+  }
+
   function buildCrossRefsByVerse(crossRefs) {
     const map = new Map();
+    const seenByVerse = new Map();
     for (const ref of crossRefs) {
-      const key = ref.verse;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(ref);
+      const verse = ref.verse;
+      if (!map.has(verse)) {
+        map.set(verse, []);
+        seenByVerse.set(verse, new Set());
+      }
+      const targetKey = getCrossRefTargetKey(ref);
+      const seen = seenByVerse.get(verse);
+      if (seen.has(targetKey)) continue;
+      seen.add(targetKey);
+      map.get(verse).push(ref);
     }
     return map;
   }
