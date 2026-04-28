@@ -63,6 +63,11 @@
   --ui-overlay-rgb: 31 27 22;
   --ui-shadow-rgb: 26 22 18;
   --ui-highlight-rgb: 193 138 31;
+  --ui-workspace-tab-active-bg: color-mix(
+    in srgb,
+    var(--ui-surface-muted) 94.5%,
+    rgb(var(--ui-shadow-rgb))
+  );
 }
 
 .dark {
@@ -96,6 +101,11 @@
   --ui-overlay-rgb: 24 24 24;
   --ui-shadow-rgb: 0 0 0;
   --ui-highlight-rgb: 193 138 31;
+  --ui-workspace-tab-active-bg: color-mix(
+    in srgb,
+    var(--ui-surface-muted) 72%,
+    rgb(var(--ui-shadow-rgb))
+  );
 }
 
 /* Update banner */
@@ -233,12 +243,12 @@ body > .workbench-shell {
 
 .workbench-workspace-strip {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   height: 26px;
   padding: 0 8px;
   flex-shrink: 0;
   background: var(--ui-surface-muted);
-  border-bottom: 1px solid var(--ui-border-soft);
+  border-bottom: 0;
 }
 
 .workbench-top-strip {
@@ -267,7 +277,6 @@ body > .workbench-shell {
 
 .dark .workbench-workspace-strip {
   background: #202020;
-  border-bottom-color: #2b2b2b;
 }
 
 .workbench-brand {
@@ -290,8 +299,8 @@ body > .workbench-shell {
 
 .workspace-tabs {
   display: flex;
-  align-items: center;
-  gap: 3px;
+  align-items: flex-end;
+  gap: 2px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -303,8 +312,8 @@ body > .workbench-shell {
   align-items: center;
   justify-content: center;
   height: 24px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--ui-text-subtle);
   cursor: pointer;
@@ -313,24 +322,31 @@ body > .workbench-shell {
 .workspace-tab {
   flex: 0 1 150px;
   justify-content: flex-start;
-  gap: 5px;
+  gap: 6px;
   max-width: 150px;
   min-width: 72px;
   box-sizing: border-box;
-  padding: 0 6px 0 9px;
+  padding: 0 8px 0 10px;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
   font-size: 12px;
 }
 
 .workspace-tab:hover,
 .workspace-tab-add:hover {
-  background: var(--ui-surface);
   color: var(--ui-text);
 }
 
 .workspace-tab.is-active {
-  border-color: var(--ui-border);
-  background: var(--ui-surface);
+  background: var(--ui-workspace-tab-active-bg);
   color: var(--ui-text);
+  font-weight: 600;
+}
+
+.workspace-tab:focus-visible,
+.workspace-tab-add:focus-visible {
+  outline: 1px solid var(--ui-border-strong);
+  outline-offset: -2px;
 }
 
 .workspace-tab-label {
@@ -349,11 +365,17 @@ body > .workbench-shell {
   height: 16px;
   flex: 0 0 auto;
   border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.workspace-tab:hover .workspace-tab-close,
+.workspace-tab:focus-visible .workspace-tab-close,
+.workspace-tab:focus-within .workspace-tab-close {
   opacity: 0.72;
 }
 
 .workspace-tab-close:hover {
-  background: var(--ui-surface-muted);
   opacity: 1;
 }
 
@@ -377,7 +399,14 @@ body > .workbench-shell {
 
 .dark .workspace-tab.is-active,
 .dark .workspace-tab:hover,
-.dark .workspace-tab-add:hover,
+.dark .workspace-tab-input {
+  color: var(--ui-text);
+}
+
+.dark .workspace-tab.is-active {
+  background: var(--ui-workspace-tab-active-bg);
+}
+
 .dark .workspace-tab-input {
   background: #2b2b2b;
   border-color: #3a3a3a;
@@ -1146,6 +1175,7 @@ body > .workbench-shell {
 /* Active toolbar only */
 .pane-toolbar {
   position: relative;
+  background: var(--ui-workspace-tab-active-bg);
   transition:
     background-color 0.2s ease,
     box-shadow 0.2s ease,
@@ -1155,7 +1185,7 @@ body > .workbench-shell {
 .pane-active > .pane-toolbar {
   border-bottom-width: 1px;
   border-bottom-color: var(--ui-border-strong);
-  background: var(--ui-accent-bg-soft);
+  background: var(--ui-workspace-tab-active-bg);
   box-shadow: inset 0 -1px 0 rgb(var(--ui-link-strong-rgb) / 0.16);
 }
 
@@ -1177,18 +1207,27 @@ body > .workbench-shell {
 }
 
 .pane-active > .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-surface-rgb) / 0.65);
+  background-color: transparent;
   border: none;
 }
 
 .pane-active > .pane-toolbar .nav-group {
-  background: rgb(var(--ui-surface-rgb) / 0.65);
+  background: transparent;
 }
 
 .pane-active > .pane-toolbar .nav-prev-label,
 .pane-active > .pane-toolbar .nav-next-label,
 .pane-active > .pane-toolbar .nav-chevron {
-  color: var(--ui-link-strong);
+  color: var(--ui-text-muted);
+}
+
+.pane-active > .pane-toolbar .nav-prev-btn,
+.pane-active > .pane-toolbar .nav-next-btn {
+  color: var(--ui-text-muted);
+}
+
+.pane-active > .pane-toolbar .nav-btn {
+  color: var(--ui-text);
 }
 
 .pane-active > .pane-toolbar .nav-btn,
@@ -1201,7 +1240,7 @@ body > .workbench-shell {
 .dark .pane-active > .pane-toolbar {
   border-bottom-width: 1px;
   border-bottom-color: var(--ui-link-strong);
-  background: var(--ui-surface-elevated);
+  background: var(--ui-workspace-tab-active-bg);
   box-shadow: inset 0 -1px 0 rgb(var(--ui-link-soft-rgb) / 0.25);
 }
 
@@ -1216,18 +1255,27 @@ body > .workbench-shell {
 }
 
 .dark .pane-active > .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-overlay-rgb) / 0.4);
+  background-color: transparent;
   border: none;
 }
 
 .dark .pane-active > .pane-toolbar .nav-group {
-  background: rgb(var(--ui-overlay-rgb) / 0.4);
+  background: transparent;
 }
 
 .dark .pane-active > .pane-toolbar .nav-prev-label,
 .dark .pane-active > .pane-toolbar .nav-next-label,
 .dark .pane-active > .pane-toolbar .nav-chevron {
-  color: var(--ui-border-strong);
+  color: var(--ui-text-subtle);
+}
+
+.dark .pane-active > .pane-toolbar .nav-prev-btn,
+.dark .pane-active > .pane-toolbar .nav-next-btn {
+  color: var(--ui-text-subtle);
+}
+
+.dark .pane-active > .pane-toolbar .nav-btn {
+  color: var(--ui-text);
 }
 
 .dark .pane-active > .pane-toolbar .nav-btn,
@@ -1262,13 +1310,12 @@ body > .workbench-shell {
   margin-left: 4px;
 }
 
-/* Match .app-select background to .nav-group in pane toolbars */
 .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-shadow-rgb) / 0.03);
+  background-color: transparent;
 }
 
 .dark .pane-toolbar .app-select {
-  background-color: rgb(var(--ui-surface-rgb) / 0.05);
+  background-color: transparent;
 }
 
 /* Keep chapter indicator compact: "... Gn 2" must stay in one line */
@@ -1280,6 +1327,7 @@ body > .workbench-shell {
 .nav-btn-label {
   white-space: nowrap;
   line-height: 1;
+  font-weight: 500;
 }
 
 /* Nav group: visually groups prev + current + next */
@@ -1289,13 +1337,13 @@ body > .workbench-shell {
   justify-content: space-between;
   gap: 2px;
   width: 240px;
-  background: rgb(var(--ui-shadow-rgb) / 0.03);
+  background: transparent;
   border-radius: 4px;
   padding: 2px;
 }
 
 .dark .nav-group {
-  background: rgb(var(--ui-surface-rgb) / 0.05);
+  background: transparent;
 }
 
 /* Prev/next buttons: compact sizing */
@@ -1308,6 +1356,20 @@ body > .workbench-shell {
   color: var(--ui-text-muted);
 }
 
+.pane-toolbar .app-select:hover,
+.pane-toolbar .app-select:focus,
+.nav-group:hover,
+.nav-group:focus-within {
+  background-color: rgb(var(--ui-surface-rgb) / 0.28);
+}
+
+.dark .pane-toolbar .app-select:hover,
+.dark .pane-toolbar .app-select:focus,
+.dark .nav-group:hover,
+.dark .nav-group:focus-within {
+  background-color: rgb(var(--ui-surface-rgb) / 0.1);
+}
+
 .nav-prev-btn::after,
 .nav-next-btn::before {
   content: '';
@@ -1316,7 +1378,7 @@ body > .workbench-shell {
   transform: translateY(-50%);
   width: 1px;
   height: 14px;
-  background: var(--ui-border);
+  background: var(--ui-border-soft);
 }
 
 .nav-prev-btn::after {
