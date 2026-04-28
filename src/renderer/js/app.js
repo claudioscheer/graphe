@@ -178,17 +178,25 @@ const Settings = (() => {
   function initStrongsDicts(allDictModules) {
     const section = document.getElementById('settings-strongs-section');
     const list = document.getElementById('settings-strongs-list');
-    if (!section || !list || allDictModules.length === 0) return;
+    if (!section || !list) return;
+    if (allDictModules.length === 0) {
+      section.classList.add('hidden');
+      list.innerHTML = '';
+      AppStateStore.setSettings({ strongsDicts: null });
+      return;
+    }
 
     section.classList.remove('hidden');
     list.innerHTML = '';
 
     const current = AppStateStore.getSettings().strongsDicts;
     const currentId = Array.isArray(current) ? current[0] : current || null;
+    const selectedId = allDictModules.some((mod) => mod.id === currentId) ? currentId : null;
+    if (currentId && !selectedId) AppStateStore.setSettings({ strongsDicts: null });
 
     const strongsPicker = ModulePicker.create({
       modules: allDictModules,
-      selectedId: currentId,
+      selectedId,
       moduleType: 'dictionary',
       truncateLength: 50,
       allowNone: true,
@@ -206,12 +214,23 @@ const Settings = (() => {
   function initCrossRefModules(allCrossRefModules) {
     const section = document.getElementById('settings-crossref-section');
     const list = document.getElementById('settings-crossref-list');
-    if (!section || !list || allCrossRefModules.length === 0) return;
+    if (!section || !list) return;
+    if (allCrossRefModules.length === 0) {
+      section.classList.add('hidden');
+      list.innerHTML = '';
+      AppStateStore.setSettings({ crossRefModules: null });
+      return;
+    }
 
     section.classList.remove('hidden');
     list.innerHTML = '';
 
     const current = AppStateStore.getSettings().crossRefModules;
+    const moduleIds = new Set(allCrossRefModules.map((mod) => mod.id));
+    const selectedIds = Array.isArray(current) ? current.filter((id) => moduleIds.has(id)) : [];
+    if (Array.isArray(current) && selectedIds.length !== current.length) {
+      AppStateStore.setSettings({ crossRefModules: selectedIds.length > 0 ? selectedIds : null });
+    }
 
     for (const mod of allCrossRefModules) {
       const label = document.createElement('label');
@@ -219,7 +238,7 @@ const Settings = (() => {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = mod.id;
-      cb.checked = Array.isArray(current) && current.includes(mod.id);
+      cb.checked = selectedIds.includes(mod.id);
       cb.addEventListener('change', () => {
         const checked = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(
           (b) => b.value
@@ -1102,11 +1121,11 @@ window.api
     Settings.init(AppStateStore.getSettings());
     I18n.updateAll();
 
-    const modules = await window.api.getModules();
-    const bibleModules = modules.filter((m) => m.type === 'bible');
-    const dictModules = modules.filter((m) => m.type === 'dictionary');
-    const crossRefModules = modules.filter((m) => m.type === 'crossreference');
-    const commentaryModulesList = modules.filter((m) => m.type === 'commentary');
+    let modules = await window.api.getModules();
+    let bibleModules = modules.filter((m) => m.type === 'bible');
+    let dictModules = modules.filter((m) => m.type === 'dictionary');
+    let crossRefModules = modules.filter((m) => m.type === 'crossreference');
+    let commentaryModulesList = modules.filter((m) => m.type === 'commentary');
 
     if (bibleModules.length === 0) {
       renderNoModulesMessage();
@@ -1173,8 +1192,38 @@ window.api
     });
 
     PaneManager.init(bibleModules, WorkspaceManager.getActivePaneState(), commentaryModulesList);
+
+    const refreshModuleLists = async () => {
+      modules = await window.api.getModules();
+      bibleModules = modules.filter((m) => m.type === 'bible');
+      dictModules = modules.filter((m) => m.type === 'dictionary');
+      crossRefModules = modules.filter((m) => m.type === 'crossreference');
+      commentaryModulesList = modules.filter((m) => m.type === 'commentary');
+
+      if (bibleModules.length === 0) {
+        window.location.reload();
+        return;
+      }
+
+      WorkbenchShell.setModules({
+        modules,
+        bibleModules,
+        dictModules,
+        commentaryModules: commentaryModulesList,
+        crossRefModules,
+      });
+      ModuleEditor.setModules(modules);
+      PaneManager.setModules(bibleModules, commentaryModulesList);
+      SearchPanel.setModules(bibleModules);
+      DictPanel.setModules(dictModules);
+      Settings.initStrongsDicts(dictModules);
+      Settings.initCrossRefModules(crossRefModules);
+      updateWorkbenchStatus();
+    };
+
     ModuleEditor.init(modules, {
       onSaved: () => PaneManager.reloadAllChapters(),
+      onDeleted: () => refreshModuleLists(),
     });
     window.api.onOpenModuleEditor(() => {
       const activePane = PaneManager.getPane(PaneManager.getActivePaneId());

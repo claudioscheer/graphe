@@ -57,6 +57,24 @@ function getHandle(moduleId) {
   return handle;
 }
 
+function deleteModule(moduleId) {
+  const handle = getHandle(moduleId);
+  const filePath = handle.filePath;
+
+  try {
+    handle.db.close();
+  } catch (_) {}
+
+  handles.delete(moduleId);
+  dictColumnCache.delete(moduleId);
+  try {
+    fs.unlinkSync(filePath);
+    return { deleted: true, moduleId };
+  } finally {
+    loadAll();
+  }
+}
+
 function withWritableDb(moduleId, callback) {
   const handle = getHandle(moduleId);
   const db = new Database(handle.filePath);
@@ -427,6 +445,7 @@ module.exports = {
   getCommentaryCoverage,
   getModulePath,
   getEditableModuleState,
+  deleteModule,
   saveInfoValue,
   deleteInfoValue,
   saveBookNames,

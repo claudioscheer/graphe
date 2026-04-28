@@ -21,6 +21,7 @@ import {
   Search,
   Settings,
   Star,
+  Trash2,
   X,
   createElement,
 } from '../../../node_modules/lucide/dist/esm/lucide.js';
@@ -46,6 +47,7 @@ export const Icons = (() => {
     search: Search,
     settings: Settings,
     star: Star,
+    trash: Trash2,
     x: X,
   };
 

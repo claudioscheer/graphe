@@ -52,6 +52,19 @@ export const DictPanel = (() => {
     return dictModules[0]?.id || null;
   }
 
+  function setModules(modules) {
+    dictModules = modules || [];
+    for (const moduleId of Array.from(moduleSearchCache.keys())) {
+      if (!dictModules.some((m) => m.id === moduleId)) moduleSearchCache.delete(moduleId);
+    }
+    selectedModuleId = resolveSelectedModuleId(selectedModuleId);
+    if (dictPickerInstance) {
+      dictPickerInstance.setModules(dictModules);
+      dictPickerInstance.setSelected(selectedModuleId);
+    }
+    emitStateChange();
+  }
+
   function getModuleById(moduleId) {
     return dictModules.find((m) => m.id === moduleId) || null;
   }
@@ -1490,5 +1503,5 @@ export const DictPanel = (() => {
     };
   }
 
-  return { init, lookup, lookupWord, setStateChangeListener, getState };
+  return { init, lookup, lookupWord, setModules, setStateChangeListener, getState };
 })();

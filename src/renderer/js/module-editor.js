@@ -1,9 +1,11 @@
 import { I18n } from './i18n.js';
+import { Icons } from './icons.js';
 import { ModulePicker } from './module-picker.js';
 
 export const ModuleEditor = (() => {
   let modules = [];
   let onSaved = null;
+  let onDeleted = null;
   let state = null;
   let activeTab = 'info';
 
@@ -11,6 +13,7 @@ export const ModuleEditor = (() => {
   let modulePicker;
   let modulePathEl;
   let moduleTypeEl;
+  let deleteBtn;
   let tabBar;
   let bodyEl;
   let statusEl;
@@ -18,6 +21,7 @@ export const ModuleEditor = (() => {
   function init(moduleList, opts = {}) {
     modules = Array.isArray(moduleList) ? [...moduleList] : [];
     onSaved = typeof opts.onSaved === 'function' ? opts.onSaved : null;
+    onDeleted = typeof opts.onDeleted === 'function' ? opts.onDeleted : null;
     buildDom();
   }
 
@@ -68,7 +72,16 @@ export const ModuleEditor = (() => {
     modulePathEl = document.createElement('code');
     modulePathEl.className = 'module-editor-path';
 
-    toolbar.append(modulePicker.el, modulePathEl);
+    deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'module-editor-btn danger module-editor-delete';
+    deleteBtn.append(Icons.create('trash', 'w-4 h-4'));
+    const deleteLabel = document.createElement('span');
+    deleteLabel.textContent = 'Delete module';
+    deleteBtn.append(deleteLabel);
+    deleteBtn.addEventListener('click', deleteCurrentModule);
+
+    toolbar.append(modulePicker.el, modulePathEl, deleteBtn);
 
     tabBar = document.createElement('div');
     tabBar.className = 'module-editor-tabs';
@@ -102,17 +115,29 @@ export const ModuleEditor = (() => {
     clearStatus();
   }
 
+  function setModules(moduleList) {
+    modules = Array.isArray(moduleList) ? [...moduleList] : [];
+    if (modulePicker) modulePicker.setModules(modules);
+  }
+
   async function open(moduleId, tab) {
     if (!overlay || !moduleId) return;
     overlay.classList.remove('hidden');
     modulePicker.setSelected(moduleId);
     activeTab = tab || activeTab || 'info';
+    state = null;
+    if (deleteBtn) deleteBtn.disabled = true;
+    if (tabBar) tabBar.innerHTML = '';
+    if (bodyEl) bodyEl.innerHTML = '';
+    if (moduleTypeEl) moduleTypeEl.textContent = '';
+    if (modulePathEl) modulePathEl.textContent = '';
     showStatus('Loading module data...');
 
     try {
       state = await window.api.getEditableModuleState(moduleId);
       moduleTypeEl.textContent = `${state.type} module`;
       modulePathEl.textContent = `\u2066${state.modulePath || ''}\u2069`;
+      if (deleteBtn) deleteBtn.disabled = false;
       renderTabs();
       renderActiveTab();
       clearStatus();
@@ -147,6 +172,25 @@ export const ModuleEditor = (() => {
     showStatus(message, true);
     await reloadState();
     if (onSaved) onSaved(state.moduleId);
+  }
+
+  async function deleteCurrentModule() {
+    if (!state || !state.moduleId || !deleteBtn) return;
+    const moduleName = state.info?.['short.title'] || state.info?.short_title || state.moduleId;
+    const message = `Delete "${moduleName}" from Graphe?\n\nThis removes the module file from your local modules folder.`;
+    if (!window.confirm(message)) return;
+
+    deleteBtn.disabled = true;
+    showStatus('Deleting module...');
+    try {
+      const deletedModuleId = state.moduleId;
+      await window.api.deleteModule(deletedModuleId);
+      close();
+      if (onDeleted) await onDeleted(deletedModuleId);
+    } catch (err) {
+      deleteBtn.disabled = false;
+      showStatus(`Failed to delete module: ${err.message || err}`, false);
+    }
   }
 
   function getInfoValue(name, fallback = '') {
@@ -609,5 +653,6 @@ export const ModuleEditor = (() => {
     open,
     close,
     isOpen,
+    setModules,
   };
 })();

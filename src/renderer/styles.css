@@ -974,6 +974,10 @@ body > .workbench-shell {
   overflow: hidden;
 }
 
+.module-editor-toolbar .module-picker-wrapper {
+  flex: 0 0 auto;
+}
+
 .module-editor-toolbar select {
   flex-shrink: 0;
 }
@@ -1125,6 +1129,20 @@ body > .workbench-shell {
   color: var(--ui-accent-ink);
 }
 
+.module-editor-btn.danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  border-color: #9f2f2f;
+  background: #8d2222;
+  color: #fff;
+}
+
+.module-editor-btn.danger:hover:not(:disabled) {
+  background: #731b1b;
+}
+
 .module-editor-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1134,6 +1152,15 @@ body > .workbench-shell {
   .module-editor-modal {
     width: 100%;
     max-height: 96vh;
+  }
+
+  .module-editor-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .module-editor-path {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 

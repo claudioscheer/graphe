@@ -23,7 +23,10 @@ export const SearchPanel = (() => {
   function init(moduleList, savedState, mountEl, options = {}) {
     modules = moduleList;
     onOpenResult = typeof options.onOpenResult === 'function' ? options.onOpenResult : null;
-    selectedModuleId = savedState?.moduleId || (modules[0] && modules[0].id) || null;
+    selectedModuleId =
+      savedState?.moduleId && modules.some((m) => m.id === savedState.moduleId)
+        ? savedState.moduleId
+        : (modules[0] && modules[0].id) || null;
     buildDOM(mountEl);
     prefetchBooks();
     // Restore last search query
@@ -522,6 +525,20 @@ export const SearchPanel = (() => {
     emitStateChange();
   }
 
+  function setModules(moduleList) {
+    modules = moduleList || [];
+    booksCache = {};
+    if (!modules.some((m) => m.id === selectedModuleId)) {
+      selectedModuleId = modules[0]?.id || null;
+    }
+    if (pickerInstance) {
+      pickerInstance.setModules(Utils.sortBibleModules(modules));
+      pickerInstance.setSelected(selectedModuleId);
+    }
+    prefetchBooks();
+    emitStateChange();
+  }
+
   function search(query) {
     WorkbenchShell.activateSidebar('search', { focus: true });
     if (input) {
@@ -560,6 +577,7 @@ export const SearchPanel = (() => {
     focusInput,
     search,
     setSelectedModule,
+    setModules,
     setStateChangeListener,
     getState,
   };

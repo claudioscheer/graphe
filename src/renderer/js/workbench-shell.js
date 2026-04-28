@@ -275,6 +275,17 @@ export const WorkbenchShell = (() => {
     view.appendChild(list);
   }
 
+  function setModules(nextModuleLists = {}) {
+    moduleLists = {
+      all: nextModuleLists.modules || [],
+      bible: nextModuleLists.bibleModules || [],
+      dictionary: nextModuleLists.dictModules || [],
+      commentary: nextModuleLists.commentaryModules || [],
+      crossreference: nextModuleLists.crossRefModules || [],
+    };
+    renderModulesView();
+  }
+
   function createCommandButton(iconName, label, onClick) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -571,6 +582,7 @@ export const WorkbenchShell = (() => {
     setCurrentLookup,
     updateStatus,
     refreshLabels,
+    setModules,
     setWorkspaceTabs,
   };
 })();

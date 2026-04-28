@@ -78,6 +78,7 @@ function registerIpcHandlers() {
   ipcMain.handle('get-editable-module-state', (_event, moduleId) =>
     modules.getEditableModuleState(moduleId)
   );
+  ipcMain.handle('delete-module', (_event, moduleId) => modules.deleteModule(moduleId));
   ipcMain.handle('save-info-value', (_event, moduleId, name, value) =>
     modules.saveInfoValue(moduleId, name, value)
   );

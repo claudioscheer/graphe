@@ -49,6 +49,31 @@ export const PaneManager = (() => {
     emitStateChange();
   }
 
+  function setModules(moduleList, commentaryModuleList) {
+    modules = moduleList || [];
+    commentaryModules = commentaryModuleList || [];
+
+    for (const pane of Object.values(panes)) {
+      if (pane.paneType === 'commentary') {
+        pane.moduleId = resolveCommentaryModuleId(pane.moduleId);
+        pane.commentaryBooks = [];
+        pane.entries = [];
+        continue;
+      }
+
+      pane.moduleId = resolveModuleId(pane.moduleId);
+      const mod = modules.find((m) => m.id === pane.moduleId) || null;
+      pane.hasStrongs = mod ? mod.hasStrongs : false;
+      pane.strongsPrefix = mod ? mod.strongsPrefix || null : null;
+      pane.books = [];
+      pane.verses = [];
+      pane.navHistory = sanitizeNavHistory(pane.navHistory);
+    }
+
+    render();
+    emitStateChange();
+  }
+
   function setState(savedState) {
     if (!restoreState(savedState)) {
       initializeDefaultState({ includeCommentary: false });
@@ -299,10 +324,12 @@ export const PaneManager = (() => {
 
   function sanitizeNavHistory(rawHistory) {
     if (!Array.isArray(rawHistory)) return [];
+    const bibleModuleIds = new Set(modules.filter((m) => m.type === 'bible').map((m) => m.id));
     return rawHistory
       .filter((entry) => entry && typeof entry === 'object')
+      .filter((entry) => typeof entry.moduleId === 'string' && bibleModuleIds.has(entry.moduleId))
       .map((entry) => ({
-        moduleId: typeof entry.moduleId === 'string' ? entry.moduleId : null,
+        moduleId: entry.moduleId,
         bookNumber: Number.isInteger(entry.bookNumber) ? entry.bookNumber : 10,
         chapter: Number.isInteger(entry.chapter) ? entry.chapter : 1,
         verse: Number.isInteger(entry.verse) ? entry.verse : null,
@@ -2265,6 +2292,7 @@ export const PaneManager = (() => {
 
   return {
     init,
+    setModules,
     setState,
     waitForInitialLoad,
     getPane,

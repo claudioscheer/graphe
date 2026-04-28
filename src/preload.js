@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   getCommentaryCoverage: (moduleId) => ipcRenderer.invoke('get-commentary-coverage', moduleId),
   getModulePath: (moduleId) => ipcRenderer.invoke('get-module-path', moduleId),
   getEditableModuleState: (moduleId) => ipcRenderer.invoke('get-editable-module-state', moduleId),
+  deleteModule: (moduleId) => ipcRenderer.invoke('delete-module', moduleId),
   saveInfoValue: (moduleId, name, value) =>
     ipcRenderer.invoke('save-info-value', moduleId, name, value),
   deleteInfoValue: (moduleId, name) => ipcRenderer.invoke('delete-info-value', moduleId, name),
