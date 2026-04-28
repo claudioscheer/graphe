@@ -232,7 +232,8 @@ body > .workbench-shell {
 }
 
 .workbench-top-strip {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   height: 34px;
@@ -253,6 +254,7 @@ body > .workbench-shell {
   gap: 7px;
   width: 144px;
   min-width: 0;
+  justify-self: start;
   color: var(--ui-text);
   font-size: 12px;
   font-weight: 600;
@@ -272,6 +274,7 @@ body > .workbench-shell {
   height: 24px;
   width: min(520px, 42vw);
   min-width: 180px;
+  justify-self: center;
   padding: 0 10px;
   border: 1px solid var(--ui-border);
   border-radius: 4px;
@@ -307,7 +310,7 @@ body > .workbench-shell {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  justify-self: end;
 }
 
 .workbench-top-btn,
@@ -481,31 +484,6 @@ body > .workbench-shell {
   min-height: 0;
 }
 
-.workbench-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 24px;
-  padding: 0 10px;
-  flex-shrink: 0;
-  background: var(--ui-link);
-  color: #1f1f1f;
-  font-size: 11px;
-  line-height: 1;
-  border-top: 1px solid rgb(var(--ui-link-strong-rgb) / 0.45);
-}
-
-.workbench-status-bar > span {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.workbench-status-spacer {
-  flex: 1 1 auto;
-}
-
 .workbench-view-actions {
   display: flex;
   gap: 6px;
@@ -627,7 +605,6 @@ body > .workbench-shell {
   border-color: var(--ui-border);
 }
 
-.workbench-module-row-name,
 .workbench-module-row-meta {
   display: block;
   min-width: 0;
@@ -637,6 +614,10 @@ body > .workbench-shell {
 }
 
 .workbench-module-row-name {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-size: 12px;
   font-weight: 600;
 }

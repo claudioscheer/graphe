@@ -3,7 +3,7 @@ import { Icons } from './icons.js';
 import { Utils } from './utils.js';
 
 export const WorkbenchShell = (() => {
-  const VIEW_IDS = new Set(['search', 'dictionary', 'study', 'modules']);
+  const VIEW_IDS = new Set(['search', 'dictionary', 'modules']);
   const DEFAULT_WIDTH = 300;
   const MIN_WIDTH = 220;
   const MAX_WIDTH_RATIO = 0.6;
@@ -19,9 +19,6 @@ export const WorkbenchShell = (() => {
   let sidebarContentEl = null;
   let dividerEl = null;
   let editorEl = null;
-  let statusActiveEl = null;
-  let statusLookupEl = null;
-  let statusThemeEl = null;
   let commandLabelEl = null;
   let settingsButtonEl = null;
   let viewContainers = {};
@@ -34,7 +31,6 @@ export const WorkbenchShell = (() => {
     crossreference: [],
   };
   let handlers = {};
-  let currentLookupLabel = '';
 
   function init(savedState, options = {}) {
     const paneRoot = document.getElementById('pane-root');
@@ -90,7 +86,6 @@ export const WorkbenchShell = (() => {
 
     mainEl.append(activityBarEl, sidebarEl, dividerEl, editorEl);
     rootEl.appendChild(mainEl);
-    rootEl.appendChild(createStatusBar());
     body.appendChild(rootEl);
 
     window.addEventListener('resize', syncWidthToViewport);
@@ -152,7 +147,6 @@ export const WorkbenchShell = (() => {
     const items = [
       { id: 'search', icon: 'search', label: I18n.t('search') },
       { id: 'dictionary', icon: 'book-marked', label: I18n.t('dictionary') },
-      { id: 'study', icon: 'brain', label: I18n.t('workbenchStudy') },
       { id: 'modules', icon: 'library', label: I18n.t('workbenchModules') },
     ];
 
@@ -221,24 +215,7 @@ export const WorkbenchShell = (() => {
       container.appendChild(view);
     }
 
-    renderStudyView();
     renderModulesView();
-  }
-
-  function renderStudyView() {
-    const view = viewContainers.study;
-    if (!view) return;
-    view.innerHTML = '';
-
-    const card = document.createElement('div');
-    card.className = 'workbench-placeholder';
-    const title = document.createElement('div');
-    title.className = 'workbench-placeholder-title';
-    title.textContent = I18n.t('workbenchStudy');
-    const body = document.createElement('p');
-    body.textContent = I18n.t('workbenchStudyPlaceholder');
-    card.append(title, body);
-    view.appendChild(card);
   }
 
   function renderModulesView() {
@@ -325,18 +302,6 @@ export const WorkbenchShell = (() => {
     return empty;
   }
 
-  function createStatusBar() {
-    const status = document.createElement('footer');
-    status.className = 'workbench-status-bar';
-    statusActiveEl = document.createElement('span');
-    statusLookupEl = document.createElement('span');
-    statusThemeEl = document.createElement('span');
-    const spacer = document.createElement('span');
-    spacer.className = 'workbench-status-spacer';
-    status.append(statusActiveEl, statusLookupEl, spacer, statusThemeEl);
-    return status;
-  }
-
   function activateSidebar(viewId, options = {}) {
     const normalized = normalizeViewId(viewId);
     activeView = normalized;
@@ -367,8 +332,6 @@ export const WorkbenchShell = (() => {
     switch (viewId) {
       case 'dictionary':
         return I18n.t('dictionary');
-      case 'study':
-        return I18n.t('workbenchStudy');
       case 'modules':
         return I18n.t('workbenchModules');
       case 'search':
@@ -447,8 +410,7 @@ export const WorkbenchShell = (() => {
   }
 
   function setCurrentLookup(label) {
-    currentLookupLabel = label || '';
-    updateStatus();
+    void label;
   }
 
   function refreshLabels() {
@@ -463,37 +425,12 @@ export const WorkbenchShell = (() => {
       button.setAttribute('aria-label', label);
     }
     if (sidebarTitleEl) sidebarTitleEl.textContent = getViewLabel(activeView);
-    renderStudyView();
     renderModulesView();
     applyActiveView();
-    updateStatus();
   }
 
   function updateStatus(activePane) {
-    if (statusActiveEl) {
-      statusActiveEl.textContent = activePane ? formatPaneStatus(activePane) : 'Ready';
-    }
-    if (statusLookupEl) {
-      statusLookupEl.textContent = currentLookupLabel
-        ? `${I18n.t('dictionary')}: ${currentLookupLabel}`
-        : '';
-    }
-    if (statusThemeEl) {
-      statusThemeEl.textContent = document.documentElement.classList.contains('dark')
-        ? I18n.t('dark')
-        : I18n.t('light');
-    }
-  }
-
-  function formatPaneStatus(pane) {
-    if (!pane) return 'Ready';
-    const type = pane.paneType === 'commentary' ? I18n.t('commentary') : 'Bible';
-    const reference = pane.bookShortName
-      ? `${pane.bookShortName} ${pane.chapter || ''}`.trim()
-      : pane.chapter
-        ? String(pane.chapter)
-        : '';
-    return [type, pane.moduleId, reference].filter(Boolean).join(' | ');
+    void activePane;
   }
 
   return {
