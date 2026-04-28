@@ -1609,12 +1609,10 @@ body > .workbench-shell {
 }
 
 .verse-line:hover {
-  background-color: rgb(var(--ui-link-strong-rgb) / 0.12);
   border-left-color: rgb(var(--ui-link-strong-rgb) / 0.45);
 }
 
 .dark .verse-line:hover {
-  background-color: rgb(var(--ui-link-soft-rgb) / 0.2);
   border-left-color: rgb(var(--ui-link-soft-rgb) / 0.6);
 }
 

@@ -370,6 +370,12 @@ export const BibleView = (() => {
       line.appendChild(numSpan);
       line.appendChild(textSpan);
 
+      line.addEventListener('mousedown', (e) => {
+        if (e.shiftKey && !e.target.closest('.crossref-link, .verse-footnote-marker')) {
+          e.preventDefault();
+        }
+      });
+
       line.addEventListener('click', (e) => {
         if (e.target.closest('.crossref-link')) return;
         const all = Array.from(wrapper.querySelectorAll('.verse-line'));
@@ -391,9 +397,16 @@ export const BibleView = (() => {
           line.classList.add('verse-selected');
           lastClickedVerse = v.verse;
         }
+
+        if (e.shiftKey || e.ctrlKey || e.metaKey) clearNativeSelection();
       });
 
       wrapper.appendChild(line);
+    }
+
+    function clearNativeSelection() {
+      const selection = window.getSelection?.();
+      if (selection && !selection.isCollapsed) selection.removeAllRanges();
     }
 
     // Footnote popover handler
