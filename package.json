@@ -1,7 +1,7 @@
 {
   "name": "graphe-bible",
   "productName": "Graphe",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "A modern Bible study app with split panes and Strong's numbers",
   "author": "Claudio Scheer",
   "main": "src/main/main.js",
@@ -34,25 +34,25 @@
     "compare:theword": "node scripts/compare-modules.js"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.0.0",
+    "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-dmg": "^7.11.1",
     "@electron-forge/maker-wix": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",
     "@reforged/maker-appimage": "^5.2.0",
-    "@tailwindcss/cli": "^4",
+    "@tailwindcss/cli": "^4.2.4",
     "concurrently": "^9.2.1",
-    "electron": "^33.0.0",
-    "eslint": "^9.36.0",
+    "electron": "^41.3.0",
+    "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
-    "lucide": "^0.575.0",
-    "prettier": "^3.6.2",
+    "prettier": "^3.8.3",
     "tailwindcss": "^4",
-    "vite": "^7.3.1",
-    "vitest": "^3"
+    "vite": "^7.3.2",
+    "vitest": "^4.1.5"
   },
   "dependencies": {
     "@iarna/rtf-to-html": "^1.1.0",
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^12.9.0",
+    "lucide": "^1.12.0"
   }
 }
