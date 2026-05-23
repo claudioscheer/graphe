@@ -2,10 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const provider = require('../src/main/modules/theword-twm-provider');
+import * as provider from '../src/main/modules/theword-twm-provider.ts';
 
 const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
 

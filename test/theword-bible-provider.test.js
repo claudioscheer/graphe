@@ -2,10 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { convertTags } = require('../src/main/modules/theword-bible-provider');
+import { convertTags } from '../src/main/modules/theword-bible-provider.ts';
 
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
@@ -127,7 +124,7 @@ describe('convertTags', () => {
 
 describe('encrypted module handling', () => {
   it('throws explicit error for encrypted .ontx input', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ontx-'));
     const inputPath = path.join(tmpDir, 'enc.ontx');
     fs.writeFileSync(inputPath, Buffer.from('TWENCBMOD\x00\x01\x02\x03', 'binary'));
@@ -143,7 +140,7 @@ describe('encrypted module handling', () => {
 
 describe('legacy encoding handling', () => {
   it('loads utf8 BOM .nt modules without mojibake', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-utf8bom-'));
     const inputPath = path.join(tmpDir, 'sample-utf8-bom.nt');
     const verses = Array.from({ length: NT_VERSES }, () => '');
@@ -166,7 +163,7 @@ describe('legacy encoding handling', () => {
   });
 
   it('loads latin1 .nt modules without mojibake', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-latin1-'));
     const inputPath = path.join(tmpDir, 'sample-latin1.nt');
     const verses = Array.from({ length: NT_VERSES }, () => '');
@@ -189,7 +186,7 @@ describe('legacy encoding handling', () => {
 
 describe('OT module handling', () => {
   it('loads OT-only .ot modules and exposes only OT books', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-'));
     const inputPath = createTheWordModuleFile(tmpDir, 'sample.ot', OT_VERSES, [
       'description=Sample OT',
@@ -220,7 +217,7 @@ describe('OT module handling', () => {
   });
 
   it('loads .ot files with full-bible verse count as full scope', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-full-'));
     const inputPath = createTheWordModuleFile(tmpDir, 'sample-full.ot', TOTAL_VERSES, [
       'description=Sample Full',
@@ -241,7 +238,7 @@ describe('OT module handling', () => {
   });
 
   it('accepts .ot files in isValidFile()', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-valid-'));
     const inputPath = createTheWordModuleFile(tmpDir, 'valid.ot', OT_VERSES, ['description=OT']);
 
@@ -253,7 +250,7 @@ describe('OT module handling', () => {
   });
 
   it('treats full-length sparse .ot files as effective OT and hides empty placeholders', () => {
-    const provider = require('../src/main/modules/theword-bible-provider');
+    const provider = require('../src/main/modules/theword-bible-provider.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-provider-ot-sparse-'));
     const verses = Array(TOTAL_VERSES).fill('');
     verses[0] = 'Verse 1';
@@ -313,7 +310,7 @@ describe('TheWord Bible integration', () => {
   }
 
   beforeAll(() => {
-    provider = require('../src/main/modules/theword-bible-provider');
+    provider = require('../src/main/modules/theword-bible-provider.ts');
 
     try {
       const files = fs.readdirSync(MODULES_DIR);

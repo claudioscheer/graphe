@@ -2,11 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { convertTagsToMyBible } = require('../src/main/modules/converters/theword-converter');
-const converterRegistry = require('../src/main/modules/converters');
+import { convertTagsToMyBible } from '../src/main/modules/converters/theword-converter.ts';
+import * as converterRegistry from '../src/main/modules/converters/index.ts';
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
 
@@ -197,7 +194,7 @@ describe('converter registry', () => {
 
 describe('encrypted bible module handling', () => {
   it('rejects encrypted .ontx with explicit error', async () => {
-    const converter = require('../src/main/modules/converters/theword-converter');
+    const converter = require('../src/main/modules/converters/theword-converter.ts');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-ontx-'));
     const inputPath = path.join(tmpDir, 'sample.ontx');
     fs.writeFileSync(inputPath, Buffer.from('TWENCBMOD\x00\x01\x02\x03', 'binary'));
@@ -229,7 +226,7 @@ describe('convertBible integration', () => {
   }
 
   beforeAll(() => {
-    converter = require('../src/main/modules/converters/theword-converter');
+    converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-'));
 
     try {
@@ -383,7 +380,7 @@ describe('convertDictionary integration', () => {
   }
 
   beforeAll(() => {
-    converter = require('../src/main/modules/converters/theword-converter');
+    converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-dict-'));
 
     dctFile = findFirstDctFile(MODULES_DIR);
@@ -439,7 +436,7 @@ describe('convertCommentary integration', () => {
   }
 
   beforeAll(() => {
-    converter = require('../src/main/modules/converters/theword-converter');
+    converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-cmt-'));
 
     try {

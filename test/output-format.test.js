@@ -2,11 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const Database = require('better-sqlite3');
-const sqliteProvider = require('../src/main/modules/sqlite-provider');
+import Database from 'better-sqlite3';
+import * as sqliteProvider from '../src/main/modules/sqlite-provider.ts';
 
 const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
 

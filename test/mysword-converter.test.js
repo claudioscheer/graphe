@@ -2,14 +2,178 @@ import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
+import Database from 'better-sqlite3';
+import { convertMySwordTags } from '../src/main/modules/converters/mysword-converter.ts';
+import * as converterRegistry from '../src/main/modules/converters/index.ts';
 
-const require = createRequire(import.meta.url);
-const { convertMySwordTags } = require('../src/main/modules/converters/mysword-converter');
-const converterRegistry = require('../src/main/modules/converters');
-const Database = require('better-sqlite3');
+const TEST_SUPPORT = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-mysword-support-'));
 
-const TEST_SUPPORT = path.join(__dirname, '..', 'test-support');
+function createBibleFixture(fileName, { scriptureColumn = 'Scripture', rows, details = {} }) {
+  const dbPath = path.join(TEST_SUPPORT, fileName);
+  const db = new Database(dbPath);
+  try {
+    db.exec(`
+      CREATE TABLE Details (
+        Title TEXT,
+        Description TEXT,
+        Abbreviation TEXT,
+        Language TEXT
+      );
+      CREATE TABLE Bible (
+        Book INTEGER,
+        Chapter INTEGER,
+        Verse INTEGER,
+        "${scriptureColumn}" TEXT
+      );
+    `);
+    db.prepare(
+      'INSERT INTO Details (Title, Description, Abbreviation, Language) VALUES (?, ?, ?, ?)'
+    ).run(
+      details.title || fileName,
+      details.description || fileName,
+      details.abbreviation || fileName.slice(0, 8),
+      details.language || 'en'
+    );
+
+    const insert = db.prepare(
+      `INSERT INTO Bible (Book, Chapter, Verse, "${scriptureColumn}") VALUES (?, ?, ?, ?)`
+    );
+    const tx = db.transaction((items) => {
+      for (const row of items) insert.run(row.book, row.chapter, row.verse, row.text);
+    });
+    tx(rows);
+  } finally {
+    db.close();
+  }
+  return dbPath;
+}
+
+function createDictionaryFixture(
+  fileName,
+  { tableName = 'Dictionary', strong = false, lexeme = false, relativeOrder = false, rows }
+) {
+  const dbPath = path.join(TEST_SUPPORT, fileName);
+  const db = new Database(dbPath);
+  try {
+    const extraColumns = [
+      lexeme ? 'lexeme TEXT' : null,
+      relativeOrder ? 'relativeorder INTEGER' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    db.exec(`
+      CREATE TABLE Details (
+        Title TEXT,
+        Description TEXT,
+        Abbreviation TEXT,
+        Language TEXT,
+        Strong INTEGER
+      );
+      CREATE TABLE "${tableName}" (
+        word TEXT,
+        data TEXT
+        ${extraColumns ? `, ${extraColumns}` : ''}
+      );
+    `);
+    db.prepare(
+      'INSERT INTO Details (Title, Description, Abbreviation, Language, Strong) VALUES (?, ?, ?, ?, ?)'
+    ).run(fileName, fileName, fileName.slice(0, 8), 'en', strong ? 1 : 0);
+
+    const columns = [
+      'word',
+      'data',
+      lexeme ? 'lexeme' : null,
+      relativeOrder ? 'relativeorder' : null,
+    ].filter(Boolean);
+    const insert = db.prepare(
+      `INSERT INTO "${tableName}" (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
+    );
+    const tx = db.transaction((items) => {
+      items.forEach((row, index) => {
+        const values = [row.word, row.data];
+        if (lexeme) values.push(row.lexeme || row.word);
+        if (relativeOrder) values.push(row.relativeorder || index + 1);
+        insert.run(...values);
+      });
+    });
+    tx(rows);
+  } finally {
+    db.close();
+  }
+  return dbPath;
+}
+
+function makeNa28Rows() {
+  const rows = [];
+  for (let i = 0; i < 7915; i++) {
+    rows.push({
+      book: 40 + (i % 27),
+      chapter: Math.floor(i / 200) + 1,
+      verse: (i % 200) + 1,
+      text: '「<T>logos<t><G>λόγος<g><W>1<w>」',
+    });
+  }
+  rows[0] = { book: 40, chapter: 1, verse: 1, text: '「<T>Biblos<t><G>Βίβλος<g>」' };
+  return rows;
+}
+
+function makeHbGrRows() {
+  return [
+    { book: 1, chapter: 1, verse: 1, text: 'בראשית<WH7225>' },
+    { book: 40, chapter: 1, verse: 1, text: 'Βίβλος<WG976>' },
+    { book: 66, chapter: 1, verse: 1, text: 'Ἀποκάλυψις<WG602>' },
+  ];
+}
+
+function createMySwordFixtures() {
+  createBibleFixture('NA28.bbl.mybible', { rows: makeNa28Rows() });
+  createBibleFixture('HbGr Interlinear e Trasnliterado.bbl.mybible', {
+    scriptureColumn: 'scripture',
+    rows: makeHbGrRows(),
+  });
+  createBibleFixture('GR OGNTe Br +exegese.bbl.mybible', {
+    rows: [
+      {
+        book: 40,
+        chapter: 1,
+        verse: 1,
+        text:
+          '「<Tr>Biblos</Tr><Cla><a class="d" href="d-OGNTd 000001">viyvlos</a></Cla>' +
+          '<Mn>Βίβλος</Mn><Wn>1</wn><Ko>Βιβλος</ko>' +
+          '<WG976><WTN-NSF l="βίβλος">' +
+          '<LN><a class="Lw" href="d-LouwNida 33.38">33.38</a></LN>' +
+          '<GN>1047</Gn><Pbr>Livro</Pbr><Es>Libro</es><Og>book</og>」',
+      },
+    ],
+  });
+
+  const normalRows = [
+    { word: 'Alpha', data: 'First entry' },
+    { word: 'Beta', data: 'Second entry' },
+  ];
+  createDictionaryFixture('Berean Strongs.dct.mybible', {
+    strong: true,
+    rows: Array.from({ length: 25111 }, (_, index) => ({
+      word: `G${index + 1}`,
+      data: `Definition ${index + 1}`,
+    })),
+  });
+  createDictionaryFixture('THOMPSON.dct.mybible', { tableName: 'dictionary', rows: normalRows });
+  createDictionaryFixture('Léxico Gesenius.dct.mybible', {
+    lexeme: true,
+    rows: [{ word: 'H7225', data: 'Beginning', lexeme: 'reshith' }],
+  });
+  createDictionaryFixture('Enciclopédia Mundo Bíblico.dct.mybible', {
+    relativeOrder: true,
+    rows: normalRows,
+  });
+  createDictionaryFixture('Dicionario Transliterado.dct.mybible', { rows: normalRows });
+  createDictionaryFixture('Wycliffe.dct.mybible', { rows: normalRows });
+  createDictionaryFixture('Sermões de John MacArthur.dct.mybible', { rows: normalRows });
+  createDictionaryFixture('Novo Dic Teologia NT_Hagnos.dct.mybible', { rows: normalRows });
+}
+
+createMySwordFixtures();
 
 // --- Pure function tests ---
 
@@ -551,7 +715,7 @@ describe('convertDictionary integration', () => {
 // --- Provider tests ---
 
 describe('mysword-provider', () => {
-  const myswordProvider = require('../src/main/modules/mysword-provider');
+  const myswordProvider = require('../src/main/modules/mysword-provider.ts');
 
   it('loads a Bible .bbl.mybible and returns correct handle', () => {
     const handle = myswordProvider.load(path.join(TEST_SUPPORT, 'NA28.bbl.mybible'));

@@ -6,3 +6,4 @@ data
 tmp
 release-assets
 .superpowers
+coverage

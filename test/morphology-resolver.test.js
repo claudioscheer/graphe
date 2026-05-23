@@ -2,12 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const Database = require('better-sqlite3');
-const resolver = require('../src/main/modules/morphology-resolver');
-const sqliteProvider = require('../src/main/modules/sqlite-provider');
+import Database from 'better-sqlite3';
+import * as resolver from '../src/main/modules/morphology-resolver.ts';
+import * as sqliteProvider from '../src/main/modules/sqlite-provider.ts';
 
 describe('built-in morphology decoders', () => {
   it('decodes compact dot morphology codes', () => {
