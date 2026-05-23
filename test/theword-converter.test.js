@@ -4,6 +4,11 @@ import path from 'path';
 import os from 'os';
 import { convertTagsToMyBible } from '../src/main/modules/converters/theword-converter.ts';
 import * as converterRegistry from '../src/main/modules/converters/index.ts';
+import {
+  writeTheWordBibleFixture,
+  writeTwmDictionaryFixture,
+  writeTwmType2CommentaryFixture,
+} from './support/module-fixtures.js';
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
 
@@ -207,40 +212,25 @@ describe('encrypted bible module handling', () => {
   });
 });
 
-// --- Integration tests (require actual module files) ---
+// --- Integration tests ---
 
 describe('convertBible integration', () => {
-  const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
   const Database = require('better-sqlite3');
   let converter;
   let ontFile;
   let tmpDir;
 
-  function hasOntFile() {
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      return files.some((f) => f.toLowerCase().endsWith('.ont'));
-    } catch (_) {
-      return false;
-    }
-  }
-
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-'));
-
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      const ont = files.find((f) => f.toLowerCase().endsWith('.ont'));
-      if (ont) ontFile = path.join(MODULES_DIR, ont);
-    } catch (_) {}
+    ontFile = writeTheWordBibleFixture(tmpDir);
   });
 
   afterAll(() => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it.skipIf(!hasOntFile())('converts .ont to .SQLite3 with correct tables', async () => {
+  it('converts .ont to .SQLite3 with correct tables', async () => {
     const outputPath = await converter.convert(ontFile, tmpDir);
     expect(fs.existsSync(outputPath)).toBe(true);
     expect(outputPath.endsWith('.SQLite3')).toBe(true);
@@ -351,46 +341,22 @@ describe('convertBible integration', () => {
 });
 
 describe('convertDictionary integration', () => {
-  const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
   const Database = require('better-sqlite3');
   let converter;
   let dctFile;
   let tmpDir;
 
-  function findFirstDctFile(root) {
-    try {
-      const entries = fs.readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(root, entry.name);
-        if (entry.isDirectory()) {
-          const nested = findFirstDctFile(fullPath);
-          if (nested) return nested;
-          continue;
-        }
-        if (entry.isFile() && entry.name.toLowerCase().endsWith('.dct.twm')) {
-          return fullPath;
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  function hasDctFile() {
-    return Boolean(findFirstDctFile(MODULES_DIR));
-  }
-
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-dict-'));
-
-    dctFile = findFirstDctFile(MODULES_DIR);
+    dctFile = writeTwmDictionaryFixture(tmpDir);
   });
 
   afterAll(() => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it.skipIf(!hasDctFile())('converts .dct.twm to dictionary .SQLite3', async () => {
+  it('converts .dct.twm to dictionary .SQLite3', async () => {
     const outputPath = await converter.convert(dctFile, tmpDir);
     expect(fs.existsSync(outputPath)).toBe(true);
     expect(outputPath).toContain('.dictionary.SQLite3');
@@ -420,37 +386,22 @@ describe('convertDictionary integration', () => {
 });
 
 describe('convertCommentary integration', () => {
-  const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
   const Database = require('better-sqlite3');
   let converter;
   let cmtFile;
   let tmpDir;
 
-  function hasCmtFile() {
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      return files.some((f) => f.toLowerCase().endsWith('.cmt.twm'));
-    } catch (_) {
-      return false;
-    }
-  }
-
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-test-cmt-'));
-
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      const cmt = files.find((f) => f.toLowerCase().endsWith('.cmt.twm'));
-      if (cmt) cmtFile = path.join(MODULES_DIR, cmt);
-    } catch (_) {}
+    cmtFile = writeTwmType2CommentaryFixture(tmpDir);
   });
 
   afterAll(() => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it.skipIf(!hasCmtFile())('converts .cmt.twm to commentary .SQLite3', async () => {
+  it('converts .cmt.twm to commentary .SQLite3', async () => {
     const outputPath = await converter.convert(cmtFile, tmpDir);
     expect(fs.existsSync(outputPath)).toBe(true);
     expect(outputPath).toContain('.commentaries.SQLite3');

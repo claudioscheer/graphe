@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compactRanges } from '../../src/renderer/js/commentary-coverage.js';
+import { compactRanges } from '../../src/renderer/app/commentary-coverage.js';
 import {
   allocatePaneLabel,
   collectUsedWindowLabels,
@@ -9,8 +9,8 @@ import {
   labelForIndex,
   normalizeWindowLabel,
   parsePaneNumber,
-} from '../../src/renderer/js/pane-labels.js';
-import type { NavHistoryEntry, PaneStateRecord, PaneTreeNode } from '../../src/renderer/js/pane-model.js';
+} from '../../src/renderer/app/pane-labels.js';
+import type { NavHistoryEntry, PaneStateRecord, PaneTreeNode } from '../../src/renderer/app/pane-model.js';
 import {
   getNavHistoryEntries,
   hasNavBackHistory,
@@ -18,7 +18,7 @@ import {
   normalizeNavHistoryIndexes,
   pushNavHistoryEntry,
   sanitizeNavHistory,
-} from '../../src/renderer/js/pane-history.js';
+} from '../../src/renderer/app/pane-history.js';
 import {
   clampRatio,
   containsPane,
@@ -29,7 +29,7 @@ import {
   getFirstLeafId,
   sanitizeTree,
   serializeTree,
-} from '../../src/renderer/js/pane-tree.js';
+} from '../../src/renderer/app/pane-tree.js';
 
 const bibleModule: ModuleRecord = {
   id: 'kjv',

@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { convertTags } from '../src/main/modules/theword-bible-provider.ts';
+import { writeTheWordBibleFixture } from './support/module-fixtures.js';
 
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
@@ -284,42 +285,24 @@ describe('OT module handling', () => {
   });
 });
 
-// --- Integration tests (require actual module files) ---
+// --- Integration tests ---
 
 describe('TheWord Bible integration', () => {
-  const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
   let ontFile;
   let provider;
-
-  function hasOntFile() {
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      return files.some((f) => f.toLowerCase().endsWith('.ont'));
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function hasStrongOntFile() {
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      return files.some((f) => f.toLowerCase().endsWith('.ont') && /strong/i.test(f));
-    } catch (_) {
-      return false;
-    }
-  }
+  let tmpDir;
 
   beforeAll(() => {
     provider = require('../src/main/modules/theword-bible-provider.ts');
-
-    try {
-      const files = fs.readdirSync(MODULES_DIR);
-      const ont = files.find((f) => f.toLowerCase().endsWith('.ont'));
-      if (ont) ontFile = path.join(MODULES_DIR, ont);
-    } catch (_) {}
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-theword-bible-fixtures-'));
+    ontFile = writeTheWordBibleFixture(tmpDir);
   });
 
-  it.skipIf(!hasOntFile())('loads an .ont file and returns valid handle', () => {
+  afterAll(() => {
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads an .ont file and returns valid handle', () => {
     const handle = provider.load(ontFile);
     expect(handle).toBeTruthy();
     expect(handle.format).toBe('theword-bible');
@@ -329,7 +312,7 @@ describe('TheWord Bible integration', () => {
     expect(handle.metadata).toBeDefined();
   });
 
-  it.skipIf(!hasOntFile())('getChapter returns verses with {verse, text}', () => {
+  it('getChapter returns verses with {verse, text}', () => {
     const handle = provider.load(ontFile);
     const verses = provider.getChapter(handle, 10, 1); // Genesis 1
     expect(verses.length).toBeGreaterThan(0);
@@ -339,11 +322,8 @@ describe('TheWord Bible integration', () => {
     expect(typeof verses[0].text).toBe('string');
   });
 
-  it.skipIf(!hasStrongOntFile())('detects Strong numbers in a Strong bible', () => {
-    const files = fs.readdirSync(MODULES_DIR);
-    const strongFile = files.find((f) => f.toLowerCase().endsWith('.ont') && /strong/i.test(f));
-    if (!strongFile) return;
-    const handle = provider.load(path.join(MODULES_DIR, strongFile));
+  it('detects Strong numbers in a Strong bible', () => {
+    const handle = provider.load(ontFile);
     expect(handle.hasStrongs).toBe(true);
 
     const verses = provider.getChapter(handle, 10, 1);

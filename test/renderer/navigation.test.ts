@@ -2,8 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { I18n } from '../../src/renderer/js/i18n.js';
-import { Navigation, setNavigationPaneManager } from '../../src/renderer/js/navigation.js';
+import { I18n } from '../../src/renderer/app/i18n.js';
+import { Navigation, setNavigationPaneManager } from '../../src/renderer/app/navigation.js';
 
 type NavigatePane = (
   paneId: string | null,

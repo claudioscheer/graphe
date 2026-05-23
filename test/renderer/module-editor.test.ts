@@ -21,17 +21,17 @@ const pickerMock = vi.hoisted(() => {
   return { create, instances };
 });
 
-vi.mock('../../src/renderer/js/module-picker.js', () => ({
+vi.mock('../../src/renderer/app/module-picker.js', () => ({
   ModulePicker: {
     create: pickerMock.create,
   },
 }));
 
-async function loadEditor(): Promise<typeof import('../../src/renderer/js/module-editor.js')> {
+async function loadEditor(): Promise<typeof import('../../src/renderer/app/module-editor.js')> {
   vi.resetModules();
   pickerMock.instances.length = 0;
   pickerMock.create.mockClear();
-  return import('../../src/renderer/js/module-editor.js');
+  return import('../../src/renderer/app/module-editor.js');
 }
 
 async function flushPromises(): Promise<void> {

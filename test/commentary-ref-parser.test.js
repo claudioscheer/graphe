@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import * as parser from '../src/renderer/js/commentary-ref-parser.ts';
+import * as parser from '../src/renderer/app/commentary-ref-parser.ts';
 
 const bookNames = {
   pt: [

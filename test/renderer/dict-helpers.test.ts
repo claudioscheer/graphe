@@ -5,8 +5,8 @@ import {
   buildSubList,
   formatDefinition,
   getLevel,
-} from '../../src/renderer/js/dict-definition-format.js';
-import { isExternalHref, normalizeTopicCandidate } from '../../src/renderer/js/dict-topic.js';
+} from '../../src/renderer/app/dict-definition-format.js';
+import { isExternalHref, normalizeTopicCandidate } from '../../src/renderer/app/dict-topic.js';
 
 describe('dictionary definition formatting', () => {
   const restore = (value: string): string => value;

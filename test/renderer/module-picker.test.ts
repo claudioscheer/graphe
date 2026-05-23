@@ -2,15 +2,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type PickerModule = typeof import('../../src/renderer/js/module-picker.js');
-type StoreModule = typeof import('../../src/renderer/js/app-state-store.js');
+type PickerModule = typeof import('../../src/renderer/app/module-picker.js');
+type StoreModule = typeof import('../../src/renderer/app/app-state-store.js');
 let rafCallbacks: FrameRequestCallback[] = [];
 
 async function loadPicker(): Promise<PickerModule & StoreModule> {
   vi.resetModules();
   const [picker, store] = await Promise.all([
-    import('../../src/renderer/js/module-picker.js'),
-    import('../../src/renderer/js/app-state-store.js'),
+    import('../../src/renderer/app/module-picker.js'),
+    import('../../src/renderer/app/app-state-store.js'),
   ]);
   return { ...picker, ...store };
 }

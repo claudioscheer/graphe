@@ -4,28 +4,32 @@ import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
 import * as provider from '../src/main/modules/sqlite-provider.ts';
+import {
+  writeSqliteBibleFixture,
+  writeSqliteCommentaryFixture,
+  writeSqliteDictionaryFixture,
+} from './support/module-fixtures.js';
 
-const SQLITE_DIR = path.join(os.homedir(), '.graphe', 'modules', 'SQLite3');
+let fixtureDir;
+let commentaryFile;
+let dictionaryFile;
+let bibleFile;
 
-function findSqliteFile(pattern) {
-  try {
-    const files = fs.readdirSync(SQLITE_DIR);
-    const found = files.find((f) => pattern.test(f));
-    return found ? path.join(SQLITE_DIR, found) : null;
-  } catch (_) {
-    return null;
-  }
-}
+beforeAll(() => {
+  fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-sqlite-provider-fixtures-'));
+  commentaryFile = writeSqliteCommentaryFixture(fixtureDir);
+  dictionaryFile = writeSqliteDictionaryFixture(fixtureDir);
+  bibleFile = writeSqliteBibleFixture(fixtureDir);
+});
 
-const commentaryFile = findSqliteFile(/\.commentaries\.SQLite3$/i);
-const dictionaryFile = findSqliteFile(/\.dictionary\.SQLite3$/i);
-const bibleFile = findSqliteFile(/^(?!.*(?:commentaries|dictionary)).*\.SQLite3$/i);
+afterAll(() => {
+  if (fixtureDir) fs.rmSync(fixtureDir, { recursive: true, force: true });
+});
 
 describe('SQLite commentary', () => {
   let db;
 
   beforeAll(() => {
-    if (!commentaryFile) return;
     db = new Database(commentaryFile, { readonly: true });
   });
 
@@ -33,7 +37,7 @@ describe('SQLite commentary', () => {
     if (db) db.close();
   });
 
-  it.skipIf(!commentaryFile)('getCommentary returns entries with correct shape', () => {
+  it('getCommentary returns entries with correct shape', () => {
     const books = provider.getCommentaryBooks(db);
     expect(books.length).toBeGreaterThan(0);
 
@@ -49,7 +53,7 @@ describe('SQLite commentary', () => {
     }
   });
 
-  it.skipIf(!commentaryFile)('getCommentaryBooks returns array of numbers', () => {
+  it('getCommentaryBooks returns array of numbers', () => {
     const books = provider.getCommentaryBooks(db);
     expect(books).toBeInstanceOf(Array);
     for (const bn of books) {
@@ -62,7 +66,6 @@ describe('SQLite dictionary', () => {
   let db;
 
   beforeAll(() => {
-    if (!dictionaryFile) return;
     db = new Database(dictionaryFile, { readonly: true });
   });
 
@@ -70,11 +73,11 @@ describe('SQLite dictionary', () => {
     if (db) db.close();
   });
 
-  it.skipIf(!dictionaryFile)('hasDictionaryTable returns true', () => {
+  it('hasDictionaryTable returns true', () => {
     expect(provider.hasDictionaryTable(db)).toBe(true);
   });
 
-  it.skipIf(!dictionaryFile)('getDictionaryEntry returns entry with topic', () => {
+  it('getDictionaryEntry returns entry with topic', () => {
     const cols = provider.getDictColumns(db);
     const topics = provider.searchDictionaryTopics(db, '', 1);
     if (topics.length === 0) return;
@@ -85,7 +88,7 @@ describe('SQLite dictionary', () => {
     expect(entry.topic).toBe(topics[0]);
   });
 
-  it.skipIf(!dictionaryFile)('searchDictionaryTopics returns matching strings', () => {
+  it('searchDictionaryTopics returns matching strings', () => {
     const topics = provider.searchDictionaryTopics(db, 'A', 10);
     expect(topics).toBeInstanceOf(Array);
     for (const t of topics) {
@@ -93,7 +96,7 @@ describe('SQLite dictionary', () => {
     }
   });
 
-  it.skipIf(!dictionaryFile)('getDictionaryEntry returns null for missing topic', () => {
+  it('getDictionaryEntry returns null for missing topic', () => {
     const cols = provider.getDictColumns(db);
     const entry = provider.getDictionaryEntry(db, cols, 'NONEXISTENT_TOPIC_XYZ_999');
     expect(entry).toBeNull();
@@ -104,7 +107,6 @@ describe('SQLite bible', () => {
   let db;
 
   beforeAll(() => {
-    if (!bibleFile) return;
     db = new Database(bibleFile, { readonly: true });
   });
 
@@ -112,7 +114,7 @@ describe('SQLite bible', () => {
     if (db) db.close();
   });
 
-  it.skipIf(!bibleFile)('getChapter returns verses with {verse, text}', () => {
+  it('getChapter returns verses with {verse, text}', () => {
     const books = provider.getBooks(db);
     expect(books.length).toBeGreaterThan(0);
 
@@ -124,7 +126,7 @@ describe('SQLite bible', () => {
     expect(typeof verses[0].text).toBe('string');
   });
 
-  it.skipIf(!bibleFile)('getBooks returns array with bookNumber, shortName, longName', () => {
+  it('getBooks returns array with bookNumber, shortName, longName', () => {
     const books = provider.getBooks(db);
     expect(books.length).toBeGreaterThan(0);
     expect(books[0]).toHaveProperty('bookNumber');

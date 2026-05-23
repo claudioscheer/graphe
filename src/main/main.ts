@@ -87,7 +87,7 @@ function getRendererWatchTargets(rendererUrl: string | undefined): string[] {
     return [
       path.join(rendererSourceRoot, 'index.html'),
       path.join(rendererSourceRoot, 'dist.css'),
-      path.join(rendererSourceRoot, 'js'),
+      path.join(rendererSourceRoot, 'app'),
     ];
   }
 

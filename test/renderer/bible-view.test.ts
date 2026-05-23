@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BibleView } from '../../src/renderer/js/bible-view.js';
+import { BibleView } from '../../src/renderer/app/bible-view.js';
 
 describe('BibleView', () => {
   beforeEach(() => {

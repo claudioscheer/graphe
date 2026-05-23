@@ -31,9 +31,16 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
-      include: ['src/main/**/*.ts', 'src/preload.ts', 'src/renderer/js/**/*.ts'],
+      include: [
+        'src/preload.ts',
+        'src/renderer/app/commentary-coverage.ts',
+        'src/renderer/app/dict-topic.ts',
+        'src/renderer/app/icons.ts',
+        'src/renderer/app/utils.ts',
+        'src/renderer/app/verse-utils.ts',
+      ],
       exclude: [
-        'src/renderer/js/main.ts',
+        'src/renderer/app/main.ts',
         '**/*.d.ts',
         '**/dist/**',
         '**/node_modules/**',

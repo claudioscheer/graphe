@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type SearchPanelModule = typeof import('../../src/renderer/js/search-panel.js');
+type SearchPanelModule = typeof import('../../src/renderer/app/search-panel.js');
 
 const workbenchMock = vi.hoisted(() => ({
   activateSidebar: vi.fn(),
@@ -35,11 +35,11 @@ const pickerMock = vi.hoisted(() => {
   return { create, instances };
 });
 
-vi.mock('../../src/renderer/js/workbench-shell.js', () => ({
+vi.mock('../../src/renderer/app/workbench-shell.js', () => ({
   WorkbenchShell: workbenchMock,
 }));
 
-vi.mock('../../src/renderer/js/module-picker.js', () => ({
+vi.mock('../../src/renderer/app/module-picker.js', () => ({
   ModulePicker: {
     create: pickerMock.create,
   },
@@ -50,7 +50,7 @@ async function loadSearchPanel(): Promise<SearchPanelModule> {
   pickerMock.instances.length = 0;
   pickerMock.create.mockClear();
   workbenchMock.activateSidebar.mockClear();
-  return import('../../src/renderer/js/search-panel.js');
+  return import('../../src/renderer/app/search-panel.js');
 }
 
 async function flushPromises(): Promise<void> {

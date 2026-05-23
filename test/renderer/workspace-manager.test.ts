@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WorkspaceManager } from '../../src/renderer/js/workspace-manager.js';
+import { WorkspaceManager } from '../../src/renderer/app/workspace-manager.js';
 
 const legacyPaneState: PaneManagerState = {
   activePaneId: 'pane-legacy',

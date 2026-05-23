@@ -4,22 +4,27 @@ import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
 import * as sqliteProvider from '../src/main/modules/sqlite-provider.ts';
+import {
+  writeSqliteBibleFixture,
+  writeSqliteCommentaryFixture,
+  writeSqliteDictionaryFixture,
+} from './support/module-fixtures.js';
 
-const MODULES_DIR = path.join(os.homedir(), '.graphe', 'modules');
+let tmpDir;
+let sqliteCommentaryFile;
+let sqliteBibleFile;
+let sqliteDictFile;
 
-function findFile(dir, pattern) {
-  try {
-    const files = fs.readdirSync(dir);
-    const found = files.find((f) => pattern.test(f));
-    return found ? path.join(dir, found) : null;
-  } catch (_) {
-    return null;
-  }
-}
+beforeAll(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-output-format-'));
+  sqliteCommentaryFile = writeSqliteCommentaryFixture(tmpDir);
+  sqliteBibleFile = writeSqliteBibleFixture(tmpDir);
+  sqliteDictFile = writeSqliteDictionaryFixture(tmpDir);
+});
 
-const sqliteCommentaryFile = findFile(MODULES_DIR, /\.commentaries\.SQLite3$/i);
-const sqliteBibleFile = findFile(MODULES_DIR, /^(?!.*(?:commentaries|dictionary)).*\.SQLite3$/i);
-const sqliteDictFile = findFile(MODULES_DIR, /\.dictionary\.SQLite3$/i);
+afterAll(() => {
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+});
 
 describe('Commentary output shape', () => {
   let sqlDb;
@@ -32,21 +37,18 @@ describe('Commentary output shape', () => {
     if (sqlDb) sqlDb.close();
   });
 
-  it.skipIf(!sqliteCommentaryFile)(
-    'SQLite commentary returns {verseFrom, verseTo, chapterTo, text}',
-    () => {
-      const sqlBooks = sqliteProvider.getCommentaryBooks(sqlDb);
-      const sqlEntries = sqliteProvider.getCommentary(sqlDb, sqlBooks[0], 1);
+  it('SQLite commentary returns {verseFrom, verseTo, chapterTo, text}', () => {
+    const sqlBooks = sqliteProvider.getCommentaryBooks(sqlDb);
+    const sqlEntries = sqliteProvider.getCommentary(sqlDb, sqlBooks[0], 1);
 
-      const requiredKeys = ['verseFrom', 'verseTo', 'chapterTo', 'text'];
+    const requiredKeys = ['verseFrom', 'verseTo', 'chapterTo', 'text'];
 
-      if (sqlEntries.length > 0) {
-        for (const key of requiredKeys) {
-          expect(sqlEntries[0]).toHaveProperty(key);
-        }
+    if (sqlEntries.length > 0) {
+      for (const key of requiredKeys) {
+        expect(sqlEntries[0]).toHaveProperty(key);
       }
     }
-  );
+  });
 });
 
 describe('Bible verse output shape', () => {
@@ -60,7 +62,7 @@ describe('Bible verse output shape', () => {
     if (sqlDb) sqlDb.close();
   });
 
-  it.skipIf(!sqliteBibleFile)('SQLite bible returns {verse, text}', () => {
+  it('SQLite bible returns {verse, text}', () => {
     const sqlBooks = sqliteProvider.getBooks(sqlDb);
     const sqlVerses = sqliteProvider.getChapter(sqlDb, sqlBooks[0].bookNumber, 1);
 
@@ -69,20 +71,11 @@ describe('Bible verse output shape', () => {
     expect(sqlVerses[0]).toHaveProperty('text');
   });
 
-  it.skipIf(!sqliteBibleFile)('Strong tags use <S> format', () => {
-    const strongFile = findFile(MODULES_DIR, /\+\.SQLite3$/i);
-    if (!strongFile) return;
-
-    const sqlStrongDb = new Database(strongFile, { readonly: true });
-    try {
-      const sqlBooks = sqliteProvider.getBooks(sqlStrongDb);
-      if (sqlBooks.length === 0) return;
-      const sqlVerses = sqliteProvider.getChapter(sqlStrongDb, sqlBooks[0].bookNumber, 1);
-      const hasSqlStrong = sqlVerses.some((v) => /<S[ >]/.test(v.text));
-      expect(hasSqlStrong).toBe(true);
-    } finally {
-      sqlStrongDb.close();
-    }
+  it('Strong tags use <S> format', () => {
+    const sqlBooks = sqliteProvider.getBooks(sqlDb);
+    const sqlVerses = sqliteProvider.getChapter(sqlDb, sqlBooks[0].bookNumber, 1);
+    const hasSqlStrong = sqlVerses.some((v) => /<S[ >]/.test(v.text));
+    expect(hasSqlStrong).toBe(true);
   });
 });
 
@@ -97,7 +90,7 @@ describe('Dictionary output shape', () => {
     if (sqlDb) sqlDb.close();
   });
 
-  it.skipIf(!sqliteDictFile)('SQLite dictionary returns entries with topic', () => {
+  it('SQLite dictionary returns entries with topic', () => {
     const sqlCols = sqliteProvider.getDictColumns(sqlDb);
     const sqlTopics = sqliteProvider.searchDictionaryTopics(sqlDb, '', 1);
     const sqlEntry =

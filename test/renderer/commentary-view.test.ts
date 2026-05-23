@@ -2,8 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CommentaryView } from '../../src/renderer/js/commentary-view.js';
-import { I18n } from '../../src/renderer/js/i18n.js';
+import { CommentaryView } from '../../src/renderer/app/commentary-view.js';
+import { I18n } from '../../src/renderer/app/i18n.js';
 
 describe('CommentaryView', () => {
   beforeEach(() => {

@@ -2,11 +2,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Icons } from '../../src/renderer/js/icons.js';
-import { I18n } from '../../src/renderer/js/i18n.js';
-import { Sanitize } from '../../src/renderer/js/sanitize.js';
-import { Utils } from '../../src/renderer/js/utils.js';
-import { VerseUtils } from '../../src/renderer/js/verse-utils.js';
+import { Icons } from '../../src/renderer/app/icons.js';
+import { I18n } from '../../src/renderer/app/i18n.js';
+import { Sanitize } from '../../src/renderer/app/sanitize.js';
+import { Utils } from '../../src/renderer/app/utils.js';
+import { VerseUtils } from '../../src/renderer/app/verse-utils.js';
 
 describe('renderer utility helpers', () => {
   beforeEach(() => {
@@ -148,7 +148,7 @@ describe('AppStateStore', () => {
       value: { saveAppState },
     });
     vi.resetModules();
-    const { AppStateStore } = await import('../../src/renderer/js/app-state-store.js');
+    const { AppStateStore } = await import('../../src/renderer/app/app-state-store.js');
 
     AppStateStore.init({
       settings: { language: 'en', fontSize: 18 },
@@ -218,7 +218,7 @@ describe('AppStateStore', () => {
       value: { saveAppState },
     });
     vi.resetModules();
-    const { AppStateStore } = await import('../../src/renderer/js/app-state-store.js');
+    const { AppStateStore } = await import('../../src/renderer/app/app-state-store.js');
 
     AppStateStore.init(null);
     expect(AppStateStore.getWorkspaces()).toBeNull();

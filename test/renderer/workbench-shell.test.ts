@@ -2,14 +2,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type WorkbenchModule = typeof import('../../src/renderer/js/workbench-shell.js');
-type I18nModule = typeof import('../../src/renderer/js/i18n.js');
+type WorkbenchModule = typeof import('../../src/renderer/app/workbench-shell.js');
+type I18nModule = typeof import('../../src/renderer/app/i18n.js');
 
 async function loadWorkbench(): Promise<WorkbenchModule & I18nModule> {
   vi.resetModules();
   const [workbench, i18n] = await Promise.all([
-    import('../../src/renderer/js/workbench-shell.js'),
-    import('../../src/renderer/js/i18n.js'),
+    import('../../src/renderer/app/workbench-shell.js'),
+    import('../../src/renderer/app/i18n.js'),
   ]);
   return { ...workbench, ...i18n };
 }
