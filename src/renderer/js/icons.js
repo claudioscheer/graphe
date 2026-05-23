@@ -24,7 +24,7 @@ import {
   Trash2,
   X,
   createElement,
-} from '../../../node_modules/lucide/dist/esm/lucide.mjs';
+} from '../../../node_modules/lucide/dist/esm/lucide.js';
 
 export const Icons = (() => {
   const iconNodes = {
