@@ -60,6 +60,7 @@ interface SearchStrongTerm {
 interface ParsedSearchQuery {
   strongs: SearchStrongTerm[];
   textTerms: string[];
+  exactPhrases: string[];
   textPart: string;
 }
 
@@ -177,9 +178,9 @@ function getChapter(db: DatabaseInstance, bookNumber: number, chapter: number): 
 
 function parseSearchQuery(query: string | null | undefined): ParsedSearchQuery {
   const input = String(query || '').trim();
-  if (!input) return { strongs: [], textTerms: [], textPart: '' };
+  if (!input) return { strongs: [], textTerms: [], exactPhrases: [], textPart: '' };
 
-  const strongRegex = /strong:([HhGg]?)(\d+\w*)/g;
+  const strongRegex = /strong:([HhGg]?)(\d+\w*)/gi;
   const strongs: SearchStrongTerm[] = [];
   let match: RegExpExecArray | null;
   while ((match = strongRegex.exec(input)) !== null) {
@@ -189,13 +190,19 @@ function parseSearchQuery(query: string | null | undefined): ParsedSearchQuery {
     });
   }
 
-  const textPart = input
-    .replace(/strong:[HhGg]?\d+\w*/g, ' ')
+  const withoutStrongs = input.replace(/strong:[HhGg]?\d+\w*/gi, ' ');
+  const exactPhrases: string[] = [];
+  const textWithoutQuotedPhrases = withoutStrongs.replace(/"([^"]+)"/g, (_full, phrase: string) => {
+    const normalized = phrase.replace(/\s+/g, ' ').trim();
+    if (normalized.length >= 2) exactPhrases.push(normalized);
+    return ' ';
+  });
+  const textPart = textWithoutQuotedPhrases
     .replace(/\s+/g, ' ')
     .trim();
   const textTerms = textPart ? textPart.split(/\s+/).filter((term) => term.length >= 2) : [];
 
-  return { strongs, textTerms, textPart };
+  return { strongs, textTerms, exactPhrases, textPart };
 }
 
 function lexicalSearch(
@@ -203,8 +210,9 @@ function lexicalSearch(
   query: string,
   opts: { limit?: number } = {}
 ): SearchResult[] {
-  const { strongs, textTerms } = parseSearchQuery(query);
-  if (strongs.length === 0 && textTerms.length === 0) return [];
+  const parsed = parseSearchQuery(query);
+  const { strongs, textTerms, exactPhrases } = parsed;
+  if (strongs.length === 0 && textTerms.length === 0 && exactPhrases.length === 0) return [];
 
   const limit = Number.isFinite(opts.limit) ? opts.limit : null;
 
@@ -212,8 +220,15 @@ function lexicalSearch(
   const params: string[] = [];
 
   for (const { prefix, number } of strongs) {
-    conditions.push("text LIKE '%<S>' || ? || '</S>%' ");
-    params.push(number);
+    if (prefix) {
+      conditions.push("(text LIKE '%<S>' || ? || '</S>%' OR text LIKE '%<S>' || ? || '</S>%') ");
+      params.push(number, prefix + number);
+    } else {
+      conditions.push(
+        "(text LIKE '%<S>' || ? || '</S>%' OR text LIKE '%<S>H' || ? || '</S>%' OR text LIKE '%<S>G' || ? || '</S>%') "
+      );
+      params.push(number, number, number);
+    }
 
     if (prefix === 'H') {
       conditions.push('book_number < 470');
@@ -222,18 +237,96 @@ function lexicalSearch(
     }
   }
 
-  for (const term of textTerms) {
-    conditions.push("text LIKE '%' || ? || '%' ");
-    params.push(term);
-  }
+  let sql = 'SELECT book_number AS bookNumber, chapter, verse, text FROM verses';
+  if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+  sql += ' ORDER BY book_number, chapter, verse';
 
-  let sql = `SELECT book_number AS bookNumber, chapter, verse, text FROM verses WHERE ${conditions.join(' AND ')} ORDER BY book_number, chapter, verse`;
-  if (limit && limit > 0) sql += ` LIMIT ${Math.floor(limit)}`;
-
-  return db
+  const rows = db
     .prepare(sql)
     .bind(...params)
     .all() as SearchResult[];
+
+  const results: SearchResult[] = [];
+  for (const row of rows) {
+    if (!matchesParsedSearch(row.text, parsed)) continue;
+    results.push(row);
+    if (limit && limit > 0 && results.length >= Math.floor(limit)) break;
+  }
+  return results;
+}
+
+function matchesParsedSearch(text: string, parsed: ParsedSearchQuery): boolean {
+  if (parsed.textTerms.length === 0 && parsed.exactPhrases.length === 0) return true;
+
+  const normalizedText = normalizeSearchText(stripSearchMarkup(text));
+  if (!normalizedText) return false;
+
+  for (const phrase of parsed.exactPhrases) {
+    const normalizedPhrase = normalizeSearchText(phrase);
+    if (!normalizedPhrase || !normalizedText.includes(normalizedPhrase)) return false;
+  }
+
+  const tokens = normalizedText.split(' ').filter(Boolean);
+  for (const term of parsed.textTerms) {
+    if (!matchesFuzzyTerm(normalizeSearchText(term), normalizedText, tokens)) return false;
+  }
+
+  return true;
+}
+
+function stripSearchMarkup(text: string): string {
+  return String(text || '')
+    .replace(/<S[^>]*>[\s\S]*?<\/S>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+}
+
+function normalizeSearchText(text: string): string {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesFuzzyTerm(term: string, normalizedText: string, tokens: string[]): boolean {
+  if (!term) return false;
+  if (normalizedText.includes(term)) return true;
+  if (tokens.some((token) => token.startsWith(term))) return true;
+
+  const maxDistance = getAllowedEditDistance(term);
+  if (maxDistance <= 0) return false;
+
+  return tokens.some((token) => {
+    if (token[0] !== term[0]) return false;
+    if (Math.abs(token.length - term.length) > maxDistance) return false;
+    return editDistanceWithin(token, term, maxDistance);
+  });
+}
+
+function getAllowedEditDistance(term: string): number {
+  if (term.length >= 4) return 1;
+  return 0;
+}
+
+function editDistanceWithin(a: string, b: string, maxDistance: number): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > maxDistance) return false;
+
+  let prev = Array.from({ length: b.length + 1 }, (_v, idx) => idx);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    let rowMin = curr[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      rowMin = Math.min(rowMin, curr[j]);
+    }
+    if (rowMin > maxDistance) return false;
+    prev = curr;
+  }
+  return prev[b.length] <= maxDistance;
 }
 
 function getDictColumns(db: DatabaseInstance): string[] {

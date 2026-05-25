@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type SearchPanelModule = typeof import('../../src/renderer/app/search-panel.js');
 
@@ -99,6 +99,10 @@ describe('SearchPanel', () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('builds the panel, restores saved searches, renders sorted results, and opens selections', async () => {
     const { SearchPanel } = await loadSearchPanel();
     const onStateChange = vi.fn();
@@ -160,8 +164,88 @@ describe('SearchPanel', () => {
     document.querySelector<HTMLButtonElement>('.input-clear-btn')?.click();
     expect(input.value).toBe('');
     expect(document.querySelector('.search-panel-hint')?.textContent).toBe(
-      'Digite sua pesquisa e pressione Enter.'
+      'Digite sua pesquisa para buscar.'
     );
+  });
+
+  it('searches as the user types with debounce and keeps Enter immediate', async () => {
+    vi.useFakeTimers();
+    const { SearchPanel } = await loadSearchPanel();
+    SearchPanel.init(modules, null, document.getElementById('mount'));
+    await flushPromises();
+
+    const input = document.querySelector<HTMLInputElement>('.panel-search-input') as HTMLInputElement;
+    vi.mocked(window.api.searchVerses).mockClear();
+
+    input.value = 'faith';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(299);
+    expect(window.api.searchVerses).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await flushPromises();
+    expect(window.api.searchVerses).toHaveBeenCalledTimes(1);
+    expect(window.api.searchVerses).toHaveBeenLastCalledWith('kjv', 'faith');
+
+    input.value = 'hope';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await flushPromises();
+    expect(window.api.searchVerses).toHaveBeenCalledTimes(2);
+    expect(window.api.searchVerses).toHaveBeenLastCalledWith('kjv', 'hope');
+
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    expect(window.api.searchVerses).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores stale async search results after a newer query runs', async () => {
+    const { SearchPanel } = await loadSearchPanel();
+    SearchPanel.init(modules, null, document.getElementById('mount'));
+    await flushPromises();
+
+    let resolveFirst: (value: SearchResult[]) => void = () => undefined;
+    let resolveSecond: (value: SearchResult[]) => void = () => undefined;
+    window.api.searchVerses = vi
+      .fn<WindowApi['searchVerses']>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<SearchResult[]>((resolve) => {
+            resolveFirst = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<SearchResult[]>((resolve) => {
+            resolveSecond = resolve;
+          })
+      );
+
+    SearchPanel.search('first');
+    await flushPromises();
+    SearchPanel.search('second');
+    await flushPromises();
+
+    resolveSecond([]);
+    await flushPromises();
+    expect(document.querySelector('.search-panel-status')?.textContent).toBe(
+      'Nenhum resultado encontrado.'
+    );
+
+    resolveFirst([
+      {
+        moduleId: 'kjv',
+        bookNumber: 10,
+        chapter: 1,
+        verse: 1,
+        text: 'first result',
+      },
+    ]);
+    await flushPromises();
+    expect(document.querySelector('.search-panel-status')?.textContent).toBe(
+      'Nenhum resultado encontrado.'
+    );
+    expect(document.querySelectorAll('.search-result-item')).toHaveLength(0);
   });
 
   it('handles picker changes, Strong searches, errors, empty results, and module resets', async () => {

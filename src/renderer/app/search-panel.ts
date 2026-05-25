@@ -49,8 +49,11 @@ export const SearchPanel = (() => {
   let statusEl: HTMLDivElement | null = null;
   let searchClearBtn: HTMLButtonElement | null = null;
   let pickerInstance: ModulePickerInstance | null = null;
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchSequence = 0;
 
   const PREVIEW_MAX_CHARS = 160;
+  const SEARCH_DEBOUNCE_MS = 300;
 
   function init(
     moduleList: ModuleRecord[],
@@ -109,6 +112,7 @@ export const SearchPanel = (() => {
       moduleType: 'bible',
       className: 'panel-select mt-2',
       onChange: (moduleId: string | null) => {
+        cancelPendingSearch();
         selectedModuleId = moduleId;
         emitStateChange();
         prefetchBooks();
@@ -142,16 +146,20 @@ export const SearchPanel = (() => {
     searchClearBtn.type = 'button';
     searchClearBtn.innerHTML = '&times;';
     searchClearBtn.addEventListener('click', () => {
+      cancelPendingSearch();
       input.value = '';
       searchClearBtn.style.display = 'none';
       statusEl.textContent = '';
       showHint();
       input.focus();
+      emitStateChange();
     });
     searchClearBtn.style.display = 'none';
 
     input.addEventListener('input', () => {
       searchClearBtn.style.display = input.value ? '' : 'none';
+      scheduleSearch();
+      emitStateChange();
     });
 
     searchWrapper.appendChild(input);
@@ -200,11 +208,15 @@ export const SearchPanel = (() => {
   }
 
   async function runSearch(): Promise<void> {
+    cancelPendingSearch(false);
+    const searchId = ++searchSequence;
     const query = input.value.trim();
     resultsList.innerHTML = '';
 
     if (!query) {
       statusEl.textContent = '';
+      showHint();
+      emitStateChange();
       return;
     }
 
@@ -212,6 +224,7 @@ export const SearchPanel = (() => {
     const textTerms = extractSearchTerms(query);
     if (!hasStrong && textTerms.length === 0) {
       statusEl.textContent = I18n.t('searchMinChars');
+      emitStateChange();
       return;
     }
 
@@ -219,14 +232,17 @@ export const SearchPanel = (() => {
 
     // Ensure books are cached before showing results
     await prefetchBooks();
+    if (searchId !== searchSequence) return;
 
     statusEl.textContent = I18n.t('searching');
 
     try {
       const results = await window.api.searchVerses(selectedModuleId, query);
+      if (searchId !== searchSequence) return;
 
       if (results.length === 0) {
         statusEl.textContent = I18n.t('searchNoResults');
+        emitStateChange();
         return;
       }
 
@@ -235,9 +251,26 @@ export const SearchPanel = (() => {
       const strongTerms = extractStrongTerms(query);
       renderResults(results, textTerms, strongTerms);
     } catch (err) {
+      if (searchId !== searchSequence) return;
       statusEl.textContent = getErrorMessage(err);
     }
     emitStateChange();
+  }
+
+  function scheduleSearch(): void {
+    cancelPendingSearch(false);
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null;
+      runSearch();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  function cancelPendingSearch(invalidateInFlight = true): void {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    if (invalidateInFlight) searchSequence++;
   }
 
   function renderResults(
@@ -469,8 +502,13 @@ export const SearchPanel = (() => {
   function extractSearchTerms(query: string): string[] {
     const seen = new Set<string>();
     const terms: string[] = [];
-    const rawTerms = query
-      .replace(/strong:[HhGg]?\d+\w*/gi, ' ')
+    const withoutStrongs = query.replace(/strong:[HhGg]?\d+\w*/gi, ' ');
+    const withoutQuotedPhrases = withoutStrongs.replace(/"([^"]+)"/g, (_full, phrase: string) => {
+      const normalized = phrase.replace(/\s+/g, ' ').trim();
+      if (normalized.length >= 2) terms.push(normalized);
+      return ' ';
+    });
+    const rawTerms = withoutQuotedPhrases
       .trim()
       .split(/\s+/)
       .filter((t: string) => t.length >= 2);
@@ -564,6 +602,7 @@ export const SearchPanel = (() => {
     if (!moduleId) return;
     const mod = modules.find((m) => m.id === moduleId);
     if (!mod) return;
+    cancelPendingSearch();
     selectedModuleId = moduleId;
     if (pickerInstance) pickerInstance.setSelected(moduleId);
     prefetchBooks();
@@ -571,6 +610,7 @@ export const SearchPanel = (() => {
   }
 
   function setModules(moduleList: ModuleRecord[] | null): void {
+    cancelPendingSearch();
     modules = moduleList || [];
     booksCache = {};
     if (!modules.some((m) => m.id === selectedModuleId)) {
@@ -587,6 +627,7 @@ export const SearchPanel = (() => {
   function search(query: string): void {
     WorkbenchShell.activateSidebar('search', { focus: true });
     if (input) {
+      cancelPendingSearch();
       input.value = query;
       if (searchClearBtn) searchClearBtn.style.display = query ? '' : 'none';
       runSearch();

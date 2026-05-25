@@ -153,10 +153,69 @@ describe('parseSearchQuery', () => {
     expect(result.textTerms).toEqual(['love']);
   });
 
+  it('parses exact quoted phrases separately from fuzzy terms', () => {
+    const result = provider.parseSearchQuery('strong:G123 "kingdom of God" creatd');
+    expect(result.strongs).toEqual([{ prefix: 'G', number: '123' }]);
+    expect(result.exactPhrases).toEqual(['kingdom of God']);
+    expect(result.textTerms).toEqual(['creatd']);
+  });
+
+  it('treats unmatched quotes as normal text while typing', () => {
+    const result = provider.parseSearchQuery('"kingdom');
+    expect(result.exactPhrases).toEqual([]);
+    expect(result.textTerms).toEqual(['"kingdom']);
+  });
+
   it('handles empty query', () => {
     const result = provider.parseSearchQuery('');
     expect(result.strongs).toEqual([]);
     expect(result.textTerms).toEqual([]);
+  });
+});
+
+describe('lexicalSearch', () => {
+  let tmpDir;
+  let db;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-search-'));
+    db = new Database(path.join(tmpDir, 'search.sqlite3'));
+    db.exec('CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT)');
+    const insert = db.prepare('INSERT INTO verses VALUES (?, ?, ?, ?)');
+    insert.run(10, 1, 1, 'In the beginning God created the heavens and the earth');
+    insert.run(10, 1, 2, 'The kingdom of God is near');
+    insert.run(10, 1, 3, 'God will make the kingdom bright');
+    insert.run(10, 1, 4, 'created<S>H1254</S> the world');
+    insert.run(10, 1, 5, 'E um rio saia do Eden para regar o jardim');
+    insert.run(10, 1, 6, 'Esta pessoa levara sua iniquidade');
+    insert.run(10, 1, 7, 'Por que voce quer devorar a heranca do Senhor');
+    insert.run(10, 1, 8, 'O rei decidiu revogar a ordem');
+  });
+
+  afterAll(() => {
+    if (db) db.close();
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('matches fuzzy typo-tolerant terms while requiring every term', () => {
+    const results = provider.lexicalSearch(db, 'begnning creatd');
+    expect(results.map((row) => row.verse)).toEqual([1]);
+  });
+
+  it('keeps fuzzy matching strict enough to avoid unrelated near words', () => {
+    const results = provider.lexicalSearch(db, 'revogar');
+    expect(results.map((row) => row.verse)).toEqual([8]);
+  });
+
+  it('matches exact quoted phrases as adjacent normalized words only', () => {
+    expect(provider.lexicalSearch(db, '"kingdom of God"').map((row) => row.verse)).toEqual([2]);
+    expect(provider.lexicalSearch(db, '"God kingdom"')).toEqual([]);
+  });
+
+  it('combines Strong terms with text filters and keeps limit after filtering', () => {
+    const results = provider.lexicalSearch(db, 'strong:H1254 wrld', { limit: 1 });
+    expect(results).toHaveLength(1);
+    expect(results[0].verse).toBe(4);
   });
 });
 
