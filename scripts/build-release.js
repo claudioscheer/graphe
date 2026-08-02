@@ -54,7 +54,7 @@ Options:
   --help                          Show this help
 
 Notes:
-  - This mirrors the workflow steps: npm ci, build CSS, npm run make:<platform>, collect out/make artifacts.
+  - This mirrors the workflow steps: npm ci, npm run make:<platform>, collect out/make artifacts.
   - Native desktop targets still require the matching host OS, same as the GitHub workflow.
 `);
 }
@@ -288,20 +288,16 @@ function main() {
     run('npm', ['ci']);
   }
 
-  run('npm', ['run', 'build:css']);
+  // make:* already runs `npm run build` → build:renderer → build:css + vite
   fs.rmSync(path.join(repoRoot, 'out', 'make'), { recursive: true, force: true });
 
   for (const target of targets) {
     const targetConfig = platformMap[target];
-    const env =
-      targetConfig.workflowName === 'linux'
-        ? { DEBUG: 'electron-forge:*,electron-installer-debian*' }
-        : undefined;
 
     console.log(
       `Building ${targetConfig.workflowName} artifacts with npm run ${targetConfig.npmScript}.`
     );
-    run('npm', ['run', targetConfig.npmScript], { env });
+    run('npm', ['run', targetConfig.npmScript]);
   }
 
   const assets = collectArtifacts(options.assetsDir);

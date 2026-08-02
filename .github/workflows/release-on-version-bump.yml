@@ -100,17 +100,9 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build CSS
-        run: npm run build:css
-
+      # make:* already runs `npm run build` → build:renderer → build:css + vite
       - name: Build desktop artifacts
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            DEBUG=electron-forge:*,electron-installer-debian* npm run ${{ matrix.make_script }}
-          else
-            npm run ${{ matrix.make_script }}
-          fi
+        run: npm run ${{ matrix.make_script }}
 
       - name: Collect release files
         shell: bash
