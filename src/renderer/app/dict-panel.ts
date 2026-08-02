@@ -2,14 +2,20 @@
  * dict-panel.js — Dictionary panel for Strong's number and word lookups
  */
 import { AppStateStore } from './app-state-store.js';
-import { buildReferenceMatcher } from './commentary-ref-parser.js';
+import {
+  bindBibleRefs,
+  bindDictionaryTopicLinks,
+  bindStrongsCrossRefs,
+  bindVCrossRefs,
+  setDictLinkHandlers,
+} from './dict-link-binding.js';
 import { formatDefinition } from './dict-definition-format.js';
-import { isExternalHref, normalizeTopicCandidate } from './dict-topic.js';
 import { I18n } from './i18n.js';
 import { Icons } from './icons.js';
-import { ModulePicker } from './module-picker.js';
+import { ModulePicker, type ModulePickerInstance } from './module-picker.js';
 import { PaneManager } from './pane-manager.js';
 import { Sanitize } from './sanitize.js';
+import { Settings } from './settings-dialog.js';
 import { Utils } from './utils.js';
 import { WorkbenchShell } from './workbench-shell.js';
 
@@ -63,37 +69,8 @@ interface DictHistory {
   idx: number;
 }
 
-interface ModulePickerInstance {
-  el: HTMLDivElement;
-  setSelected(id: string | null): void;
-  setModules(modules: ModuleRecord[]): void;
-}
 
-interface ReferenceMatch {
-  raw: string;
-  index: number;
-  endIndex: number;
-  bookNum: number;
-  chapter: number;
-  verseFrom: number | null;
-  verseTo?: number | null;
-}
 
-interface ReferenceContext {
-  bookNum: number;
-  chapter: number;
-}
-
-interface ReferenceMatcherApi {
-  findMatches(text: string | null | undefined): ReferenceMatch[];
-  findContinuations(text: string | null | undefined, context: ReferenceContext): ReferenceMatch[];
-}
-
-interface ParsedBibleRef {
-  bookNumber: number;
-  chapter: number;
-  verse: number;
-}
 
 type StateChangeListener = (state: DictPanelSnapshot) => void;
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -111,8 +88,6 @@ export const DictPanel = (() => {
   let history: DictHistory = { entries: [], idx: -1 };
   let navBackBtn: HTMLButtonElement | null = null;
   let navForwardBtn: HTMLButtonElement | null = null;
-  let bibleRefMatcher: ReferenceMatcherApi | null = null;
-  let bibleRefMatcherLang: string | null = null;
 
   // DOM refs
   let panel: HTMLDivElement | null = null;
@@ -140,6 +115,11 @@ export const DictPanel = (() => {
       }
     }
     selectedModuleId = resolveSelectedModuleId(savedState?.selectedModuleId);
+    setDictLinkHandlers({
+      ensureCurrentInHistory,
+      lookup,
+      lookupWord,
+    });
     buildDOM(mountEl);
     restoreSelectedModuleSearch();
     emitStateChange();
@@ -447,6 +427,7 @@ export const DictPanel = (() => {
     if (dictClearBtn) dictClearBtn.style.display = '';
     lookupWord(cachedTopic, moduleId, true, { preserveActivity: true });
   }
+
 
   async function openDictionaryInfoModal(): Promise<void> {
     const moduleId = resolveSelectedModuleId(selectedModuleId);
@@ -777,7 +758,7 @@ export const DictPanel = (() => {
         const link = document.createElement('a');
         link.className = 'dict-settings-link';
         link.textContent = I18n.t('settings');
-        link.addEventListener('click', () => window.Settings?.open());
+        link.addEventListener('click', () => Settings.open());
         placeholder.appendChild(link);
         contentEl.innerHTML = '';
         contentEl.appendChild(placeholder);
@@ -1123,298 +1104,6 @@ export const DictPanel = (() => {
   }
 
   // --- Link binding ---
-
-  function bindStrongsCrossRefs(container: HTMLElement): void {
-    // Mark TWOT refs as non-navigable.
-    const twotLinks = container.querySelectorAll<HTMLAnchorElement>('a.T, a[class="T"]');
-    for (const link of twotLinks) {
-      link.removeAttribute('href');
-      link.classList.add('dict-twot-ref');
-    }
-  }
-
-  async function resolveTopicInModule(
-    moduleId: string | null,
-    candidate: string | null | undefined
-  ): Promise<string | null> {
-    const topic = normalizeTopicCandidate(candidate);
-    if (!moduleId || !topic) return null;
-
-    try {
-      const exact = await window.api.getDictionaryEntry(moduleId, topic);
-      if (exact) return topic;
-    } catch (_) {}
-
-    try {
-      const results = await window.api.searchDictionaryTopics(moduleId, topic, 20);
-      if (!Array.isArray(results) || results.length === 0) return null;
-      const lower = topic.toLowerCase();
-      const exactCI = results.find((t) => String(t).toLowerCase() === lower);
-      return exactCI || results[0];
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function bindDictionaryTopicLinks(container: HTMLElement, moduleId: string): void {
-    function bindRedirect(link: HTMLAnchorElement, hrefCandidate: string): void {
-      if (link.dataset.dictRedirectBound === '1') return;
-      link.dataset.dictRedirectBound = '1';
-      link.classList.add('dict-crossref');
-      link.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const hrefTopic = normalizeTopicCandidate(hrefCandidate || '');
-        const textTopic = normalizeTopicCandidate(link.textContent || '');
-
-        let target = await resolveTopicInModule(moduleId, hrefTopic);
-        if (!target && textTopic && textTopic.toLowerCase() !== hrefTopic.toLowerCase()) {
-          target = await resolveTopicInModule(moduleId, textTopic);
-        }
-        if (!target) target = textTopic || hrefTopic;
-        if (!target) return;
-
-        ensureCurrentInHistory();
-        lookupWord(target, moduleId, false);
-      });
-    }
-
-    const allLinks = container.querySelectorAll<HTMLAnchorElement>('a');
-    for (const link of allLinks) {
-      if (link.classList.contains('dict-bible-ref')) continue;
-      if (link.classList.contains('dict-twot-ref')) continue;
-      const href = (link.getAttribute('href') || '').trim();
-
-      if (isExternalHref(href)) {
-        if (link.dataset.dictRedirectBound === '1') continue;
-        link.dataset.dictRedirectBound = '1';
-        link.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          window.api.openExternal(href);
-        });
-        continue;
-      }
-
-      if (/^s:/i.test(href) || /^b:/i.test(href) || /^#b/i.test(href)) {
-        if (/^b:/i.test(href) || /^#b/i.test(href)) continue;
-      }
-
-      if (href) link.removeAttribute('href');
-      bindRedirect(link, href);
-    }
-  }
-
-  function bindBibleRefs(container: HTMLElement): void {
-    linkifyPlainTextBibleRefs(container);
-
-    const links = container.querySelectorAll<HTMLAnchorElement>('a');
-    for (const link of links) {
-      if (link.dataset.bibleRefBound === '1') continue;
-      const href = (link.getAttribute('href') || '').trim();
-      let parsedRef: ParsedBibleRef | null = null;
-      if (link.dataset.bookNumber && link.dataset.chapter) {
-        parsedRef = {
-          bookNumber: parseInt(link.dataset.bookNumber, 10),
-          chapter: parseInt(link.dataset.chapter, 10),
-          verse: link.dataset.verse ? parseInt(link.dataset.verse, 10) : 1,
-        };
-      }
-      if (!parsedRef) parsedRef = parseBibleRef(href);
-      if (!parsedRef) {
-        parsedRef = parseBibleRefFromText(link.textContent || '');
-      }
-      if (!parsedRef) continue;
-
-      link.removeAttribute('href');
-      link.classList.add('dict-bible-ref');
-
-      const { bookNumber, chapter, verse } = parsedRef;
-      link.dataset.bibleRefBound = '1';
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const paneId = PaneManager.getActivePaneId();
-        const target = PaneManager.getNavigationTarget(paneId);
-        PaneManager.navigatePane(target, bookNumber, chapter, verse)
-          .then((ok) => {
-            if (!ok && target) window.showTooltip?.(target, I18n.t('refUnavailable'));
-          })
-          .catch((err) => console.warn('Bible ref navigation failed:', err));
-      });
-    }
-  }
-
-  function linkifyPlainTextBibleRefs(container: HTMLElement): void {
-    const matcher = getBibleRefMatcher();
-    if (!matcher) return;
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    const textNodes: Text[] = [];
-    while (walker.nextNode()) {
-      const currentNode = walker.currentNode;
-      if (currentNode instanceof Text) textNodes.push(currentNode);
-    }
-
-    let lastRefContext: ReferenceContext | null = null;
-    for (const node of textNodes) {
-      if (!node.parentNode) continue;
-      const refAncestor = node.parentElement && node.parentElement.closest('a');
-      if (refAncestor) {
-        const href = (refAncestor.getAttribute('href') || '').trim();
-        const parsed = parseBibleRef(href) || parseBibleRefFromText(refAncestor.textContent || '');
-        if (parsed) lastRefContext = { bookNum: parsed.bookNumber, chapter: parsed.chapter };
-        continue;
-      }
-
-      const text = node.textContent || '';
-      let matches = matcher.findMatches(text);
-      if (matches.length === 0 && lastRefContext) {
-        matches = matcher.findContinuations(text, lastRefContext);
-      }
-      if (matches.length === 0) continue;
-
-      const frag = document.createDocumentFragment();
-      let lastIdx = 0;
-      for (const match of matches) {
-        if (match.index > lastIdx) {
-          frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
-        }
-        const link = document.createElement('a');
-        link.className = 'dict-bible-ref';
-        link.dataset.bookNumber = String(match.bookNum);
-        link.dataset.chapter = String(match.chapter);
-        if (Number.isFinite(match.verseFrom)) link.dataset.verse = String(match.verseFrom);
-        link.textContent = match.raw;
-        frag.appendChild(link);
-        lastIdx = match.endIndex;
-      }
-      if (lastIdx > 0) {
-        if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-        node.parentNode.replaceChild(frag, node);
-        const last = matches[matches.length - 1];
-        if (last && Number.isFinite(last.bookNum) && Number.isFinite(last.chapter)) {
-          lastRefContext = { bookNum: last.bookNum, chapter: last.chapter };
-        }
-      }
-    }
-  }
-
-  function getBibleRefMatcher(): ReferenceMatcherApi | null {
-    const lang = I18n.getCurrentLang();
-    if (bibleRefMatcher && bibleRefMatcherLang === lang) return bibleRefMatcher;
-    bibleRefMatcher = buildReferenceMatcher(I18n._bookNames, I18n._BOOK_NUMBERS);
-    bibleRefMatcherLang = lang;
-    return bibleRefMatcher;
-  }
-
-  function parseBibleRefFromText(rawText: string | null | undefined): ParsedBibleRef | null {
-    const text = String(rawText || '')
-      .replace(/[\u200E\u200F\u202A-\u202E]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!text) return null;
-
-    const matcher = getBibleRefMatcher();
-    if (!matcher) return null;
-    const matches = matcher.findMatches(text);
-    if (!Array.isArray(matches) || matches.length === 0) return null;
-    const m = matches[0];
-    if (!m || !Number.isFinite(m.bookNum) || !Number.isFinite(m.chapter)) return null;
-    const verse = Number.isFinite(m.verseFrom) ? m.verseFrom : 1;
-    return {
-      bookNumber: m.bookNum,
-      chapter: m.chapter,
-      verse,
-    };
-  }
-
-  function parseBibleRef(rawHref: string | null | undefined): ParsedBibleRef | null {
-    if (!rawHref) return null;
-    const decoded = decodeURIComponent(rawHref.trim());
-    // Supports:
-    // B:50 7:7
-    // b:50 7:7-8 (verse ranges -> navigate to first verse)
-    let match = decoded.match(/^B:(\d+)\s+(\d+):(\d+)/i);
-    if (match) {
-      return {
-        bookNumber: parseInt(match[1], 10),
-        chapter: parseInt(match[2], 10),
-        verse: parseInt(match[3], 10),
-      };
-    }
-
-    // MySword-style hash refs from some converted dictionaries, e.g. #b1.10.16
-    // Here book is canonical 1..66 and must be mapped to Graphe/MyBible book_number.
-    match = decoded.match(/^#b(\d+)\.(\d+)\.(\d+)/i);
-    if (!match) return null;
-    const canonicalBook = parseInt(match[1], 10);
-    const mappedBook = mapCanonicalBookToGraphe(canonicalBook);
-    if (!mappedBook) return null;
-    return {
-      bookNumber: mappedBook,
-      chapter: parseInt(match[2], 10),
-      verse: parseInt(match[3], 10),
-    };
-  }
-
-  function mapCanonicalBookToGraphe(bookIndex: number): number | null {
-    const grapheBookNumbers = [
-      10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 190, 220, 230, 240,
-      250, 260, 290, 300, 310, 330, 340, 350, 360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460,
-      470, 480, 490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590, 600, 610, 620, 630, 640, 650,
-      660, 670, 680, 690, 700, 710, 720, 730,
-    ];
-    if (!Number.isInteger(bookIndex) || bookIndex < 1 || bookIndex > grapheBookNumbers.length) {
-      return null;
-    }
-    return grapheBookNumbers[bookIndex - 1];
-  }
-
-  function bindVCrossRefs(container: HTMLElement): void {
-    // Find "V. TOPIC" patterns in text nodes and make them clickable
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    const replacements: Text[] = [];
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      if (node instanceof Text && /V\.\s+[A-ZÀ-Ú]/.test(node.textContent || '')) {
-        replacements.push(node);
-      }
-    }
-
-    for (const textNode of replacements) {
-      const frag = document.createDocumentFragment();
-      const text = textNode.textContent || '';
-      // Match "V. WORD" or "V. WORD WORD" (uppercase words after V.)
-      const regex = /V\.\s+([A-ZÀ-Ú][A-ZÀ-Ú\s,]*[A-ZÀ-Ú])/g;
-      let lastIdx = 0;
-      let m: RegExpExecArray | null;
-      while ((m = regex.exec(text)) !== null) {
-        // Text before the match
-        if (m.index > lastIdx) {
-          frag.appendChild(document.createTextNode(text.substring(lastIdx, m.index)));
-        }
-        // Create clickable cross-ref
-        const span = document.createElement('span');
-        span.className = 'dict-vcrossref';
-        span.textContent = m[0];
-        const topic = m[1].trim();
-        span.addEventListener('click', () => {
-          ensureCurrentInHistory();
-          lookupWord(topic);
-        });
-        frag.appendChild(span);
-        lastIdx = m.index + m[0].length;
-      }
-      if (lastIdx < text.length) {
-        frag.appendChild(document.createTextNode(text.substring(lastIdx)));
-      }
-      if (lastIdx > 0) {
-        textNode.parentNode.replaceChild(frag, textNode);
-      }
-    }
-  }
 
   // --- Strong-PT definition formatter (unchanged logic) ---
 

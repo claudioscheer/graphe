@@ -1,14 +1,20 @@
+// @ts-nocheck -- converted from JS; sqlite row shapes left untyped.
 import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
+import type { Database as DatabaseInstance } from 'better-sqlite3';
 import { convertMySwordTags } from '../src/main/modules/converters/mysword-converter.ts';
 import * as converterRegistry from '../src/main/modules/converters/index.ts';
 
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+
 const TEST_SUPPORT = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-mysword-support-'));
 
-function createBibleFixture(fileName, { scriptureColumn = 'Scripture', rows, details = {} }) {
+function createBibleFixture(fileName: string, { scriptureColumn = 'Scripture', rows, details = {} }) {
   const dbPath = path.join(TEST_SUPPORT, fileName);
   const db = new Database(dbPath);
   try {
@@ -413,7 +419,7 @@ describe('converter registry', () => {
 // --- Integration tests using test-support files ---
 
 describe('convertBible integration', () => {
-  let tmpDir;
+  let tmpDir: string;
 
   afterAll(() => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -563,7 +569,7 @@ describe('convertBible integration', () => {
 });
 
 describe('convertDictionary integration', () => {
-  let tmpDir;
+  let tmpDir: string;
 
   afterAll(() => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });

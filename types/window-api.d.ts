@@ -3,7 +3,6 @@ export {};
 declare global {
   interface Window {
     api: WindowApi;
-    Settings?: SettingsApi;
     showTooltip?: (paneId: string, message: string) => void;
   }
 

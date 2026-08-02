@@ -3,17 +3,18 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
+import type { Database as DatabaseInstance } from 'better-sqlite3';
 import * as sqliteProvider from '../src/main/modules/sqlite-provider.ts';
 import {
   writeSqliteBibleFixture,
   writeSqliteCommentaryFixture,
   writeSqliteDictionaryFixture,
-} from './support/module-fixtures.js';
+} from './support/module-fixtures.ts';
 
-let tmpDir;
-let sqliteCommentaryFile;
-let sqliteBibleFile;
-let sqliteDictFile;
+let tmpDir: string;
+let sqliteCommentaryFile: string;
+let sqliteBibleFile: string;
+let sqliteDictFile: string;
 
 beforeAll(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-output-format-'));
@@ -27,7 +28,7 @@ afterAll(() => {
 });
 
 describe('Commentary output shape', () => {
-  let sqlDb;
+  let sqlDb: DatabaseInstance;
 
   beforeAll(() => {
     if (sqliteCommentaryFile) sqlDb = new Database(sqliteCommentaryFile, { readonly: true });
@@ -52,7 +53,7 @@ describe('Commentary output shape', () => {
 });
 
 describe('Bible verse output shape', () => {
-  let sqlDb;
+  let sqlDb: DatabaseInstance;
 
   beforeAll(() => {
     if (sqliteBibleFile) sqlDb = new Database(sqliteBibleFile, { readonly: true });
@@ -80,7 +81,7 @@ describe('Bible verse output shape', () => {
 });
 
 describe('Dictionary output shape', () => {
-  let sqlDb;
+  let sqlDb: DatabaseInstance;
 
   beforeAll(() => {
     if (sqliteDictFile) sqlDb = new Database(sqliteDictFile, { readonly: true });

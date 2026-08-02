@@ -8,7 +8,7 @@ import { Utils } from './utils.js';
 
 type PickerModuleType = 'bible' | 'dictionary' | 'commentary' | 'crossreference' | string;
 
-interface ModulePickerOptions {
+export interface ModulePickerOptions {
   modules?: ModuleRecord[];
   selectedId?: string | null;
   moduleType?: PickerModuleType;
@@ -26,7 +26,7 @@ interface ModulePickerDropdown {
   list: HTMLDivElement;
 }
 
-interface ModulePickerInstance {
+export interface ModulePickerInstance {
   el: HTMLDivElement;
   setSelected(id: string | null): void;
   setModules(newModules: ModuleRecord[]): void;

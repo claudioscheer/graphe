@@ -1,3 +1,4 @@
+// @ts-nocheck -- converted from JS; sqlite row shapes left untyped.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -7,9 +8,9 @@ import {
   writeTwmDictionaryFixture,
   writeTwmType2CommentaryFixture,
   writeTwmType3CommentaryFixture,
-} from './support/module-fixtures.js';
+} from './support/module-fixtures.ts';
 
-let tmpDir;
+let tmpDir: string;
 let type2File;
 let type3File;
 let type1File;

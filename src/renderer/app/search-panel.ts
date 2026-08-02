@@ -3,16 +3,10 @@
  */
 import { Icons } from './icons.js';
 import { I18n } from './i18n.js';
-import { ModulePicker } from './module-picker.js';
+import { ModulePicker, type ModulePickerInstance } from './module-picker.js';
 import { Utils } from './utils.js';
 import { VerseUtils } from './verse-utils.js';
 import { WorkbenchShell } from './workbench-shell.js';
-
-interface ModulePickerInstance {
-  el: HTMLDivElement;
-  setSelected(id: string | null): void;
-  setModules(modules: ModuleRecord[]): void;
-}
 
 interface SearchPanelOpenResult {
   moduleId: string | null;

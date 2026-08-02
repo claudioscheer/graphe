@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Graphe is an Electron desktop Bible study app (Windows, Linux, macOS) with split panes, Strong's numbers, cross-references, commentaries, and dictionary lookups. Vanilla JS — no React/Vue/framework.
+Graphe is an Electron desktop Bible study app (Windows, Linux, macOS) with split panes, Strong's numbers, cross-references, commentaries, and dictionary lookups. TypeScript throughout (main process + renderer). No React/Vue — DOM is built imperatively via module singletons.
 
 ## Commands
 
 ```bash
-npm run dev          # Development (watch CSS + Electron hot-reload)
+npm run dev          # Development (main tsc watch + CSS watch + Vite + Electron)
+npm run build        # build:main + build:renderer
+npm run build:main   # tsc -p tsconfig.main.json → dist/
 npm run build:css    # One-time Tailwind CSS build
+npm run build:renderer # CSS + Vite renderer bundle
+npm run typecheck    # tsc -p tsconfig.json --noEmit
 npm run lint:fix     # ESLint auto-fix
 npm run format       # Prettier format
 npm run test         # Vitest (rebuilds better-sqlite3 native module before/after)
@@ -19,39 +23,56 @@ npm run make         # Build distributable installers
 
 ## Architecture
 
-**Electron with strict context isolation** — main process (Node/SQLite) communicates with renderer (DOM) only through IPC via preload bridge (`window.api`).
+**Electron with strict context isolation** — main process (Node/SQLite) communicates with renderer (DOM) only through IPC via preload bridge (`window.api`). Types live in `types/window-api.d.ts`.
 
 ### Main Process (`src/main/`)
 
-- `main.js` — Window lifecycle, menus, IPC setup, hot-reload watcher
-- `modules.js` — All data queries (Bible verses, dictionaries, commentaries, cross-refs)
-- `ipc-handlers.js` — Maps IPC channels to `modules.*` functions
-- `state-store.js` — Persists app state to `~/.graphe/state.json`
+- `main.ts` — Window lifecycle, menus, IPC setup, hot-reload watcher
+- `modules.ts` — Data API facade over open module handles
+- `ipc-handlers.ts` — Maps IPC channels to `modules.*` functions
+- `state-store.ts` — Persists app state to `~/.graphe/state.json`
 - `modules/` — SQLite providers per format (MyBible, TheWord, MySword) + converters
+- `modules/morphology-resolver.ts` — Morphology orchestration (data in `morphology-i18n-data.ts`, decoders in `morphology-decoders.ts`)
 
-### Renderer (`src/renderer/`)
+### Preload
 
-- `js/app.js` — Entry point, settings, state management (AppStateStore singleton)
-- `js/pane-manager.js` — **Recursive binary tree** layout (Leaf | Split{direction, ratio, children})
-- `js/bible-view.js` — Verse rendering, Strong's tag parsing, keyboard nav
-- `js/commentary-view.js` — Commentary rendering with reference link parsing
-- `js/search-panel.js` — Left sidebar full-text/Strong's search
-- `js/dict-panel.js` — Right sidebar dictionary/Strong's lookup
-- `js/module-picker.js` — Searchable dropdown with favorites
-- `js/i18n.js` — Hardcoded translations (PT/EN/ES) with `I18n.t(key)` + `data-i18n` attributes
-- `js/navigation.js` — Quick book/chapter navigation dialog
+- `src/preload.ts` — Whitelists every IPC method exposed as `window.api`
+
+### Renderer (`src/renderer/app/`)
+
+Entry: `main.ts` → `app.ts` (bootstrap). Vite bundles the renderer.
+
+| Module                                                                                 | Role                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `app.ts`                                                                               | Bootstrap, workbench wiring                                  |
+| `settings-dialog.ts` / `about-dialog.ts` / `convert-modal.ts` / `cross-ref-preview.ts` | Dialogs                                                      |
+| `content-interactions.ts`                                                              | Clicks, keyboard, Strong's / cross-ref navigation            |
+| `pane-manager.ts`                                                                      | Pane tree state, load/navigate orchestration                 |
+| `pane-chrome-bible.ts` / `pane-chrome-commentary.ts`                                   | Pane shell DOM                                               |
+| `pane-tree.ts` / `pane-model.ts` / `pane-history.ts` / `pane-labels.ts`                | Pure pane helpers                                            |
+| `commentary-modals.ts`                                                                 | All-commentaries + coverage modals                           |
+| `bible-view.ts` / `commentary-view.ts`                                                 | Chapter / commentary rendering                               |
+| `search-panel.ts` / `dict-panel.ts`                                                    | Sidebars                                                     |
+| `dict-link-binding.ts`                                                                 | Dictionary content link binding                              |
+| `bible-ref.ts` / `book-ids.ts`                                                         | Shared bible ref parsing and book IDs                        |
+| `module-picker.ts`                                                                     | Searchable module dropdown (`ModulePickerInstance` exported) |
+| `i18n.ts`                                                                              | PT/EN/ES strings + book names                                |
+| `app-state-store.ts`                                                                   | Debounced persisted UI state                                 |
+| `workbench-shell.ts` / `workspace-manager.ts`                                          | Shell chrome and workspaces                                  |
 
 ### Code Pattern
 
-All renderer modules use the IIFE singleton pattern:
+Renderer modules use the IIFE singleton pattern:
 
-```javascript
-const MyModule = (() => {
-  let privateState;
+```typescript
+export const MyModule = (() => {
+  let privateState: string;
   function privateFunc() {}
   return { publicFunc };
 })();
 ```
+
+Pure helpers (tree ops, book IDs, ref parsing) are plain exported functions.
 
 ### Data Layer
 
@@ -79,6 +100,7 @@ UI should follow VS Code's design language — restrained, functional, minimal d
 
 - State auto-saves with 200ms debounce via `AppStateStore`
 - Pane tree state serialized/restored on restart
-- `preload.js` whitelists every IPC method — add new methods there when extending the API
-- Renderer scripts load in dependency order via `<script>` tags in `index.html` (no bundler)
-- Tests in `test/` directory — focused on main-process data providers and converters
+- `preload.ts` whitelists every IPC method — add new methods there and in `types/window-api.d.ts` when extending the API
+- Prefer shared `bible-ref.ts` / `book-ids.ts` over copying book-number tables or href parsers
+- Export `ModulePickerInstance` from `module-picker.ts` instead of redeclaring locally
+- Tests in `test/` — main-process providers/converters plus renderer pure helpers (`test/renderer/`)

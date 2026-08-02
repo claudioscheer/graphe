@@ -9,9 +9,15 @@ import { BibleView } from './bible-view.js';
 import { CommentaryView } from './commentary-view.js';
 import { I18n } from './i18n.js';
 import { Icons } from './icons.js';
-import { ModulePicker } from './module-picker.js';
+import { ModulePicker, type ModulePickerInstance } from './module-picker.js';
+import { createBiblePaneElement as buildBiblePaneChrome } from './pane-chrome-bible.js';
+import { showNavHistoryMenu as showNavHistoryMenuUi } from './pane-nav-history-menu.js';
+import { createCommentaryPaneElement as buildCommentaryPaneChrome } from './pane-chrome-commentary.js';
 import { Navigation } from './navigation.js';
-import { compactRanges } from './commentary-coverage.js';
+import {
+  openAllCommentariesModal as openAllCommentariesModalUi,
+  openCommentaryCoverageModal as openCommentaryCoverageModalUi,
+} from './commentary-modals.js';
 import {
   allocatePaneLabel,
   ensureWindowLabels,
@@ -44,7 +50,6 @@ import {
   serializeTree,
 } from './pane-tree.js';
 import {
-  getNavHistoryEntries,
   hasNavBackHistory,
   hasNavForwardHistory,
   normalizeNavHistoryIndexes,
@@ -53,19 +58,6 @@ import {
 } from './pane-history.js';
 import { Sanitize } from './sanitize.js';
 import { Utils } from './utils.js';
-
-interface ModulePickerInstance {
-  el: HTMLElement;
-  setSelected(id: string | null): void;
-  setModules(modules: ModuleRecord[]): void;
-  destroy(): void;
-  open(): void;
-  _close(): void;
-}
-
-interface ModulePickerElement extends HTMLElement {
-  __pickerInstance?: ModulePickerInstance;
-}
 
 type StateChangeListener = (state: PaneManagerSerializedState) => void;
 
@@ -82,8 +74,8 @@ export const PaneManager = (() => {
   let initialLoadPending = new Set<string>();
   let initialLoadPromise: Promise<void> = Promise.resolve();
   let resolveInitialLoad: (() => void) | null = null;
-  let activeNavHistoryMenu: HTMLElement | null = null;
   const NAV_HISTORY_LONG_PRESS_MS = 450;
+  const pickersByPaneId = new Map<string, ModulePickerInstance>();
 
   const root = (): HTMLElement | null => document.getElementById('pane-root');
 
@@ -396,6 +388,7 @@ export const PaneManager = (() => {
     const r = root();
     if (!tree) return;
     if (!r) return;
+    pickersByPaneId.clear();
     r.innerHTML = '';
     const el = renderNode(tree);
     r.appendChild(el);
@@ -451,299 +444,38 @@ export const PaneManager = (() => {
 
   function createBiblePaneElement(paneId: string): HTMLElement {
     const pane = panes[paneId];
-    const el = document.createElement('div');
-    el.className = 'pane-shell flex flex-col h-full w-full min-w-0 min-h-0';
-    el.dataset.paneId = paneId;
-    el.addEventListener('mousedown', () => setActivePane(paneId));
-
-    const toolbar = document.createElement('div');
-    toolbar.className =
-      'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
-
-    const picker = ModulePicker.create({
-      modules: Utils.sortBibleModules(modules),
-      selectedId: pane.moduleId,
-      moduleType: 'bible',
-      className: 'rounded mr-1 text-xs',
-      onChange: async (moduleId: string): Promise<void> => {
-        // Push current state before switching translation
-        pushNavHistory(paneId);
-        const el = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-        const selectedLine = el?.querySelector<HTMLElement>('.pane-content .verse-line.verse-selected');
-        const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
-
-        pane.moduleId = moduleId;
-        const mod = modules.find((m) => m.id === moduleId);
-        pane.hasStrongs = mod ? mod.hasStrongs : false;
-        pane.strongsPrefix = mod ? mod.strongsPrefix || null : null;
-        pane.books = [];
-        pane.verses = [];
-        refreshQuickBarForPane(paneId);
-        await loadPaneData(paneId, selectedVerse);
-        // Push new state after switch
-        pushNavHistory(paneId);
-        emitStateChange();
+    return buildBiblePaneChrome({
+      paneId,
+      pane,
+      panes,
+      modules,
+      linkTargetPaneId,
+      onActivate: () => setActivePane(paneId),
+      onModuleChange: (moduleId) => switchBibleModule(paneId, moduleId),
+      onPrevChapter: () => prevChapter(paneId),
+      onNextChapter: () => nextChapter(paneId),
+      onClose: () => closePane(paneId),
+      onSetLinkTarget: () => setLinkTarget(paneId),
+      onClearLinkTarget: () => clearLinkTarget(),
+      attachNavHistoryLongPress: (button, direction) =>
+        attachNavHistoryLongPress(button, paneId, direction),
+      registerPicker: (picker) => {
+        pickersByPaneId.set(paneId, picker);
       },
+      switchModule: (moduleId) => switchBibleModule(paneId, moduleId),
     });
-    const select = picker.el as ModulePickerElement;
-    select.__pickerInstance = picker;
-    const prevBtn = document.createElement('button');
-    prevBtn.className =
-      'nav-prev-btn cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
-    const prevIcon = Icons.create('chevron-left');
-    prevIcon.setAttribute('width', '16');
-    prevIcon.setAttribute('height', '16');
-    prevIcon.style.flexShrink = '0';
-    prevBtn.appendChild(prevIcon);
-    const prevBtnLabel = document.createElement('span');
-    prevBtnLabel.className = 'nav-prev-label';
-    prevBtn.appendChild(prevBtnLabel);
-    prevBtn.title = I18n.t('prevChapter');
-    prevBtn.addEventListener('click', () => prevChapter(paneId));
-
-    const navBtn = document.createElement('button');
-    navBtn.className =
-      'nav-btn cursor-pointer transition-colors text-sm font-medium min-w-[80px] inline-flex items-center justify-center gap-1.5';
-    const navBtnLabel = document.createElement('span');
-    navBtnLabel.className = 'nav-btn-label';
-    navBtnLabel.textContent = '...';
-    navBtn.appendChild(navBtnLabel);
-    navBtn.addEventListener('click', async () => {
-      try {
-        const books = await window.api.getBooks(pane.moduleId);
-        Navigation.open(paneId, books);
-      } catch (err) {
-        console.warn('Failed to open navigation:', err);
-      }
-    });
-
-    const nextBtn = document.createElement('button');
-    nextBtn.className =
-      'nav-next-btn cursor-pointer transition-colors inline-flex items-center justify-center gap-1';
-    const nextBtnLabel = document.createElement('span');
-    nextBtnLabel.className = 'nav-next-label';
-    nextBtn.appendChild(nextBtnLabel);
-    const nextIcon = Icons.create('chevron-right');
-    nextIcon.setAttribute('width', '16');
-    nextIcon.setAttribute('height', '16');
-    nextIcon.style.flexShrink = '0';
-    nextBtn.appendChild(nextIcon);
-    nextBtn.title = I18n.t('nextChapter');
-    nextBtn.addEventListener('click', () => nextChapter(paneId));
-
-    const navGroup = document.createElement('div');
-    navGroup.className = 'nav-group';
-    navGroup.append(prevBtn, navBtn, nextBtn);
-
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.className =
-      'pane-back-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
-    backBtn.disabled = true;
-    backBtn.appendChild(Icons.create('arrow-left', 'w-3.5 h-3.5'));
-    const backBtnLabel = document.createElement('span');
-    backBtnLabel.className = 'pane-options-menu-label';
-    backBtnLabel.textContent = I18n.t('crossRefBackTooltip');
-    backBtn.appendChild(backBtnLabel);
-    backBtn.title = I18n.t('crossRefBackTooltip');
-    attachNavHistoryLongPress(backBtn, paneId, 'back');
-
-    const forwardBtn = document.createElement('button');
-    forwardBtn.type = 'button';
-    forwardBtn.className =
-      'pane-forward-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
-    forwardBtn.disabled = true;
-    forwardBtn.appendChild(Icons.create('arrow-right', 'w-3.5 h-3.5'));
-    const forwardBtnLabel = document.createElement('span');
-    forwardBtnLabel.className = 'pane-options-menu-label';
-    forwardBtnLabel.textContent = I18n.t('crossRefForwardTooltip');
-    forwardBtn.appendChild(forwardBtnLabel);
-    forwardBtn.title = I18n.t('crossRefForwardTooltip');
-    attachNavHistoryLongPress(forwardBtn, paneId, 'forward');
-
-    const pinBtn = document.createElement('button');
-    pinBtn.type = 'button';
-    pinBtn.className =
-      'pane-pin-btn pane-options-menu-item cursor-pointer transition-colors inline-flex items-center';
-    const isPinned = linkTargetPaneId === paneId;
-    pinBtn.appendChild(Icons.create(isPinned ? 'pin' : 'pin-off'));
-    const pinBtnLabel = document.createElement('span');
-    pinBtnLabel.className = 'pane-options-menu-label';
-    pinBtnLabel.textContent = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
-    pinBtn.appendChild(pinBtnLabel);
-    pinBtn.title = isPinned ? I18n.t('unpinLinkTarget') : I18n.t('pinLinkTarget');
-    if (isPinned) pinBtn.classList.add('pane-link-target');
-    pinBtn.addEventListener('mousedown', (e: MouseEvent) => e.stopPropagation());
-    pinBtn.addEventListener('click', () => {
-      if (linkTargetPaneId === paneId) {
-        clearLinkTarget();
-      } else {
-        setLinkTarget(paneId);
-      }
-    });
-
-    const optionsWrap = document.createElement('div');
-    optionsWrap.className = 'pane-options-control';
-    optionsWrap.addEventListener('mousedown', (e: MouseEvent) => e.stopPropagation());
-
-    const optionsBtn = document.createElement('button');
-    optionsBtn.type = 'button';
-    optionsBtn.className =
-      'pane-options-btn cursor-pointer transition-colors inline-flex items-center justify-center';
-    optionsBtn.appendChild(Icons.create('ellipsis'));
-    optionsBtn.title = I18n.t('paneOptions');
-    optionsBtn.setAttribute('aria-haspopup', 'menu');
-    optionsBtn.setAttribute('aria-expanded', 'false');
-
-    const optionsMenu = document.createElement('div');
-    optionsMenu.className = 'pane-options-menu hidden';
-    optionsMenu.setAttribute('role', 'menu');
-    optionsMenu.tabIndex = -1;
-
-    let isOptionsMenuOpen = false;
-    let optionsMenuDocListener: ((e: MouseEvent) => void) | null = null;
-
-    const setOptionsMenuOpen = (open: boolean): void => {
-      isOptionsMenuOpen = open;
-      optionsMenu.classList.toggle('hidden', !open);
-      optionsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open) {
-        if (!optionsMenuDocListener) {
-          optionsMenuDocListener = (e: MouseEvent): void => {
-            if (!optionsWrap.isConnected) {
-              document.removeEventListener('mousedown', optionsMenuDocListener);
-              optionsMenuDocListener = null;
-              return;
-            }
-            if (e.target instanceof Node && !optionsWrap.contains(e.target)) setOptionsMenuOpen(false);
-          };
-          document.addEventListener('mousedown', optionsMenuDocListener);
-        }
-        optionsMenu.focus();
-      } else if (optionsMenuDocListener) {
-        document.removeEventListener('mousedown', optionsMenuDocListener);
-        optionsMenuDocListener = null;
-      }
-    };
-
-    [backBtn, forwardBtn, pinBtn].forEach((btn) => {
-      btn.setAttribute('role', 'menuitem');
-      btn.addEventListener('click', () => setOptionsMenuOpen(false));
-    });
-
-    optionsBtn.addEventListener('click', () => setOptionsMenuOpen(!isOptionsMenuOpen));
-    optionsBtn.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' && !isOptionsMenuOpen) {
-        e.preventDefault();
-        setOptionsMenuOpen(true);
-      } else if (e.key === 'Escape' && isOptionsMenuOpen) {
-        e.preventDefault();
-        setOptionsMenuOpen(false);
-      }
-    });
-    optionsMenu.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setOptionsMenuOpen(false);
-        optionsBtn.focus();
-      }
-    });
-    optionsWrap.addEventListener('focusout', () => {
-      if (!isOptionsMenuOpen) return;
-      setTimeout(() => {
-        if (!optionsWrap.contains(document.activeElement)) setOptionsMenuOpen(false);
-      }, 0);
-    });
-    optionsMenu.append(backBtn, forwardBtn, pinBtn);
-    optionsWrap.append(optionsBtn, optionsMenu);
-
-    const spacer = document.createElement('div');
-    spacer.className = 'flex-1';
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className =
-      'pane-close-btn cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
-    closeBtn.appendChild(Icons.create('x'));
-    closeBtn.title = I18n.t('closePane');
-    closeBtn.addEventListener('click', () => closePane(paneId));
-
-    const idBadge = document.createElement('span');
-    idBadge.className = 'pane-id-badge';
-    idBadge.textContent = getPaneDisplayLabel(panes, paneId);
-
-    toolbar.append(idBadge, select, navGroup, spacer, optionsWrap, closeBtn);
-
-    const content = document.createElement('div');
-    content.className = 'pane-content flex-1 overflow-y-auto';
-
-    // Quick-switch bar for favorite Bible modules
-    const quickBar = document.createElement('div');
-    quickBar.className = 'pane-quick-switch';
-    quickBar.dataset.paneId = paneId;
-    function refreshQuickBar(): void {
-      const favs = (AppStateStore.getSettings().favoriteModules || {}).bible || [];
-      quickBar.innerHTML = '';
-      if (favs.length === 0) {
-        quickBar.style.display = 'none';
-        return;
-      }
-      quickBar.style.display = '';
-      for (const favId of favs) {
-        const mod = modules.find((m) => m.id === favId);
-        if (!mod) continue;
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'pane-quick-pill' + (favId === pane.moduleId ? ' is-active' : '');
-        pill.textContent = mod.shortTitle || mod.id;
-        pill.title = Utils.getModuleDisplayName(mod);
-        pill.addEventListener('click', async () => {
-          if (favId === pane.moduleId) return;
-          // Push current state before switching translation
-          pushNavHistory(paneId);
-          const paneEl = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-          const selectedLine = paneEl?.querySelector<HTMLElement>('.pane-content .verse-line.verse-selected');
-          const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
-          pane.moduleId = favId;
-          pane.hasStrongs = mod.hasStrongs || false;
-          pane.strongsPrefix = mod.strongsPrefix || null;
-          pane.books = [];
-          pane.verses = [];
-          picker.setSelected(favId);
-          refreshQuickBar();
-          await loadPaneData(paneId, selectedVerse);
-          // Push new state after switch
-          pushNavHistory(paneId);
-          emitStateChange();
-        });
-        quickBar.appendChild(pill);
-      }
-    }
-    refreshQuickBar();
-
-    el.appendChild(toolbar);
-    el.appendChild(quickBar);
-    el.appendChild(content);
-    return el;
   }
 
   function createCommentaryPaneElement(paneId: string): HTMLElement {
     const pane = panes[paneId];
-    const el = document.createElement('div');
-    el.className = 'pane-shell flex flex-col h-full w-full min-w-0 min-h-0';
-    el.dataset.paneId = paneId;
-    el.addEventListener('mousedown', () => setActivePane(paneId));
-
-    const toolbar = document.createElement('div');
-    toolbar.className =
-      'pane-toolbar flex items-center gap-1 px-2 py-1 border-b border-brand-300 dark:border-night-600 bg-brand-100 dark:bg-night-800 flex-shrink-0';
-
-    // Commentary module selector
-    const commentaryPicker = ModulePicker.create({
-      modules: Utils.sortCommentaryModules(commentaryModules),
-      selectedId: pane.moduleId,
-      moduleType: 'commentary',
-      className: 'rounded mr-1 text-xs',
-      onChange: async (moduleId: string): Promise<void> => {
+    return buildCommentaryPaneChrome({
+      paneId,
+      pane,
+      panes,
+      commentaryModules,
+      biblePaneIds: getBiblePaneIdsForSync(),
+      onActivate: () => setActivePane(paneId),
+      onModuleChange: async (moduleId) => {
         pane.moduleId = moduleId;
         pane.commentaryBooks = [];
         pane.entries = [];
@@ -751,178 +483,30 @@ export const PaneManager = (() => {
         await loadCommentaryData(paneId, selectedVerse);
         emitStateChange();
       },
+      onSyncTargetChange: (syncedToPaneId) => {
+        pane.syncedToPaneId = syncedToPaneId;
+        syncCommentaryToPane(paneId);
+        emitStateChange();
+      },
+      onOpenCoverage: () => {
+        const p = panes[paneId];
+        if (p) openCommentaryCoverageModalUi({ moduleId: p.moduleId });
+      },
+      onOpenAllCommentaries: () => {
+        const p = panes[paneId];
+        if (!p || p.paneType !== 'commentary') return;
+        const selectedVerse = getSelectedVerseFromSyncedBiblePane(p);
+        const verse =
+          selectedVerse || (p.entries && p.entries.length > 0 ? p.entries[0].verseFrom : 1);
+        openAllCommentariesModalUi({
+          bookNumber: p.bookNumber,
+          chapter: p.chapter,
+          verse,
+          commentaryModules,
+        });
+      },
+      onClose: () => closePane(paneId),
     });
-    const select = commentaryPicker.el;
-    // Navigation label
-    const navLabel = document.createElement('span');
-    navLabel.className =
-      'commentary-nav-label px-2 py-1 text-sm font-medium text-brand-700 dark:text-night-200';
-    navLabel.textContent = '';
-
-    const spacer = document.createElement('div');
-    spacer.className = 'flex-1';
-
-    // Badge with sync selector
-    const badgeWrap = document.createElement('div');
-    badgeWrap.className = 'commentary-badge-control';
-    badgeWrap.addEventListener('mousedown', (e: MouseEvent) => e.stopPropagation());
-
-    const biblePaneIds = getBiblePaneIdsForSync();
-
-    if (
-      !pane.syncedToPaneId ||
-      !panes[pane.syncedToPaneId] ||
-      panes[pane.syncedToPaneId].paneType !== 'bible'
-    ) {
-      pane.syncedToPaneId = null;
-    }
-
-    const badgeBtn = document.createElement('button');
-    badgeBtn.type = 'button';
-    badgeBtn.className = 'pane-id-badge pane-id-badge--clickable';
-    badgeBtn.textContent = getPaneDisplayLabel(panes, paneId);
-    badgeBtn.title = I18n.t('commentarySyncHint');
-    badgeBtn.setAttribute('aria-expanded', 'false');
-    badgeBtn.setAttribute('aria-haspopup', 'menu');
-
-    const badgeMenu = document.createElement('div');
-    badgeMenu.className = 'commentary-badge-menu hidden';
-    badgeMenu.setAttribute('role', 'menu');
-    badgeMenu.tabIndex = -1;
-
-    let isBadgeMenuOpen = false;
-    let badgeMenuDocListener: ((e: MouseEvent) => void) | null = null;
-
-    const setBadgeMenuOpen = (open: boolean): void => {
-      isBadgeMenuOpen = open;
-      badgeMenu.classList.toggle('hidden', !open);
-      badgeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open) {
-        if (!badgeMenuDocListener) {
-          badgeMenuDocListener = (e: MouseEvent): void => {
-            if (!badgeWrap.isConnected) {
-              document.removeEventListener('mousedown', badgeMenuDocListener);
-              badgeMenuDocListener = null;
-              return;
-            }
-            if (e.target instanceof Node && !badgeWrap.contains(e.target)) setBadgeMenuOpen(false);
-          };
-          document.addEventListener('mousedown', badgeMenuDocListener);
-        }
-        badgeMenu.focus();
-      } else if (badgeMenuDocListener) {
-        document.removeEventListener('mousedown', badgeMenuDocListener);
-        badgeMenuDocListener = null;
-      }
-    };
-
-    const selectSyncTarget = (value: string): void => {
-      pane.syncedToPaneId = value || null;
-      syncCommentaryToPane(paneId);
-      badgeBtn.textContent = getPaneDisplayLabel(panes, paneId);
-      // Update menu selection marks
-      const selectedValue = pane.syncedToPaneId || '';
-      for (const item of Array.from(badgeMenu.children) as HTMLElement[]) {
-        const selected = item.dataset.value === selectedValue;
-        item.classList.toggle('is-selected', selected);
-        item.setAttribute('aria-checked', selected ? 'true' : 'false');
-      }
-      setBadgeMenuOpen(false);
-      emitStateChange();
-    };
-
-    const syncOptions = [
-      { value: '', label: I18n.t('commentarySyncNone') },
-      ...biblePaneIds.map((biblePaneId) => ({
-        value: biblePaneId,
-        label: `${I18n.t('commentarySyncBiblePrefix')} ${getPaneDisplayLabel(panes, biblePaneId)}`,
-      })),
-    ];
-
-    for (const option of syncOptions) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'commentary-badge-menu-item';
-      item.dataset.value = option.value;
-      item.textContent = option.label;
-      item.setAttribute('role', 'menuitemradio');
-      const selected = (pane.syncedToPaneId || '') === option.value;
-      item.classList.toggle('is-selected', selected);
-      item.setAttribute('aria-checked', selected ? 'true' : 'false');
-      item.addEventListener('click', () => selectSyncTarget(option.value));
-      badgeMenu.appendChild(item);
-    }
-
-    if (biblePaneIds.length === 0) {
-      pane.syncedToPaneId = null;
-      badgeBtn.classList.add('opacity-60', 'cursor-not-allowed');
-      badgeBtn.disabled = true;
-    }
-
-    badgeBtn.addEventListener('click', () => {
-      if (badgeBtn.disabled) return;
-      setBadgeMenuOpen(!isBadgeMenuOpen);
-    });
-
-    badgeBtn.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' && !isBadgeMenuOpen) {
-        e.preventDefault();
-        setBadgeMenuOpen(true);
-      } else if (e.key === 'Escape' && isBadgeMenuOpen) {
-        e.preventDefault();
-        setBadgeMenuOpen(false);
-      }
-    });
-
-    badgeMenu.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setBadgeMenuOpen(false);
-        badgeBtn.focus();
-      }
-    });
-
-    badgeWrap.addEventListener('focusout', () => {
-      if (!isBadgeMenuOpen) return;
-      setTimeout(() => {
-        if (!badgeWrap.contains(document.activeElement)) setBadgeMenuOpen(false);
-      }, 0);
-    });
-
-    badgeWrap.append(badgeBtn, badgeMenu);
-
-    // Coverage info button
-    const infoBtn = document.createElement('button');
-    infoBtn.className =
-      'cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
-    infoBtn.appendChild(Icons.create('info'));
-    infoBtn.title = I18n.t('commentaryCoverage');
-    infoBtn.addEventListener('click', () => openCommentaryCoverageModal(paneId));
-
-    // All commentaries button
-    const allCommBtn = document.createElement('button');
-    allCommBtn.className =
-      'cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
-    allCommBtn.appendChild(Icons.create('book-open'));
-    allCommBtn.title = I18n.t('allCommentaries');
-    allCommBtn.addEventListener('click', () => openAllCommentariesModal(paneId));
-
-    // Close button
-    const closeBtn = document.createElement('button');
-    closeBtn.className =
-      'pane-close-btn cursor-pointer transition-colors text-sm inline-flex items-center justify-center';
-    closeBtn.appendChild(Icons.create('x'));
-    closeBtn.title = I18n.t('closePane');
-    closeBtn.addEventListener('click', () => closePane(paneId));
-
-    toolbar.append(badgeWrap, select, navLabel, spacer, allCommBtn, infoBtn, closeBtn);
-
-    const content = document.createElement('div');
-    content.className = 'pane-content flex-1 overflow-y-auto';
-
-    el.appendChild(toolbar);
-    el.appendChild(content);
-    return el;
   }
 
   function findFirstBiblePaneId(): string | null {
@@ -1154,8 +738,10 @@ export const PaneManager = (() => {
     return (bookNumber: number): string => I18n.bookName(bookNumber).short;
   }
 
-  function refreshQuickBarForPane(paneId: string): void {
-    const bar = document.querySelector<HTMLElement>(`.pane-quick-switch[data-pane-id="${paneId}"]`);
+  function refreshQuickBarForPane(paneId: string, barEl?: HTMLElement | null): void {
+    const bar =
+      barEl ||
+      document.querySelector<HTMLElement>(`.pane-quick-switch[data-pane-id="${paneId}"]`);
     if (!bar) return;
     const pane = panes[paneId];
     if (!pane || pane.paneType !== 'bible') return;
@@ -1174,39 +760,22 @@ export const PaneManager = (() => {
       pill.className = 'pane-quick-pill' + (favId === pane.moduleId ? ' is-active' : '');
       pill.textContent = mod.shortTitle || mod.id;
       pill.title = Utils.getModuleDisplayName(mod);
-      pill.addEventListener('click', async () => {
-        if (favId === pane.moduleId) return;
-        pushNavHistory(paneId);
-        const paneEl = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-        const selectedLine = paneEl?.querySelector<HTMLElement>('.pane-content .verse-line.verse-selected');
-        const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
-        pane.moduleId = favId;
-        pane.hasStrongs = mod.hasStrongs || false;
-        pane.strongsPrefix = mod.strongsPrefix || null;
-        pane.books = [];
-        pane.verses = [];
-        const pickerEl = paneEl?.querySelector<ModulePickerElement>('.module-picker-wrapper');
-        if (pickerEl && pickerEl.__pickerInstance) {
-          pickerEl.__pickerInstance.setSelected(favId);
-        }
-        refreshQuickBarForPane(paneId);
-        await loadPaneData(paneId, selectedVerse);
-        pushNavHistory(paneId);
-        emitStateChange();
+      pill.addEventListener('click', () => {
+        void switchBibleModule(paneId, favId);
       });
       bar.appendChild(pill);
     }
   }
 
   function openPanePicker(paneId: string): void {
-    const paneEl = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-    const pickerEl = paneEl?.querySelector<ModulePickerElement>('.module-picker-wrapper');
-    if (pickerEl && pickerEl.__pickerInstance) {
-      pickerEl.__pickerInstance.open();
-    }
+    pickersByPaneId.get(paneId)?.open();
   }
 
-  async function switchPaneModule(paneId: string, moduleId: string): Promise<void> {
+  /**
+   * Switch a bible pane to another module, preserving verse selection and history.
+   * Single path used by picker, quick-bar, and keyboard favorite cycling.
+   */
+  async function switchBibleModule(paneId: string, moduleId: string): Promise<void> {
     const pane = panes[paneId];
     if (!pane || pane.paneType !== 'bible' || pane.moduleId === moduleId) return;
     const mod = modules.find((m) => m.id === moduleId);
@@ -1223,14 +792,15 @@ export const PaneManager = (() => {
     pane.books = [];
     pane.verses = [];
 
-    const pickerEl = paneEl?.querySelector<ModulePickerElement>('.module-picker-wrapper');
-    if (pickerEl && pickerEl.__pickerInstance) {
-      pickerEl.__pickerInstance.setSelected(moduleId);
-    }
+    pickersByPaneId.get(paneId)?.setSelected(moduleId);
     refreshQuickBarForPane(paneId);
     await loadPaneData(paneId, selectedVerse);
     pushNavHistory(paneId);
     emitStateChange();
+  }
+
+  async function switchPaneModule(paneId: string, moduleId: string): Promise<void> {
+    await switchBibleModule(paneId, moduleId);
   }
 
   function refreshAllQuickBars(): void {
@@ -1343,89 +913,16 @@ export const PaneManager = (() => {
 
   function showNavHistoryMenu(paneId: string, direction: NavDirection, anchorEl: HTMLElement): void {
     const pane = panes[paneId];
-    const entries = getNavHistoryEntries(pane, direction);
-    if (entries.length === 0) return;
-
-    closeNavHistoryMenu();
-
-    const menu = document.createElement('div');
-    menu.className = 'pane-history-menu';
-    menu.setAttribute('role', 'menu');
-
-    for (const item of entries) {
-      const option = document.createElement('button');
-      option.type = 'button';
-      option.className = 'pane-history-menu-item';
-      option.setAttribute('role', 'menuitem');
-      option.append(...buildNavHistoryItemContent(item.entry));
-      option.addEventListener('click', () => {
-        closeNavHistoryMenu();
-        navToHistoryIndex(paneId, item.index);
-      });
-      menu.appendChild(option);
-    }
-
-    document.body.appendChild(menu);
-    positionNavHistoryMenu(menu, anchorEl);
-    activeNavHistoryMenu = menu;
-
-    setTimeout(() => {
-      document.addEventListener('pointerdown', handleNavHistoryOutsidePointer, true);
-      document.addEventListener('keydown', handleNavHistoryKeydown, true);
-      window.addEventListener('resize', closeNavHistoryMenu, { once: true });
-    }, 0);
-  }
-
-  function buildNavHistoryItemContent(entry: NavHistoryEntry): HTMLElement[] {
-    const reference = document.createElement('span');
-    reference.className = 'pane-history-reference';
-    reference.textContent = formatNavHistoryReference(entry);
-
-    const module = modules.find((m) => m.id === entry.moduleId);
-    const moduleLabel = document.createElement('span');
-    moduleLabel.className = 'pane-history-module';
-    moduleLabel.textContent = module ? Utils.truncateText(Utils.getModuleDisplayName(module), 34) : '';
-
-    return moduleLabel.textContent ? [reference, moduleLabel] : [reference];
-  }
-
-  function formatNavHistoryReference(entry: NavHistoryEntry): string {
-    const book = I18n.bookName(entry.bookNumber).short;
-    const chapter = Number.isInteger(entry.chapter) ? entry.chapter : 1;
-    const verse = Number.isInteger(entry.verse) ? `:${entry.verse}` : '';
-    return `${book} ${chapter}${verse}`;
-  }
-
-  function positionNavHistoryMenu(menu: HTMLElement, anchorEl: HTMLElement): void {
-    const anchorRect = anchorEl.getBoundingClientRect();
-    const margin = 6;
-    const menuRect = menu.getBoundingClientRect();
-    const top = Math.max(margin, anchorRect.top - menuRect.height - margin);
-    const left = Math.min(
-      window.innerWidth - menuRect.width - margin,
-      Math.max(margin, anchorRect.right - menuRect.width)
-    );
-    menu.style.top = `${top}px`;
-    menu.style.left = `${left}px`;
-  }
-
-  function handleNavHistoryOutsidePointer(event: PointerEvent): void {
-    if (activeNavHistoryMenu && event.target instanceof Node && !activeNavHistoryMenu.contains(event.target)) {
-      closeNavHistoryMenu();
-    }
-  }
-
-  function handleNavHistoryKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') closeNavHistoryMenu();
-  }
-
-  function closeNavHistoryMenu(): void {
-    if (!activeNavHistoryMenu) return;
-    activeNavHistoryMenu.remove();
-    activeNavHistoryMenu = null;
-    document.removeEventListener('pointerdown', handleNavHistoryOutsidePointer, true);
-    document.removeEventListener('keydown', handleNavHistoryKeydown, true);
-    window.removeEventListener('resize', closeNavHistoryMenu);
+    if (!pane) return;
+    showNavHistoryMenuUi({
+      pane,
+      direction,
+      anchorEl,
+      modules,
+      onSelectIndex: (historyIndex) => {
+        void navToHistoryIndex(paneId, historyIndex);
+      },
+    });
   }
 
   async function restoreNavEntry(paneId: string, entry: NavHistoryEntry): Promise<void> {
@@ -1440,11 +937,7 @@ export const PaneManager = (() => {
       pane.strongsPrefix = mod ? mod.strongsPrefix || null : null;
       pane.books = [];
       pane.verses = [];
-      const el = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-      const pickerEl = el?.querySelector<ModulePickerElement>('.module-picker-wrapper');
-      if (pickerEl && pickerEl.__pickerInstance) {
-        pickerEl.__pickerInstance.setSelected(entry.moduleId);
-      }
+      pickersByPaneId.get(paneId)?.setSelected(entry.moduleId);
       refreshQuickBarForPane(paneId);
       await loadPaneData(paneId, entry.verse);
     } else {
@@ -1819,6 +1312,7 @@ export const PaneManager = (() => {
   }
 
   function closePane(paneId: string): void {
+    pickersByPaneId.delete(paneId);
     if (!tree) return;
     if (tree.type === 'leaf') return;
 
@@ -1852,258 +1346,6 @@ export const PaneManager = (() => {
     }
     render();
     emitStateChange();
-  }
-
-  // Chapter counts per book (index 0=Gen, 65=Rev) — standard KJV canon
-  const CHAPTER_COUNTS = [
-    50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52,
-    5, 48, 12, 14, 3, 9, 1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5,
-    3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1, 1, 1, 22,
-  ];
-
-  async function openAllCommentariesModal(paneId: string): Promise<void> {
-    const pane = panes[paneId];
-    if (!pane || pane.paneType !== 'commentary') return;
-
-    const { bookNumber, chapter } = pane;
-    const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
-    const verse =
-      selectedVerse || (pane.entries && pane.entries.length > 0 ? pane.entries[0].verseFrom : 1);
-
-    const bookName = I18n.bookName(bookNumber);
-    const refLabel = `${bookName.short} ${chapter}:${verse}`;
-
-    // Fetch commentary entries from all modules in parallel
-    const results = await Promise.all(
-      commentaryModules.map(async (mod): Promise<{ module: ModuleRecord; entries: CommentaryEntry[] }> => {
-        try {
-          const entries = await window.api.getCommentary(mod.id, bookNumber, chapter);
-          const matching = entries.filter(
-            (e) => e.verseFrom <= verse && (e.verseTo >= verse || e.verseTo === 0)
-          );
-          return { module: mod, entries: matching };
-        } catch {
-          return { module: mod, entries: [] };
-        }
-      })
-    );
-
-    const withEntries = results.filter((r) => r.entries.length > 0);
-
-    // Build overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'fixed inset-0 z-40 bg-black/50 flex items-center justify-center';
-    overlay.addEventListener('mousedown', (e: MouseEvent) => {
-      if (e.target === overlay) overlay.remove();
-    });
-
-    const modal = document.createElement('div');
-    modal.className =
-      'bg-brand-50 dark:bg-night-800 shadow-2xl w-[720px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden break-words';
-
-    // Header
-    const header = document.createElement('div');
-    header.className =
-      'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between min-w-0';
-    const title = document.createElement('h2');
-    title.className = 'text-lg font-semibold min-w-0 truncate';
-    title.textContent = `${I18n.t('allCommentaries')} — ${refLabel}`;
-    const closeBtn = document.createElement('button');
-    closeBtn.className =
-      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 cursor-pointer transition-colors inline-flex items-center justify-center';
-    closeBtn.appendChild(Icons.create('x'));
-    closeBtn.addEventListener('click', () => overlay.remove());
-    header.append(title, closeBtn);
-
-    // Body
-    const body = document.createElement('div');
-    body.className = 'p-4 overflow-y-auto flex-1 min-w-0 overflow-x-hidden';
-
-    if (withEntries.length === 0) {
-      const msg = document.createElement('p');
-      msg.className = 'text-brand-500 dark:text-night-400 text-sm italic';
-      msg.textContent = I18n.t('allCommentariesNoResults');
-      body.appendChild(msg);
-    } else {
-      for (const { module: mod, entries } of withEntries) {
-        const section = document.createElement('div');
-        section.className = 'mb-6 last:mb-0';
-
-        const heading = document.createElement('h3');
-        heading.className =
-          'text-sm font-semibold text-brand-700 dark:text-night-200 mb-2 pb-1 border-b border-brand-200 dark:border-night-600 cursor-pointer flex items-center gap-1.5 select-none';
-
-        const chevron = Icons.create('chevron-right');
-        chevron.style.transition = 'transform 0.15s';
-        chevron.style.transform = 'rotate(0deg)';
-        chevron.style.flexShrink = '0';
-        heading.appendChild(chevron);
-        heading.appendChild(document.createTextNode(mod.displayName || mod.id));
-        section.appendChild(heading);
-
-        const contentWrapper = document.createElement('div');
-        contentWrapper.style.display = 'none';
-
-        for (const entry of entries) {
-          const entryDiv = document.createElement('div');
-          entryDiv.className = 'commentary-body text-sm mb-2';
-          entryDiv.innerHTML = Sanitize.sanitizeHtml(entry.text || '');
-          contentWrapper.appendChild(entryDiv);
-        }
-
-        heading.addEventListener('click', () => {
-          const collapsed = contentWrapper.style.display === 'none';
-          contentWrapper.style.display = collapsed ? 'block' : 'none';
-          chevron.style.transform = collapsed ? 'rotate(90deg)' : 'rotate(0deg)';
-        });
-
-        section.appendChild(contentWrapper);
-        body.appendChild(section);
-      }
-    }
-
-    modal.append(header, body);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-
-    // Close on Escape
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        overlay.remove();
-        document.removeEventListener('keydown', onKey);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-  }
-
-  async function openCommentaryCoverageModal(paneId: string): Promise<void> {
-    const pane = panes[paneId];
-    if (!pane) return;
-
-    const coverage = await window.api.getCommentaryCoverage(pane.moduleId);
-    const bookNumbers = I18n._BOOK_NUMBERS;
-
-    // Build overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'fixed inset-0 z-40 bg-black/50 flex items-center justify-center';
-    overlay.addEventListener('mousedown', (e: MouseEvent) => {
-      if (e.target === overlay) overlay.remove();
-    });
-
-    const modal = document.createElement('div');
-    modal.className =
-      'bg-brand-50 dark:bg-night-800 shadow-2xl w-[620px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden';
-
-    // Header
-    const header = document.createElement('div');
-    header.className =
-      'p-4 border-b border-brand-300 dark:border-night-600 flex items-center justify-between';
-    const title = document.createElement('h2');
-    title.className = 'text-lg font-semibold';
-    title.textContent = I18n.t('commentaryCoverage');
-    const closeBtn = document.createElement('button');
-    closeBtn.className =
-      'px-2 py-1 rounded-sm hover:bg-brand-200 dark:hover:bg-night-700 text-brand-500 dark:text-night-400 cursor-pointer transition-colors inline-flex items-center justify-center';
-    closeBtn.appendChild(Icons.create('x'));
-    closeBtn.addEventListener('click', () => overlay.remove());
-    header.append(title, closeBtn);
-
-    // Legend
-    const legend = document.createElement('div');
-    legend.className = 'px-4 pt-3 pb-1 flex gap-4 text-xs text-brand-600 dark:text-night-300';
-    for (const [cls, key] of [
-      ['coverage-full', 'coverageFull'],
-      ['coverage-partial', 'coveragePartial'],
-      ['coverage-none', 'coverageNone'],
-    ]) {
-      const item = document.createElement('span');
-      item.className = 'flex items-center gap-1.5';
-      const dot = document.createElement('span');
-      dot.className = `inline-block w-3 h-3 ${cls}`;
-      item.append(dot, I18n.t(key));
-      legend.appendChild(item);
-    }
-
-    // Book grid
-    const grid = document.createElement('div');
-    grid.className = 'p-4 overflow-y-auto coverage-grid';
-
-    // OT label
-    const otLabel = document.createElement('div');
-    otLabel.className = 'text-xs font-semibold text-brand-500 dark:text-night-400 mb-1.5';
-    otLabel.textContent = I18n.t('oldTestament');
-    grid.appendChild(otLabel);
-
-    const otGrid = document.createElement('div');
-    otGrid.className = 'grid gap-1.5 mb-4';
-    otGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(52px, 1fr))';
-
-    for (let i = 0; i < 39; i++) {
-      otGrid.appendChild(buildCoverageCell(bookNumbers[i], i, coverage));
-    }
-    grid.appendChild(otGrid);
-
-    // NT label
-    const ntLabel = document.createElement('div');
-    ntLabel.className = 'text-xs font-semibold text-brand-500 dark:text-night-400 mb-1.5';
-    ntLabel.textContent = I18n.t('newTestament');
-    grid.appendChild(ntLabel);
-
-    const ntGrid = document.createElement('div');
-    ntGrid.className = 'grid gap-1.5';
-    ntGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(52px, 1fr))';
-
-    for (let i = 39; i < 66; i++) {
-      ntGrid.appendChild(buildCoverageCell(bookNumbers[i], i, coverage));
-    }
-    grid.appendChild(ntGrid);
-
-    modal.append(header, legend, grid);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-
-    // Close on Escape
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        overlay.remove();
-        document.removeEventListener('keydown', onKey);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-  }
-
-  function buildCoverageCell(
-    bookNumber: number,
-    bookIndex: number,
-    coverage: CommentaryCoverage
-  ): HTMLElement {
-    const totalChapters = CHAPTER_COUNTS[bookIndex];
-    const coveredChapters = coverage[bookNumber] || [];
-    const name = I18n.bookName(bookNumber);
-    const ratio = coveredChapters.length / totalChapters;
-
-    const cell = document.createElement('div');
-    cell.className = 'coverage-cell';
-
-    if (ratio === 0) {
-      cell.classList.add('coverage-none');
-      cell.title = `${name.long}: ${I18n.t('coverageNone')}`;
-    } else if (ratio >= 1) {
-      cell.classList.add('coverage-full');
-      cell.title = `${name.long}: ${I18n.t('coverageFull')} (${totalChapters} ${I18n.t('coverageChapters')})`;
-    } else {
-      cell.classList.add('coverage-partial');
-      const coveredSet = new Set(coveredChapters);
-      const missing: number[] = [];
-      for (let ch = 1; ch <= totalChapters; ch++) {
-        if (!coveredSet.has(ch)) missing.push(ch);
-      }
-      const missingStr = compactRanges(missing);
-      cell.title = `${name.long}: ${coveredChapters.length}/${totalChapters} ${I18n.t('coverageChapters')}\n${I18n.t('coverageMissingChapters')}: ${missingStr}`;
-    }
-
-    cell.textContent = name.short;
-    return cell;
   }
 
   return {

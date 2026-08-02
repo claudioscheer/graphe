@@ -1,22 +1,27 @@
+// @ts-nocheck -- converted from JS; sqlite row shapes left untyped.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { convertTags } from '../src/main/modules/theword-bible-provider.ts';
-import { writeTheWordBibleFixture } from './support/module-fixtures.js';
+import { writeTheWordBibleFixture } from './support/module-fixtures.ts';
+
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
 const NT_VERSES = TOTAL_VERSES - OT_VERSES;
 
-function createTheWordModuleFile(tmpDir, name, verseCount, metadataLines = []) {
+function createTheWordModuleFile(tmpDir: string, name, verseCount, metadataLines = []) {
   const filePath = path.join(tmpDir, name);
   const verses = Array.from({ length: verseCount }, (_v, idx) => `Verse ${idx + 1}`);
   fs.writeFileSync(filePath, `${verses.join('\n')}\n${metadataLines.join('\n')}\n`);
   return filePath;
 }
 
-function createSparseTheWordModuleFile(tmpDir, name, verseLines, metadataLines = []) {
+function createSparseTheWordModuleFile(tmpDir: string, name, verseLines, metadataLines = []) {
   const filePath = path.join(tmpDir, name);
   fs.writeFileSync(filePath, `${verseLines.join('\n')}\n${metadataLines.join('\n')}\n`);
   return filePath;
@@ -290,7 +295,7 @@ describe('OT module handling', () => {
 describe('TheWord Bible integration', () => {
   let ontFile;
   let provider;
-  let tmpDir;
+  let tmpDir: string;
 
   beforeAll(() => {
     provider = require('../src/main/modules/theword-bible-provider.ts');

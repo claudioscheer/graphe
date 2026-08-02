@@ -1,15 +1,9 @@
 import { I18n } from './i18n.js';
 import { Icons } from './icons.js';
-import { ModulePicker } from './module-picker.js';
+import { ModulePicker, type ModulePickerInstance } from './module-picker.js';
 
 type ModuleEditorTab = 'info' | 'books' | 'verses' | 'commentaries';
 type ModuleEditorCallback = (moduleId: string) => void | Promise<void>;
-
-interface ModulePickerInstance {
-  el: HTMLDivElement;
-  setSelected(id: string | null): void;
-  setModules(modules: ModuleRecord[]): void;
-}
 
 interface ModuleEditorOptions {
   onSaved?: ModuleEditorCallback;

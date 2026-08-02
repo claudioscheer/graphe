@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 export const TOTAL_VERSES = 31102;
 export const OT_VERSES = 23145;
 
-export function writeTheWordBibleFixture(dir, fileName = 'fixture-strong.ont') {
+export function writeTheWordBibleFixture(dir: string, fileName = 'fixture-strong.ont') {
   const filePath = path.join(dir, fileName);
   const verses = Array(TOTAL_VERSES).fill('');
   verses[0] = '<wt>In<WH7225><WTN l="beginning"> the beginning';
@@ -18,7 +18,7 @@ export function writeTheWordBibleFixture(dir, fileName = 'fixture-strong.ont') {
   return filePath;
 }
 
-export function writeSqliteBibleFixture(dir, fileName = 'fixture.SQLite3') {
+export function writeSqliteBibleFixture(dir: string, fileName = 'fixture.SQLite3') {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);
   try {
@@ -36,7 +36,7 @@ export function writeSqliteBibleFixture(dir, fileName = 'fixture.SQLite3') {
   return filePath;
 }
 
-export function writeSqliteCommentaryFixture(dir, fileName = 'fixture.commentaries.SQLite3') {
+export function writeSqliteCommentaryFixture(dir: string, fileName = 'fixture.commentaries.SQLite3') {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);
   try {
@@ -66,7 +66,7 @@ export function writeSqliteCommentaryFixture(dir, fileName = 'fixture.commentari
   return filePath;
 }
 
-export function writeSqliteDictionaryFixture(dir, fileName = 'fixture.dictionary.SQLite3') {
+export function writeSqliteDictionaryFixture(dir: string, fileName = 'fixture.dictionary.SQLite3') {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);
   try {
@@ -82,11 +82,11 @@ export function writeSqliteDictionaryFixture(dir, fileName = 'fixture.dictionary
   return filePath;
 }
 
-function utf16Text(text) {
+function utf16Text(text: string) {
   return Buffer.from(text, 'utf16le');
 }
 
-export function writeTwmType2CommentaryFixture(dir, fileName = 'fixture.cmt.twm') {
+export function writeTwmType2CommentaryFixture(dir: string, fileName = 'fixture.cmt.twm') {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);
   try {
@@ -108,7 +108,7 @@ export function writeTwmType2CommentaryFixture(dir, fileName = 'fixture.cmt.twm'
   return filePath;
 }
 
-export function writeTwmType3CommentaryFixture(dir, fileName = 'fixture-topic.cmt.twm') {
+export function writeTwmType3CommentaryFixture(dir: string, fileName = 'fixture-topic.cmt.twm') {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);
   try {
@@ -133,9 +133,9 @@ export function writeTwmType3CommentaryFixture(dir, fileName = 'fixture-topic.cm
 }
 
 export function writeTwmDictionaryFixture(
-  dir,
+  dir: string,
   fileName = 'fixture.dct.twm',
-  { compressed = false } = {}
+  { compressed = false }: { compressed?: boolean } = {}
 ) {
   const filePath = path.join(dir, fileName);
   const db = new Database(filePath);

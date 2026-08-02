@@ -1,3 +1,4 @@
+// @ts-nocheck -- converted from JS; sqlite row shapes left untyped.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +9,10 @@ import {
   writeTheWordBibleFixture,
   writeTwmDictionaryFixture,
   writeTwmType2CommentaryFixture,
-} from './support/module-fixtures.js';
+} from './support/module-fixtures.ts';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 const TOTAL_VERSES = 31102;
 const OT_VERSES = 23145;
 
@@ -218,7 +222,7 @@ describe('convertBible integration', () => {
   const Database = require('better-sqlite3');
   let converter;
   let ontFile;
-  let tmpDir;
+  let tmpDir: string;
 
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');
@@ -344,7 +348,7 @@ describe('convertDictionary integration', () => {
   const Database = require('better-sqlite3');
   let converter;
   let dctFile;
-  let tmpDir;
+  let tmpDir: string;
 
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');
@@ -389,7 +393,7 @@ describe('convertCommentary integration', () => {
   const Database = require('better-sqlite3');
   let converter;
   let cmtFile;
-  let tmpDir;
+  let tmpDir: string;
 
   beforeAll(() => {
     converter = require('../src/main/modules/converters/theword-converter.ts');

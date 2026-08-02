@@ -3,17 +3,18 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
+import type { Database as DatabaseInstance } from 'better-sqlite3';
 import * as provider from '../src/main/modules/sqlite-provider.ts';
 import {
   writeSqliteBibleFixture,
   writeSqliteCommentaryFixture,
   writeSqliteDictionaryFixture,
-} from './support/module-fixtures.js';
+} from './support/module-fixtures.ts';
 
-let fixtureDir;
-let commentaryFile;
-let dictionaryFile;
-let bibleFile;
+let fixtureDir: string;
+let commentaryFile: string;
+let dictionaryFile: string;
+let bibleFile: string;
 
 beforeAll(() => {
   fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-sqlite-provider-fixtures-'));
@@ -27,7 +28,7 @@ afterAll(() => {
 });
 
 describe('SQLite commentary', () => {
-  let db;
+  let db: DatabaseInstance;
 
   beforeAll(() => {
     db = new Database(commentaryFile, { readonly: true });
@@ -63,7 +64,7 @@ describe('SQLite commentary', () => {
 });
 
 describe('SQLite dictionary', () => {
-  let db;
+  let db: DatabaseInstance;
 
   beforeAll(() => {
     db = new Database(dictionaryFile, { readonly: true });
@@ -104,7 +105,7 @@ describe('SQLite dictionary', () => {
 });
 
 describe('SQLite bible', () => {
-  let db;
+  let db: DatabaseInstance;
 
   beforeAll(() => {
     db = new Database(bibleFile, { readonly: true });
@@ -174,8 +175,8 @@ describe('parseSearchQuery', () => {
 });
 
 describe('lexicalSearch', () => {
-  let tmpDir;
-  let db;
+  let tmpDir: string;
+  let db: DatabaseInstance;
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-search-'));
@@ -220,9 +221,9 @@ describe('lexicalSearch', () => {
 });
 
 describe('editable operations', () => {
-  let tmpDir;
-  let dbPath;
-  let db;
+  let tmpDir: string;
+  let dbPath: string;
+  let db: DatabaseInstance;
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'graphe-sqlite-edit-'));
