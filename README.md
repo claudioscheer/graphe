@@ -2,127 +2,165 @@
 
 Mais informações e atualizações: [Telegram do Graphe](https://t.me/graphegrupo)
 
-Um aplicativo moderno para estudo bíblico, com foco em leitura, comparação e pesquisa das Escrituras.
+Aplicativo desktop de estudo bíblico, com painéis divididos, números de Strong, referências cruzadas, comentários e dicionários.
 
-O Graphe oferece uma interface limpa e atual para leitura, pesquisa e análise profunda das Escrituras, com suporte a painéis divididos, números de Strong, referências cruzadas e múltiplas traduções.
+Disponível para **Windows**, **Linux** e **macOS**. Gratuito e de código aberto (MIT).
 
-Disponível para **Windows**, **Linux** e **macOS**.
-
-![Screenshot do Graphe](assets/demo/demo.png)
+![Screenshot do Graphe](assets/demo/demo.jpg)
 
 ## Download
 
-Baixe a versão mais recente para o seu sistema operacional na página de [releases](https://github.com/claudioscheer/graphe/releases/latest).
+Baixe a versão mais recente na página de [releases](https://github.com/claudioscheer/graphe/releases/latest).
+
+O app avisa quando há uma versão nova disponível no GitHub.
 
 ## Funcionalidades
 
-### Traduções Bíblicas
+### Painéis e layout
 
-- Suporte a múltiplas traduções abertas simultaneamente
-- Sistema de painéis divididos (horizontal e vertical) para comparar traduções lado a lado
-- Navegação rápida por livro, capítulo e versículo
+- Vários painéis bíblicos e de comentário abertos ao mesmo tempo
+- Divisão horizontal e vertical (árvore de painéis, como no [VS Code](https://code.visualstudio.com/))
+- **Estudos (workspaces):** abas com layouts independentes; criar, renomear e fechar estudos
+- Barra lateral (workbench) com:
+  - **Pesquisa**
+  - **Dicionário**
+  - **Módulos** (lista e atalhos de gestão)
+- Estado da interface é restaurado ao reabrir o app (painéis, estudos, preferências)
 
-### Números de Strong
+### Traduções e navegação
 
-- Exibição dos números de Strong (Hebraico e Grego) integrados ao texto bíblico
-- Consulta a dicionários de Strong com um clique
-- Suporte a múltiplos dicionários (Almeida, Strong-PT, BDB)
-- Exibição de cognatos e palavras relacionadas
+- Múltiplas traduções lado a lado
+- Seletor de módulo com busca e **favoritos**
+- Navegação rápida por livro, capítulo e versículo (`F3` ou campo de referência: ex. `Gn 1:3`, `Mt 5`)
+- Histórico de navegação por painel (voltar / avançar)
+- Painel **fixado** como destino de links (referências e dicionário abrem nele)
+- Seleção de versículos com teclado e copiar com `Ctrl+C` / `Cmd+C`
 
-### Referências Cruzadas
+### Números de Strong e interlinear
 
-- Integração com o Treasury of Scripture Knowledge (TSK)
-- Navegação direta para versículos referenciados
-- Suporte a múltiplos módulos de referências cruzadas
-- Opção de abrir referências em modal de prévia (painel fixado)
+- Strong's (hebraico e grego) integrados ao texto, quando o módulo traz as tags
+- Clique em um número Strong para abrir o dicionário
+- Menu de contexto no Strong: buscar ocorrências ou consultar o dicionário
+- Vários dicionários Strong configuráveis em **Configurações**
+- Cognatos / palavras relacionadas (quando o módulo de dicionário oferece)
+- Morfologia e lema resolvidos quando disponíveis no módulo
+- Anotações interlineares por palavra (módulos com esses dados), por exemplo:
+  - Strong, original, transliteração
+  - gloss, pronúncia e referências extras (ex. LN, GK), quando presentes
 
-### Comentários Bíblicos
+### Referências cruzadas
 
-- Suporte a módulos de comentário (ex: Matthew Henry, Jamieson-Fausset-Brown)
-- Visualização sincronizada com o texto bíblico — o comentário acompanha o capítulo aberto
-- Abertura em painel dividido (horizontal ou vertical)
-- Vinculação flexível: escolha qual painel bíblico atualiza cada comentário
+- Módulos de referências (ex. Treasury of Scripture Knowledge), escolhidos em Configurações
+- Clique na referência para navegar no painel de destino
+- Opção de abrir em **modal de prévia** apenas as referências clicadas no painel fixado
 
-### Compatibilidade com Módulos MyBible (SQLite3)
+### Comentários
 
-- Utiliza módulos no formato **MyBible SQLite3**
-- Suporte a módulos de **Bíblias, Dicionários, Referências Cruzadas e Comentários**
-- O tipo do módulo é detectado automaticamente a partir da estrutura do banco de dados
-- Suporte estendido para anotações interlineares por palavra (quando presentes no módulo):
-  - número de Strong
-  - palavra original
-  - transcrição
+- Painéis de comentário sincronizados com um painel bíblico escolhido
+- Divisão em horizontal ou vertical só com comentário
+- **Todos os comentários:** visão agregada do versículo em todos os módulos de comentário instalados
+- Indicador de cobertura do comentário (completo / parcial / sem dados)
 
-#### Instalando módulos
+### Dicionário
 
-Use o instalador de módulos do próprio Graphe:
-
-1. Abra o menu **File > Install Modules...** (ou clique em **Instalar Módulos** quando o app não encontrar módulos bíblicos).
-2. Selecione um ou mais arquivos de módulo MyBible (`.SQLite3`/SQLite válidos).
-3. O Graphe instala os módulos automaticamente e recarrega a interface quando a instalação for concluída.
-
-Os arquivos selecionados são copiados automaticamente para a pasta de módulos do Graphe:
-
-| Sistema | Caminho                             |
-| ------- | ----------------------------------- |
-| Linux   | `~/.graphe/modules/`                |
-| macOS   | `~/.graphe/modules/`                |
-| Windows | `%USERPROFILE%\\.graphe\\modules\\` |
-
-O tipo do módulo (Bíblia, Dicionário, Referências Cruzadas ou Comentário) é detectado automaticamente a partir das tabelas no banco de dados.
-
-### Conversão de módulos theWord para MyBible
-
-- O Graphe converte módulos do theWord para módulos MyBible SQLite3
-- Entrada suportada no conversor:
-  - Bíblias do theWord: `.ont`, `.nt`, `.ot`
-  - Comentários e dicionários do theWord: `.twm`
-- Saída do conversor:
-  - Bíblia: `.SQLite3`
-  - Comentário: `.commentaries.SQLite3`
-  - Dicionário: `.dictionary.SQLite3`
-
-Após a instalação, acesse as **Configurações** para verificar e organizar os módulos instalados.
+- Painel dedicado na barra lateral
+- Busca por tema, prefixo, amostra aleatória e exploração por prefixo
+- Lookup a partir de Strong's no texto ou busca manual
+- Histórico de consultas no painel
 
 ### Pesquisa
 
-- Busca textual em todos os versículos
-- Busca por números de Strong (ex: `strong:H1234`)
+- Busca textual na tradução selecionada
+- Busca por Strong: `strong:H1234` ou `strong:G5678`
+- Frases entre aspas: `"no princípio"`
+- Destaque dos termos nos resultados
+- `Ctrl`/`Cmd` + clique em um resultado abre em um **novo estudo**
+
+### Módulos (formato MyBible SQLite3)
+
+O Graphe usa módulos no formato **MyBible SQLite3**. O tipo é detectado pelas tabelas do banco:
+
+| Tipo               | Uso                                |
+| ------------------ | ---------------------------------- |
+| Bíblia             | Texto, Strong's, interlinear       |
+| Dicionário         | Strong's e léxicos                 |
+| Comentário         | Comentários por versículo/capítulo |
+| Referência cruzada | Links entre passagens              |
+
+#### Instalar módulos
+
+1. **File → Install Modules...** (ou **Instalar Módulos** se ainda não houver bíblia instalada)
+2. Selecione um ou mais arquivos `.sqlite3`
+3. O app copia para a pasta de módulos e recarrega a interface
+
+| Sistema | Pasta de módulos                 |
+| ------- | -------------------------------- |
+| Linux   | `~/.graphe/modules/`             |
+| macOS   | `~/.graphe/modules/`             |
+| Windows | `%USERPROFILE%\.graphe\modules\` |
+
+Outros itens de menu:
+
+- **File → Convert Modules...** — conversão integrada (ver abaixo)
+- **File → Reload Modules** — recarrega a pasta de módulos
+- **Edit → Edit Module Data...** (`Ctrl+E` / `Cmd+E`) — editor de módulo
+
+#### Conversão de módulos
+
+Conversão no próprio app (ou salva o `.sqlite3` ao lado do arquivo original):
+
+| Origem  | Entrada                                                                               | Saída típica                                               |
+| ------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| theWord | Bíblias `.ont`, `.ontx`, `.nt`, `.ntx`, `.ot`, `.otx`; comentários/dicionários `.twm` | `.SQLite3`, `.commentaries.SQLite3`, `.dictionary.SQLite3` |
+| MySword | Bíblias `.bbl.mybible`, dicionários `.dct.mybible`                                    | `.SQLite3` / `.dictionary.SQLite3`                         |
+
+#### Editor de módulo
+
+Permite inspecionar e editar dados do módulo instalado (conforme o tipo):
+
+- Metadados (`info`)
+- Nomes de livros
+- Texto de versículos
+- Entradas de comentário
+- Exclusão do módulo
 
 ### Interface
 
 - Temas claro e escuro
 - Tamanho de fonte ajustável
-- Disponível em Português, Inglês e Espanhol
-- Seleção e cópia de versículos com `Ctrl+C`
-- Atalhos de teclado para navegação rápida
+- Idiomas da interface: **Português**, **Inglês** e **Espanhol** (não altera a tradução bíblica)
+- Zoom da janela e tela cheia pelos atalhos nativos do sistema
 
-### Atalhos de Teclado
+### Atalhos de teclado
 
-| Atalho                | Ação                                                  |
-| --------------------- | ----------------------------------------------------- |
-| `Ctrl+Shift+F`        | Focar no campo de pesquisa                            |
-| `F3`                  | Abrir diálogo de navegação (livro/capítulo/versículo) |
-| `Ctrl+T`              | Abrir seletor de tradução no painel ativo             |
-| `Ctrl+Shift+T`        | Alternar entre traduções favoritas                    |
-| `Ctrl+A`              | Selecionar todos os versículos no painel ativo        |
-| `Ctrl+C`              | Copiar versículos selecionados                        |
-| `Tab`                 | Alternar entre painéis                                |
-| `↑` / `↓`             | Navegar entre versículos                              |
-| `Shift+↑` / `Shift+↓` | Estender seleção de versículos                        |
-| `Escape`              | Fechar diálogos/overlays/popovers                     |
+| Atalho                | Ação                                                |
+| --------------------- | --------------------------------------------------- |
+| `Ctrl+Shift+F`        | Focar na pesquisa                                   |
+| `F3`                  | Diálogo de navegação (livro / capítulo / versículo) |
+| `Ctrl+,`              | Configurações                                       |
+| `Ctrl+E`              | Editor de módulo                                    |
+| `Ctrl+T`              | Seletor de tradução no painel ativo                 |
+| `Ctrl+Shift+T`        | Alternar entre traduções favoritas                  |
+| `Ctrl+Shift+H`        | Dividir painel horizontalmente (bíblia)             |
+| `Ctrl+Shift+V`        | Dividir painel verticalmente (bíblia)               |
+| `Ctrl+A`              | Selecionar todos os versículos do painel ativo      |
+| `Ctrl+C`              | Copiar versículos selecionados                      |
+| `Tab`                 | Alternar entre painéis                              |
+| `↑` / `↓`             | Navegar entre versículos                            |
+| `Shift+↑` / `Shift+↓` | Estender seleção de versículos                      |
+| `Escape`              | Fechar diálogos, overlays e menus                   |
 
 > No macOS, use `Cmd` no lugar de `Ctrl`.
 
-## Problemas ou Sugestões
+## Problemas ou sugestões
 
-Encontrou um bug ou tem uma ideia para melhorar o Graphe? Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues).
+Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues) ou use **Help → Report Issue** no app.
 
 ## Desenvolvimento
 
 ### Pré-requisitos
 
-- Node.js
+- Node.js 20+
 - npm
 
 ### Instalação
@@ -131,16 +169,29 @@ Encontrou um bug ou tem uma ideia para melhorar o Graphe? Abra uma issue no [Git
 npm install
 ```
 
-### Executar em modo de desenvolvimento
+### Desenvolvimento
 
 ```bash
 npm run dev
 ```
 
-### Gerar pacote
+### Testes e checagens
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run format
+```
+
+### Gerar instaladores locais
 
 ```bash
 npm run make
+# ou por plataforma:
+npm run make:linux
+npm run make:win
+npm run make:mac
 ```
 
 ## Licença
