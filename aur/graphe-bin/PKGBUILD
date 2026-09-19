@@ -7,7 +7,7 @@
 
 pkgname=graphe-bin
 pkgver=1.0.11
-pkgrel=1
+pkgrel=2
 pkgdesc="A modern Bible study app with split panes and Strong's numbers (binary release)"
 arch=('x86_64')
 url='https://github.com/claudioscheer/graphe'
@@ -37,7 +37,8 @@ sha256sums=('72db27e79cb39c1b73d7029169d5903806102b18194362d1ca2ae5329f426b25'
 package() {
   install -d "${pkgdir}/opt/graphe"
   cp -a --no-preserve=ownership "${srcdir}/Graphe-linux-x64/." "${pkgdir}/opt/graphe/"
-
+  # Zip top-level dir is mode 700; cp -a would leave /opt/graphe unreadable.
+  find "${pkgdir}/opt/graphe" -type d -exec chmod 755 {} +
   chmod 4755 "${pkgdir}/opt/graphe/chrome-sandbox"
 
   install -d "${pkgdir}/usr/bin"
