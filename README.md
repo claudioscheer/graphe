@@ -14,6 +14,22 @@ Baixe a versão mais recente na página de [releases](https://github.com/claudio
 
 O app avisa quando há uma versão nova disponível no GitHub.
 
+### Arch Linux
+
+Pacote AUR `graphe-bin` (instala o zip Linux das releases):
+
+```bash
+yay -S graphe-bin
+# ou: paru -S graphe-bin
+```
+
+Para instalar a partir deste repositório (sem AUR):
+
+```bash
+cd aur/graphe-bin
+makepkg -si
+```
+
 ## Funcionalidades
 
 ### Painéis e layout

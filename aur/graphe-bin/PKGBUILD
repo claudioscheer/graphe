@@ -1,0 +1,50 @@
+# Maintainer: Claudio Scheer <claudioscheer@protonmail.com>
+#
+# After a GitHub release that publishes Graphe-linux-x64-$pkgver.zip:
+#   ./scripts/update-aur-bin.sh
+# Then push PKGBUILD + .SRCINFO + graphe.desktop + graphe.png to:
+#   ssh://aur@aur.archlinux.org/graphe-bin.git
+
+pkgname=graphe-bin
+pkgver=1.0.11
+pkgrel=1
+pkgdesc="A modern Bible study app with split panes and Strong's numbers (binary release)"
+arch=('x86_64')
+url='https://github.com/claudioscheer/graphe'
+license=('MIT')
+depends=(
+  'alsa-lib'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libxss'
+  'libxtst'
+  'nspr'
+  'nss'
+  'xdg-utils'
+)
+provides=('graphe')
+conflicts=('graphe')
+options=('!strip' '!debug')
+source=(
+  "Graphe-linux-x64-${pkgver}.zip::https://github.com/claudioscheer/graphe/releases/download/v${pkgver}/Graphe-linux-x64-${pkgver}.zip"
+  'graphe.desktop'
+  'graphe.png'
+)
+sha256sums=('72db27e79cb39c1b73d7029169d5903806102b18194362d1ca2ae5329f426b25'
+            '7734db6479cd9f9735e8f76fc97695f010f824067e72753b4ae03e098beb121b'
+            '9b94019839b5b718a2a530a9d8c63c5030c3b9625c1544f6e7bdcaa8c419b095')
+
+package() {
+  install -d "${pkgdir}/opt/graphe"
+  cp -a --no-preserve=ownership "${srcdir}/Graphe-linux-x64/." "${pkgdir}/opt/graphe/"
+
+  chmod 4755 "${pkgdir}/opt/graphe/chrome-sandbox"
+
+  install -d "${pkgdir}/usr/bin"
+  ln -s /opt/graphe/graphe-bible "${pkgdir}/usr/bin/graphe-bible"
+  ln -s /opt/graphe/graphe-bible "${pkgdir}/usr/bin/graphe"
+
+  install -Dm644 "${srcdir}/graphe.desktop" "${pkgdir}/usr/share/applications/graphe.desktop"
+  install -Dm644 "${srcdir}/graphe.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/graphe.png"
+  install -Dm644 "${srcdir}/Graphe-linux-x64/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Graphe
+Comment=Bible study with split panes and Strong's numbers
+Exec=/usr/bin/graphe-bible %U
+Icon=graphe
+Type=Application
+Categories=Education;Office;
+StartupWMClass=Graphe
+Terminal=false
+StartupNotify=true

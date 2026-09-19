@@ -1,0 +1,27 @@
+pkgbase = graphe-bin
+	pkgdesc = A modern Bible study app with split panes and Strong's numbers (binary release)
+	pkgver = 1.0.11
+	pkgrel = 1
+	url = https://github.com/claudioscheer/graphe
+	arch = x86_64
+	license = MIT
+	depends = alsa-lib
+	depends = gtk3
+	depends = hicolor-icon-theme
+	depends = libxss
+	depends = libxtst
+	depends = nspr
+	depends = nss
+	depends = xdg-utils
+	provides = graphe
+	conflicts = graphe
+	options = !strip
+	options = !debug
+	source = Graphe-linux-x64-1.0.11.zip::https://github.com/claudioscheer/graphe/releases/download/v1.0.11/Graphe-linux-x64-1.0.11.zip
+	source = graphe.desktop
+	source = graphe.png
+	sha256sums = 72db27e79cb39c1b73d7029169d5903806102b18194362d1ca2ae5329f426b25
+	sha256sums = 7734db6479cd9f9735e8f76fc97695f010f824067e72753b4ae03e098beb121b
+	sha256sums = 9b94019839b5b718a2a530a9d8c63c5030c3b9625c1544f6e7bdcaa8c419b095
+
+pkgname = graphe-bin

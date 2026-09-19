@@ -70,6 +70,7 @@ module.exports = {
       ...getGitIgnoredDirectoryPatterns(),
       '^/test($|/)',
       '^/scripts($|/)',
+      '^/aur($|/)',
       '^/src/renderer($|/)',
       '^/data($|/)',
       '^/README\\.md$',
