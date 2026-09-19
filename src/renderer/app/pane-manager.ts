@@ -25,19 +25,21 @@ import {
   normalizeWindowLabel,
   parsePaneNumber,
 } from './pane-labels.js';
-import type {
-  LeafNode,
-  NavDirection,
-  NavHistoryEntry,
-  PaneManagerSerializedState,
-  PaneStateRecord,
-  PaneTreeNode,
-  PaneType,
-  RawPaneRecord,
-  RawSavedState,
-  SerializablePaneRecord,
-  SplitDirection,
-  SplitNode,
+import {
+  normalizeContentScrollTop,
+  pickCommentaryRestoreScroll,
+  type LeafNode,
+  type NavDirection,
+  type NavHistoryEntry,
+  type PaneManagerSerializedState,
+  type PaneStateRecord,
+  type PaneTreeNode,
+  type PaneType,
+  type RawPaneRecord,
+  type RawSavedState,
+  type SerializablePaneRecord,
+  type SplitDirection,
+  type SplitNode,
 } from './pane-model.js';
 import {
   clampRatio,
@@ -60,6 +62,7 @@ import { Sanitize } from './sanitize.js';
 import { Utils } from './utils.js';
 
 type StateChangeListener = (state: PaneManagerSerializedState) => void;
+type LoadCommentaryOptions = { restoreScroll?: boolean };
 
 export const PaneManager = (() => {
   let tree: PaneTreeNode | null = null;
@@ -205,6 +208,8 @@ export const PaneManager = (() => {
         commentaryBooks: [],
         entries: [],
         syncedToPaneId: initial.syncedToPaneId || null,
+        selectedVerse: Number.isInteger(initial.selectedVerse) ? initial.selectedVerse : null,
+        contentScrollTop: normalizeContentScrollTop(initial.contentScrollTop),
       };
     } else {
       const moduleId = resolveModuleId(initial.moduleId);
@@ -274,6 +279,8 @@ export const PaneManager = (() => {
           commentaryBooks: [],
           entries: [],
           syncedToPaneId: raw.syncedToPaneId || null,
+          selectedVerse: Number.isInteger(raw.selectedVerse) ? raw.selectedVerse : null,
+          contentScrollTop: normalizeContentScrollTop(raw.contentScrollTop),
         };
       } else {
         const moduleId = resolveModuleId(raw.moduleId);
@@ -342,6 +349,13 @@ export const PaneManager = (() => {
       };
       if (pane.paneType === 'commentary') {
         base.syncedToPaneId = pane.syncedToPaneId || null;
+        base.selectedVerse = Number.isInteger(pane.selectedVerse) ? pane.selectedVerse : null;
+        const liveScrollTop = readPaneContentScrollTop(pane.id);
+        const contentLoaded = Array.isArray(pane.entries) && pane.entries.length > 0;
+        base.contentScrollTop =
+          liveScrollTop !== null && contentLoaded
+            ? liveScrollTop
+            : normalizeContentScrollTop(pane.contentScrollTop);
       } else {
         base.selectedVerse = Number.isInteger(pane.selectedVerse) ? pane.selectedVerse : null;
         base.navHistory = Array.isArray(pane.navHistory) ? pane.navHistory : [];
@@ -400,9 +414,11 @@ export const PaneManager = (() => {
           renderCommentaryUnavailable(pane.id);
           markInitialLoaded(pane.id);
         } else if (pane.commentaryBooks.length === 0) {
-          loadCommentaryData(pane.id, pane.selectedVerse || null);
+          loadCommentaryData(pane.id, resolveCommentaryScrollVerse(pane), { restoreScroll: true });
         } else {
-          loadCommentaryChapter(pane.id);
+          loadCommentaryChapter(pane.id, resolveCommentaryScrollVerse(pane), {
+            restoreScroll: true,
+          });
         }
       } else {
         if (pane.books.length === 0 && pane.moduleId) {
@@ -479,7 +495,8 @@ export const PaneManager = (() => {
         pane.moduleId = moduleId;
         pane.commentaryBooks = [];
         pane.entries = [];
-        const selectedVerse = getSelectedVerseFromSyncedBiblePane(pane);
+        pane.contentScrollTop = null;
+        const selectedVerse = resolveCommentaryScrollVerse(pane);
         await loadCommentaryData(paneId, selectedVerse);
         emitStateChange();
       },
@@ -495,7 +512,7 @@ export const PaneManager = (() => {
       onOpenAllCommentaries: () => {
         const p = panes[paneId];
         if (!p || p.paneType !== 'commentary') return;
-        const selectedVerse = getSelectedVerseFromSyncedBiblePane(p);
+        const selectedVerse = resolveCommentaryScrollVerse(p);
         const verse =
           selectedVerse || (p.entries && p.entries.length > 0 ? p.entries[0].verseFrom : 1);
         openAllCommentariesModalUi({
@@ -586,7 +603,15 @@ export const PaneManager = (() => {
 
   // ---- Commentary data loading ----
 
-  function getSelectedVerseFromSyncedBiblePane(commentaryPane: PaneStateRecord | null): number | null {
+  function readPaneContentScrollTop(paneId: string): number | null {
+    const content = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"] .pane-content`);
+    if (!content) return null;
+    return content.scrollTop;
+  }
+
+  function getSelectedVerseFromSyncedBiblePane(
+    commentaryPane: PaneStateRecord | null
+  ): number | null {
     if (
       !commentaryPane ||
       commentaryPane.paneType !== 'commentary' ||
@@ -609,7 +634,61 @@ export const PaneManager = (() => {
     return Number.isFinite(verse) ? verse : null;
   }
 
-  async function loadCommentaryData(paneId: string, scrollToVerse?: number | null): Promise<void> {
+  function getSyncedBibleSelectedVerseFromState(
+    commentaryPane: PaneStateRecord | null
+  ): number | null {
+    if (
+      !commentaryPane ||
+      commentaryPane.paneType !== 'commentary' ||
+      !commentaryPane.syncedToPaneId
+    ) {
+      return null;
+    }
+    const sourcePane = panes[commentaryPane.syncedToPaneId];
+    if (!sourcePane || sourcePane.paneType !== 'bible') return null;
+    return Number.isInteger(sourcePane.selectedVerse) ? sourcePane.selectedVerse : null;
+  }
+
+  function resolveCommentaryScrollVerse(commentaryPane: PaneStateRecord | null): number | null {
+    const fromDom = getSelectedVerseFromSyncedBiblePane(commentaryPane);
+    if (fromDom) return fromDom;
+    if (commentaryPane && Number.isInteger(commentaryPane.selectedVerse)) {
+      return commentaryPane.selectedVerse;
+    }
+    return getSyncedBibleSelectedVerseFromState(commentaryPane);
+  }
+
+  function applyCommentaryScroll(
+    content: HTMLElement,
+    pane: PaneStateRecord,
+    scrollToVerse?: number | null,
+    options?: LoadCommentaryOptions
+  ): void {
+    const action = pickCommentaryRestoreScroll(
+      options?.restoreScroll === true,
+      pane.contentScrollTop,
+      scrollToVerse
+    );
+    if (action.type === 'scrollTop') {
+      content.scrollTop = action.value;
+      pane.contentScrollTop = action.value;
+      return;
+    }
+    if (action.type === 'verse') {
+      CommentaryView.scrollToVerse(content, action.value);
+      pane.selectedVerse = action.value;
+      pane.contentScrollTop = content.scrollTop;
+      return;
+    }
+    content.scrollTop = 0;
+    pane.contentScrollTop = 0;
+  }
+
+  async function loadCommentaryData(
+    paneId: string,
+    scrollToVerse?: number | null,
+    options?: LoadCommentaryOptions
+  ): Promise<void> {
     const pane = panes[paneId];
     try {
       if (!pane || !pane.moduleId) return;
@@ -625,7 +704,7 @@ export const PaneManager = (() => {
         return;
       }
 
-      await loadCommentaryChapter(paneId, scrollToVerse);
+      await loadCommentaryChapter(paneId, scrollToVerse, options);
     } catch (err) {
       console.error('Failed to load commentary data:', err);
       renderCommentaryUnavailable(paneId);
@@ -634,7 +713,11 @@ export const PaneManager = (() => {
     }
   }
 
-  async function loadCommentaryChapter(paneId: string, scrollToVerse?: number | null): Promise<void> {
+  async function loadCommentaryChapter(
+    paneId: string,
+    scrollToVerse?: number | null,
+    options?: LoadCommentaryOptions
+  ): Promise<void> {
     const pane = panes[paneId];
     try {
       if (!pane || !pane.moduleId) return;
@@ -661,11 +744,7 @@ export const PaneManager = (() => {
         pane.bookShortName = I18n.bookName(pane.bookNumber).short;
       }
 
-      if (scrollToVerse) {
-        CommentaryView.scrollToVerse(content, scrollToVerse);
-      } else {
-        content.scrollTop = 0;
-      }
+      applyCommentaryScroll(content, pane, scrollToVerse, options);
     } catch (err) {
       console.error('Failed to load commentary chapter:', err);
       renderCommentaryUnavailable(paneId);
@@ -706,6 +785,7 @@ export const PaneManager = (() => {
     if (pane.bookNumber !== sourcePane.bookNumber || pane.chapter !== sourcePane.chapter) {
       pane.bookNumber = sourcePane.bookNumber;
       pane.chapter = sourcePane.chapter;
+      pane.contentScrollTop = null;
       loadCommentaryChapter(commentaryPaneId, scrollToVerse);
     }
   }
@@ -723,8 +803,12 @@ export const PaneManager = (() => {
     if (panes[paneId]) panes[paneId].selectedVerse = verseNum;
     for (const pane of Object.values(panes)) {
       if (pane.paneType === 'commentary' && pane.syncedToPaneId === paneId) {
+        pane.selectedVerse = verseNum;
         const el = document.querySelector<HTMLElement>(`[data-pane-id="${pane.id}"] .pane-content`);
-        if (el) CommentaryView.scrollToVerse(el, verseNum);
+        if (el) {
+          CommentaryView.scrollToVerse(el, verseNum);
+          pane.contentScrollTop = el.scrollTop;
+        }
       }
     }
   }
@@ -740,8 +824,7 @@ export const PaneManager = (() => {
 
   function refreshQuickBarForPane(paneId: string, barEl?: HTMLElement | null): void {
     const bar =
-      barEl ||
-      document.querySelector<HTMLElement>(`.pane-quick-switch[data-pane-id="${paneId}"]`);
+      barEl || document.querySelector<HTMLElement>(`.pane-quick-switch[data-pane-id="${paneId}"]`);
     if (!bar) return;
     const pane = panes[paneId];
     if (!pane || pane.paneType !== 'bible') return;
@@ -783,7 +866,9 @@ export const PaneManager = (() => {
 
     pushNavHistory(paneId);
     const paneEl = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
-    const selectedLine = paneEl?.querySelector<HTMLElement>('.pane-content .verse-line.verse-selected');
+    const selectedLine = paneEl?.querySelector<HTMLElement>(
+      '.pane-content .verse-line.verse-selected'
+    );
     const selectedVerse = selectedLine ? parseInt(selectedLine.dataset.verse, 10) : null;
 
     pane.moduleId = moduleId;
@@ -869,7 +954,11 @@ export const PaneManager = (() => {
     emitStateChange();
   }
 
-  function attachNavHistoryLongPress(button: HTMLButtonElement, paneId: string, direction: NavDirection): void {
+  function attachNavHistoryLongPress(
+    button: HTMLButtonElement,
+    paneId: string,
+    direction: NavDirection
+  ): void {
     let longPressTimer: ReturnType<typeof setTimeout> | null = null;
     let didOpenMenu = false;
 
@@ -911,7 +1000,11 @@ export const PaneManager = (() => {
     });
   }
 
-  function showNavHistoryMenu(paneId: string, direction: NavDirection, anchorEl: HTMLElement): void {
+  function showNavHistoryMenu(
+    paneId: string,
+    direction: NavDirection,
+    anchorEl: HTMLElement
+  ): void {
     const pane = panes[paneId];
     if (!pane) return;
     showNavHistoryMenuUi({
@@ -1055,9 +1148,15 @@ export const PaneManager = (() => {
   function reloadAllChapters(): void {
     for (const pane of Object.values(panes)) {
       if (pane.paneType === 'commentary') {
-        if (pane.commentaryBooks.length > 0) loadCommentaryChapter(pane.id);
+        const liveScrollTop = readPaneContentScrollTop(pane.id);
+        if (liveScrollTop !== null) pane.contentScrollTop = liveScrollTop;
+        if (pane.commentaryBooks.length > 0) {
+          loadCommentaryChapter(pane.id, resolveCommentaryScrollVerse(pane), {
+            restoreScroll: true,
+          });
+        }
       } else {
-        if (pane.books.length > 0) loadChapter(pane.id);
+        if (pane.books.length > 0) loadChapter(pane.id, pane.selectedVerse || null);
       }
     }
   }

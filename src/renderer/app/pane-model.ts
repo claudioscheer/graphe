@@ -41,6 +41,7 @@ export interface PaneStateRecord {
   commentaryBooks?: number[];
   entries?: CommentaryEntry[];
   syncedToPaneId?: string | null;
+  contentScrollTop?: number | null;
 }
 
 export interface SerializablePaneRecord {
@@ -54,6 +55,7 @@ export interface SerializablePaneRecord {
   selectedVerse?: number | null;
   navHistory?: NavHistoryEntry[];
   navHistoryIdx?: number;
+  contentScrollTop?: number | null;
 }
 
 export interface PaneManagerSerializedState {
@@ -75,6 +77,30 @@ export interface RawPaneRecord {
   navHistory?: NavHistoryEntry[];
   navHistoryIdx?: number;
   syncedToPaneId?: string | null;
+  contentScrollTop?: number | null;
+}
+
+export type CommentaryRestoreScroll =
+  | { type: 'scrollTop'; value: number }
+  | { type: 'verse'; value: number }
+  | { type: 'top' };
+
+export function normalizeContentScrollTop(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+export function pickCommentaryRestoreScroll(
+  restoreScroll: boolean,
+  savedScrollTop: number | null | undefined,
+  scrollToVerse?: number | null
+): CommentaryRestoreScroll {
+  if (restoreScroll && typeof savedScrollTop === 'number' && Number.isFinite(savedScrollTop)) {
+    return { type: 'scrollTop', value: savedScrollTop };
+  }
+  if (typeof scrollToVerse === 'number' && Number.isInteger(scrollToVerse) && scrollToVerse > 0) {
+    return { type: 'verse', value: scrollToVerse };
+  }
+  return { type: 'top' };
 }
 
 export interface RawSavedState {
