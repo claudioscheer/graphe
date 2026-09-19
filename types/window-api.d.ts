@@ -36,7 +36,11 @@ declare global {
       chapter: number,
       allowedModuleIds?: string[]
     ): Promise<CrossReference[]>;
-    getCommentary(moduleId: string, bookNumber: number, chapter: number): Promise<CommentaryEntry[]>;
+    getCommentary(
+      moduleId: string,
+      bookNumber: number,
+      chapter: number
+    ): Promise<CommentaryEntry[]>;
     getCommentaryBooks(moduleId: string): Promise<number[]>;
     getCommentaryCoverage(moduleId: string): Promise<CommentaryCoverage>;
     getModulePath(moduleId: string): Promise<string | null>;
@@ -343,6 +347,7 @@ declare global {
     bookShortName?: string;
     syncedToPaneId?: string | null;
     selectedVerse?: number | null;
+    contentScrollTop?: number | null;
     navHistory?: Array<{
       moduleId: string | null;
       bookNumber: number;

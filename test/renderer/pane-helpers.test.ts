@@ -10,7 +10,13 @@ import {
   normalizeWindowLabel,
   parsePaneNumber,
 } from '../../src/renderer/app/pane-labels.js';
-import type { NavHistoryEntry, PaneStateRecord, PaneTreeNode } from '../../src/renderer/app/pane-model.js';
+import {
+  normalizeContentScrollTop,
+  pickCommentaryRestoreScroll,
+  type NavHistoryEntry,
+  type PaneStateRecord,
+  type PaneTreeNode,
+} from '../../src/renderer/app/pane-model.js';
 import {
   getNavHistoryEntries,
   hasNavBackHistory,
@@ -249,7 +255,9 @@ describe('pane history helpers', () => {
     expect(hasNavForwardHistory(panes['pane-1'])).toBe(false);
     expect(hasNavBackHistory(null)).toBe(false);
     expect(hasNavForwardHistory(null)).toBe(false);
-    expect(getNavHistoryEntries(panes['pane-1'], 'back')).toEqual([{ entry: history[0], index: 0 }]);
+    expect(getNavHistoryEntries(panes['pane-1'], 'back')).toEqual([
+      { entry: history[0], index: 0 },
+    ]);
     expect(getNavHistoryEntries(panes['pane-1'], 'forward')).toEqual([]);
   });
 
@@ -271,6 +279,29 @@ describe('pane history helpers', () => {
       { moduleId: 'kjv', bookNumber: 10, chapter: 3, verse: 4 },
     ]);
     expect(pane.navHistoryIdx).toBe(1);
+  });
+});
+
+describe('commentary scroll restore', () => {
+  it('normalizes saved content scroll offsets', () => {
+    expect(normalizeContentScrollTop(120.5)).toBe(120.5);
+    expect(normalizeContentScrollTop(0)).toBe(0);
+    expect(normalizeContentScrollTop(-1)).toBeNull();
+    expect(normalizeContentScrollTop(undefined)).toBeNull();
+    expect(normalizeContentScrollTop('80')).toBeNull();
+  });
+
+  it('prefers saved scroll when restoring a commentary pane', () => {
+    expect(pickCommentaryRestoreScroll(true, 240, 5)).toEqual({ type: 'scrollTop', value: 240 });
+    expect(pickCommentaryRestoreScroll(true, 0, 5)).toEqual({ type: 'scrollTop', value: 0 });
+    expect(pickCommentaryRestoreScroll(true, null, 5)).toEqual({ type: 'verse', value: 5 });
+    expect(pickCommentaryRestoreScroll(true, undefined, null)).toEqual({ type: 'top' });
+  });
+
+  it('scrolls to the verse or top when not restoring a saved offset', () => {
+    expect(pickCommentaryRestoreScroll(false, 240, 8)).toEqual({ type: 'verse', value: 8 });
+    expect(pickCommentaryRestoreScroll(false, 240, null)).toEqual({ type: 'top' });
+    expect(pickCommentaryRestoreScroll(false, 240, 0)).toEqual({ type: 'top' });
   });
 });
 
