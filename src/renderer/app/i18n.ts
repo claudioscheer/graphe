@@ -615,16 +615,28 @@ export const I18n = (() => {
   function findBookByAbbrev(abbrev: string): number | null {
     const lang = getCurrentLang();
     const names = bookNames[lang] || bookNames.en;
-    const lower = stripDiacritics(abbrev.toLowerCase());
-    // Exact match first (e.g. "jo" → "Jo" João, not "Jó" Job)
+    const lower = abbrev.toLowerCase();
+    const folded = stripDiacritics(lower);
+
+    // Accent decides first: "jó" is Jó, "jo" is João. Stripping both to "jo"
+    // made the earlier book win.
     for (let i = 0; i < names.length; i++) {
-      const s = stripDiacritics(names[i].short.toLowerCase());
-      if (s === lower) return BOOK_NUMBERS[i];
+      if (names[i].short.toLowerCase() === lower) return BOOK_NUMBERS[i];
     }
-    // Then prefix match
+
+    const foldedHits: number[] = [];
     for (let i = 0; i < names.length; i++) {
-      const s = stripDiacritics(names[i].short.toLowerCase());
-      if (s.startsWith(lower)) return BOOK_NUMBERS[i];
+      if (stripDiacritics(names[i].short.toLowerCase()) === folded) foldedHits.push(i);
+    }
+    if (foldedHits.length === 1) return BOOK_NUMBERS[foldedHits[0]];
+    if (foldedHits.length > 1) {
+      // Unaccented query prefers the abbreviation that is already plain ("Jo").
+      const plain = foldedHits.find((i) => names[i].short.toLowerCase() === folded);
+      return BOOK_NUMBERS[plain ?? foldedHits[0]];
+    }
+
+    for (let i = 0; i < names.length; i++) {
+      if (names[i].short.toLowerCase().startsWith(lower)) return BOOK_NUMBERS[i];
     }
     return null;
   }
