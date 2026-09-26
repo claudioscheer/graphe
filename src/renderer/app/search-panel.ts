@@ -553,8 +553,21 @@ export const SearchPanel = (() => {
   function buildPreviewSnippet(text: string, terms: string[], maxChars: number): string {
     const compact = (text || '').replace(/\s+/g, ' ').trim();
     if (!compact) return '';
-    const { start, end } = previewRange(compact, terms, maxChars);
-    let snippet = compact.slice(start, end);
+    if (compact.length <= maxChars) return compact;
+
+    const firstMatch = findFirstMatchIndex(compact, terms);
+    if (firstMatch < 0) return compact.slice(0, maxChars).trimEnd() + '...';
+
+    let start = Math.max(0, firstMatch - Math.floor(maxChars / 2));
+    let end = Math.min(compact.length, start + maxChars);
+    if (end - start < maxChars && start > 0) {
+      start = Math.max(0, end - maxChars);
+    }
+
+    start = moveToWordBoundary(compact, start, -1);
+    end = moveToWordBoundary(compact, end, 1);
+
+    let snippet = compact.slice(start, end).trim();
     if (start > 0) snippet = '...' + snippet;
     if (end < compact.length) snippet = snippet + '...';
     return snippet;

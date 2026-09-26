@@ -311,6 +311,32 @@ describe('SearchPanel', () => {
     expect(previews[0]).not.toContain('palavra0');
     expect(previews[1]?.match(/strongs-tag/g)).toHaveLength(2);
 
+    window.api.searchVerses = vi.fn<WindowApi['searchVerses']>().mockResolvedValue([
+      {
+        moduleId: 'web',
+        bookNumber: 10,
+        chapter: 1,
+        verse: 1,
+        text: 'In the beginning God created the heavens and the earth',
+      },
+      {
+        moduleId: 'web',
+        bookNumber: 10,
+        chapter: 1,
+        verse: 2,
+        text: `${'alpha '.repeat(40)}omega created ${'beta '.repeat(40)}`,
+      },
+    ]);
+    SearchPanel.search('created');
+    await flushPromises();
+    const textPreviews = [...document.querySelectorAll('.search-result-text')].map(
+      (node) => node.textContent ?? ''
+    );
+    expect(textPreviews[0]).toBe('In the beginning God created the heavens and the earth');
+    expect(textPreviews[1]?.startsWith('...')).toBe(true);
+    expect(textPreviews[1]).toContain('created');
+    expect(textPreviews[1]?.endsWith('...')).toBe(true);
+
     window.api.searchVerses = vi.fn<WindowApi['searchVerses']>().mockResolvedValue([]);
     SearchPanel.search('missing');
     await flushPromises();
