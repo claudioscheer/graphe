@@ -1,0 +1,24 @@
+overrides:
+  # @electron/rebuild@3.7.2 (via @electron-forge/core) declares @electron/node-gyp
+  # as a git+https:// URL, which pnpm blocks in subdependencies
+  # (blockExoticSubdeps defaults to true). The git commit is the published
+  # npm version 10.2.0-electron.1, so point the edge at the registry copy.
+  '@electron/rebuild>@electron/node-gyp': '10.2.0-electron.1'
+
+# npm-like flat node_modules: Electron Forge's packager does not handle
+# pnpm's default symlinked layout. (pnpm >= 11 ignores node-linker in
+# .npmrc, so this must be declared here.)
+nodeLinker: hoisted
+
+allowBuilds:
+  # Forge maker-wix helper — prepares its binary at install time
+  '@bitdisaster/exe-icon-extractor': true
+  # Native file watcher — script is a no-op when a prebuilt platform
+  # package exists, only compiles as a fallback
+  '@parcel/watcher': true
+  # Native module — needs node-gyp build against Electron headers
+  better-sqlite3: true
+  # Downloads the Electron binary in its postinstall
+  electron: true
+  # Validates/uses the platform binary from optional @esbuild/* packages
+  esbuild: true

@@ -143,7 +143,9 @@ describe('SearchPanel', () => {
       openInNewWorkspace: true,
     });
 
-    const input = document.querySelector<HTMLInputElement>('.panel-search-input') as HTMLInputElement;
+    const input = document.querySelector<HTMLInputElement>(
+      '.panel-search-input'
+    ) as HTMLInputElement;
     const blur = vi.spyOn(input, 'blur');
     key(input, '', 'Escape');
     expect(blur).toHaveBeenCalled();
@@ -174,7 +176,9 @@ describe('SearchPanel', () => {
     SearchPanel.init(modules, null, document.getElementById('mount'));
     await flushPromises();
 
-    const input = document.querySelector<HTMLInputElement>('.panel-search-input') as HTMLInputElement;
+    const input = document.querySelector<HTMLInputElement>(
+      '.panel-search-input'
+    ) as HTMLInputElement;
     vi.mocked(window.api.searchVerses).mockClear();
 
     input.value = 'faith';
@@ -276,6 +280,63 @@ describe('SearchPanel', () => {
     expect(document.querySelector('.search-result-text')?.innerHTML).toContain('strongs-tag');
     expect(document.querySelector('.search-result-text')?.innerHTML).toContain('<mark>');
 
+    const filler = Array.from(
+      { length: 24 },
+      (_, index) => `palavra${index}<S>${1000 + index}</S>`
+    ).join(' ');
+    window.api.searchVerses = vi.fn<WindowApi['searchVerses']>().mockResolvedValue([
+      {
+        moduleId: 'web',
+        bookNumber: 570,
+        chapter: 4,
+        verse: 8,
+        text: `${filler} virtude<S>703</S>, e se há algum louvor`,
+      },
+      {
+        moduleId: 'web',
+        bookNumber: 680,
+        chapter: 1,
+        verse: 5,
+        text: 'acrescentai à vossa fé<S>4102</S> a virtude<S>703</S>, e à virtude<S>703</S> o conhecimento<S>1108</S>',
+      },
+    ]);
+    SearchPanel.search('strong:G703');
+    await flushPromises();
+    const previews = [...document.querySelectorAll('.search-result-text')].map(
+      (node) => node.innerHTML
+    );
+    expect(previews[0]?.startsWith('...')).toBe(true);
+    expect(previews[0]).toContain('virtude');
+    expect(previews[0]).toContain('strongs-tag');
+    expect(previews[0]).not.toContain('palavra0');
+    expect(previews[1]?.match(/strongs-tag/g)).toHaveLength(2);
+
+    window.api.searchVerses = vi.fn<WindowApi['searchVerses']>().mockResolvedValue([
+      {
+        moduleId: 'web',
+        bookNumber: 10,
+        chapter: 1,
+        verse: 1,
+        text: 'In the beginning God created the heavens and the earth',
+      },
+      {
+        moduleId: 'web',
+        bookNumber: 10,
+        chapter: 1,
+        verse: 2,
+        text: `${'alpha '.repeat(40)}omega created ${'beta '.repeat(40)}`,
+      },
+    ]);
+    SearchPanel.search('created');
+    await flushPromises();
+    const textPreviews = [...document.querySelectorAll('.search-result-text')].map(
+      (node) => node.textContent ?? ''
+    );
+    expect(textPreviews[0]).toBe('In the beginning God created the heavens and the earth');
+    expect(textPreviews[1]?.startsWith('...')).toBe(true);
+    expect(textPreviews[1]).toContain('created');
+    expect(textPreviews[1]?.endsWith('...')).toBe(true);
+
     window.api.searchVerses = vi.fn<WindowApi['searchVerses']>().mockResolvedValue([]);
     SearchPanel.search('missing');
     await flushPromises();
@@ -290,7 +351,9 @@ describe('SearchPanel', () => {
     await flushPromises();
     expect(document.querySelector('.search-panel-status')?.textContent).toBe('search failed');
 
-    window.api.getBooks = vi.fn<WindowApi['getBooks']>().mockRejectedValue(new Error('books failed'));
+    window.api.getBooks = vi
+      .fn<WindowApi['getBooks']>()
+      .mockRejectedValue(new Error('books failed'));
     SearchPanel.setSelectedModule('missing');
     SearchPanel.setSelectedModule(null);
     SearchPanel.setSelectedModule('kjv');
