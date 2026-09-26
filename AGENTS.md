@@ -9,23 +9,24 @@ Graphe is an Electron desktop Bible study app (Windows, Linux, macOS) with split
 ## Commands
 
 ```bash
-npm run dev          # Development (main tsc watch + CSS watch + Vite + Electron)
-npm run build        # build:main + build:renderer
-npm run build:main   # tsc -p tsconfig.main.json → dist/
-npm run build:css    # One-time Tailwind CSS build
-npm run build:renderer # CSS + Vite renderer bundle
-npm run typecheck    # tsc -p tsconfig.json --noEmit  (must stay clean)
-npm run lint:fix     # ESLint auto-fix
-npm run format       # Prettier format
-npm run test         # Vitest (rebuilds better-sqlite3 native module before/after)
-npm run make         # Build distributable installers
+pnpm install         # Install dependencies
+pnpm run dev          # Development (main tsc watch + CSS watch + Vite + Electron)
+pnpm run build        # build:main + build:renderer
+pnpm run build:main   # tsc -p tsconfig.main.json → dist/
+pnpm run build:css    # One-time Tailwind CSS build
+pnpm run build:renderer # CSS + Vite renderer bundle
+pnpm run typecheck    # tsc -p tsconfig.json --noEmit  (must stay clean)
+pnpm run lint:fix     # ESLint auto-fix
+pnpm run format       # Prettier format
+pnpm test             # Vitest (rebuilds better-sqlite3 native module before/after)
+pnpm run make         # Build distributable installers
 ```
 
 After non-trivial edits, run at least:
 
-1. `npm run typecheck`
-2. `npm test` (or the narrow Vitest path for the area you touched)
-3. `npm run lint:fix` then `npm run format` when you changed many files — do not hand-format against Prettier/ESLint
+1. `pnpm run typecheck`
+2. `pnpm test` (or the narrow Vitest path for the area you touched)
+3. `pnpm run lint:fix` then `pnpm run format` when you changed many files — do not hand-format against Prettier/ESLint
 
 ## Architecture
 
@@ -58,23 +59,23 @@ Never expose Node APIs to the renderer outside `window.api`.
 
 Entry: `main.ts` → `app.ts` (bootstrap). Vite bundles the renderer.
 
-| Module | Role |
-|--------|------|
-| `app.ts` | Bootstrap, workbench wiring |
-| `settings-dialog.ts` / `about-dialog.ts` / `convert-modal.ts` / `cross-ref-preview.ts` | Dialogs |
-| `content-interactions.ts` | Clicks, keyboard, Strong's / cross-ref navigation |
-| `pane-manager.ts` | Pane tree state, load/navigate orchestration |
-| `pane-chrome-bible.ts` / `pane-chrome-commentary.ts` | Pane shell DOM |
-| `pane-tree.ts` / `pane-model.ts` / `pane-history.ts` / `pane-labels.ts` | Pure pane helpers |
-| `commentary-modals.ts` | All-commentaries + coverage modals |
-| `bible-view.ts` / `commentary-view.ts` | Chapter / commentary rendering |
-| `search-panel.ts` / `dict-panel.ts` | Sidebars |
-| `dict-link-binding.ts` | Dictionary content link binding |
-| `bible-ref.ts` / `book-ids.ts` | Shared bible ref parsing and book IDs |
-| `module-picker.ts` | Searchable module dropdown (`ModulePickerInstance` exported) |
-| `i18n.ts` | PT/EN/ES strings + book names |
-| `app-state-store.ts` | Debounced persisted UI state |
-| `workbench-shell.ts` / `workspace-manager.ts` | Shell chrome and workspaces |
+| Module                                                                                 | Role                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `app.ts`                                                                               | Bootstrap, workbench wiring                                  |
+| `settings-dialog.ts` / `about-dialog.ts` / `convert-modal.ts` / `cross-ref-preview.ts` | Dialogs                                                      |
+| `content-interactions.ts`                                                              | Clicks, keyboard, Strong's / cross-ref navigation            |
+| `pane-manager.ts`                                                                      | Pane tree state, load/navigate orchestration                 |
+| `pane-chrome-bible.ts` / `pane-chrome-commentary.ts`                                   | Pane shell DOM                                               |
+| `pane-tree.ts` / `pane-model.ts` / `pane-history.ts` / `pane-labels.ts`                | Pure pane helpers                                            |
+| `commentary-modals.ts`                                                                 | All-commentaries + coverage modals                           |
+| `bible-view.ts` / `commentary-view.ts`                                                 | Chapter / commentary rendering                               |
+| `search-panel.ts` / `dict-panel.ts`                                                    | Sidebars                                                     |
+| `dict-link-binding.ts`                                                                 | Dictionary content link binding                              |
+| `bible-ref.ts` / `book-ids.ts`                                                         | Shared bible ref parsing and book IDs                        |
+| `module-picker.ts`                                                                     | Searchable module dropdown (`ModulePickerInstance` exported) |
+| `i18n.ts`                                                                              | PT/EN/ES strings + book names                                |
+| `app-state-store.ts`                                                                   | Debounced persisted UI state                                 |
+| `workbench-shell.ts` / `workspace-manager.ts`                                          | Shell chrome and workspaces                                  |
 
 ### Code Pattern
 
@@ -106,18 +107,18 @@ The project is TypeScript-only under `src/` and `test/` (except the CJS Vitest r
 2. **No `any` unless forced by a third-party boundary.** Prefer concrete interfaces, `unknown` + narrowing, or typed row shapes for SQLite `.get()` / `.all()` results (`as SomeRow` after you define `SomeRow`).
 3. **Annotate public surface.** Exported functions, returned objects from IIFEs, and callback parameters need explicit types when inference is unclear.
 4. **No silent fallbacks that paper over bad types.** If a value can be missing, model that in the type (`T | null`) and handle it; do not cast to silence errors.
-5. **`npm run typecheck` must pass** before you call the work done.
+5. **`pnpm run typecheck` must pass** before you call the work done.
 
 Config reality (`tsconfig.json`): `strict: true`, `noImplicitAny: true`. Note: `strictNullChecks` is currently **false** — still prefer explicit `| null` / optional fields where null is meaningful; do not loosen checks further.
 
 ### Import extensions (autocomplete and checks still work)
 
-| Area | Specifier style | Example |
-|------|-----------------|---------|
-| Renderer (`src/renderer/**`) | Relative imports end in **`.js`** | `from './book-ids.js'` |
-| Main / preload (CJS emit) | Usually **extensionless** | `from './morphology-decoders'` |
-| Tests importing main | Often **`.ts`** (Vitest + require shim) | `from '../src/main/modules/book-map.ts'` |
-| Tests importing renderer | Match renderer: **`.js`** | `from '../../src/renderer/app/pane-tree.js'` |
+| Area                         | Specifier style                         | Example                                      |
+| ---------------------------- | --------------------------------------- | -------------------------------------------- |
+| Renderer (`src/renderer/**`) | Relative imports end in **`.js`**       | `from './book-ids.js'`                       |
+| Main / preload (CJS emit)    | Usually **extensionless**               | `from './morphology-decoders'`               |
+| Tests importing main         | Often **`.ts`** (Vitest + require shim) | `from '../src/main/modules/book-map.ts'`     |
+| Tests importing renderer     | Match renderer: **`.js`**               | `from '../../src/renderer/app/pane-tree.js'` |
 
 The `.js` in a renderer import is the **module specifier**, not a claim that a `.js` source file exists. TypeScript + Vite resolve it to the `.ts` file. IDE go-to-definition, autocomplete, and `tsc` all use the `.ts` types.
 
@@ -183,14 +184,14 @@ UI should follow VS Code's design language — restrained, functional, minimal d
 - Tests live under `test/` (main providers/converters) and `test/renderer/` (pure helpers + some UI modules)
 - Prefer unit tests on pure helpers over brittle full-DOM integration unless the bug is interaction-specific
 - Fixtures: `test/support/module-fixtures.ts`
-- Vitest setup: `test/setup/require-ts-resolution.cjs` (keep as CJS; it patches `require` for `.ts`)
+- Vitest setup: `test/setup/require-ts-resolution.cjs` (keep as CJS; it patches `require` for `.ts`) and `test/setup/web-storage.ts` (in-memory `localStorage` for Node ≥ 25, whose inert experimental global shadows jsdom's)
 - When changing providers/converters/ref parsers, extend existing tests rather than only manual Electron checks
 - Renderer tests often need `/** @vitest-environment jsdom */` or the `test/renderer/**` jsdom glob
 
 ## Formatting and Lint
 
 - Prettier and ESLint own formatting. Do not restate style nits in comments or commit messages.
-- Run `npm run lint:fix` and `npm run format` after large edits; verify the tools actually succeeded (wrappers can exit 0 while reporting issues — read the output).
+- Run `pnpm run lint:fix` and `pnpm run format` after large edits; verify the tools actually succeeded (wrappers can exit 0 while reporting issues — read the output).
 
 ## Git / Commits
 

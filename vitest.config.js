@@ -26,8 +26,26 @@ export default defineConfig({
   plugins: [resolveTypescriptRelativeImports()],
   test: {
     globals: false,
-    setupFiles: ['test/setup/require-ts-resolution.cjs'],
-    environmentMatchGlobs: [['test/renderer/**/*.test.ts', 'jsdom']],
+    // vitest 4 removed `environmentMatchGlobs`; route environments via projects.
+    projects: [
+      {
+        test: {
+          name: 'main',
+          environment: 'node',
+          include: ['test/**/*.test.ts'],
+          exclude: ['test/renderer/**'],
+          setupFiles: ['test/setup/require-ts-resolution.cjs', 'test/setup/web-storage.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'renderer',
+          environment: 'jsdom',
+          include: ['test/renderer/**/*.test.ts'],
+          setupFiles: ['test/setup/require-ts-resolution.cjs', 'test/setup/web-storage.ts'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
@@ -39,12 +57,7 @@ export default defineConfig({
         'src/renderer/app/utils.ts',
         'src/renderer/app/verse-utils.ts',
       ],
-      exclude: [
-        'src/renderer/app/main.ts',
-        '**/*.d.ts',
-        '**/dist/**',
-        '**/node_modules/**',
-      ],
+      exclude: ['src/renderer/app/main.ts', '**/*.d.ts', '**/dist/**', '**/node_modules/**'],
       thresholds: {
         statements: 100,
         branches: 100,
