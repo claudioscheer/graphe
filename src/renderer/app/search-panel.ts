@@ -323,16 +323,18 @@ export const SearchPanel = (() => {
     preview.className = 'search-result-text';
 
     if (strongTerms.length > 0) {
-      // For Strong's searches: render with inline Strong's numbers
+      // Render from the Strong's HTML. cleanText() inserts spaces where <S> tags
+      // were, so a window taken from that string does not line up with this HTML
+      // and the fallback clip hides hits past the first preview width.
       const richHtml = VerseUtils.cleanTextWithStrongs(row.text, strongTerms);
-      // Extract matched words for snippet centering
+      const plainFromRich = htmlPlainText(richHtml);
       const matchedWords = extractMatchedWords(row.text, strongTerms);
-      const allTerms = terms.concat(matchedWords);
-      const plainText = VerseUtils.cleanText(row.text);
-      const snippet = buildPreviewSnippet(plainText, allTerms, PREVIEW_MAX_CHARS);
-      // Build the rich snippet: take the snippet range from clean text and apply Strong's rendering
-      const richSnippet = buildRichSnippet(richHtml, snippet, PREVIEW_MAX_CHARS);
-      // richSnippet already contains trusted HTML (<mark>, <sup>), so highlight text terms in-place
+      const markAnchors = extractMarkAnchors(richHtml);
+      const allTerms = terms.concat(markAnchors.length > 0 ? markAnchors : matchedWords);
+      const range = previewRange(plainFromRich, allTerms, PREVIEW_MAX_CHARS);
+      let richSnippet = sliceRichHtml(richHtml, range.start, range.end);
+      if (range.start > 0) richSnippet = '...' + richSnippet;
+      if (range.end < plainFromRich.length) richSnippet += '...';
       preview.innerHTML = highlightRichText(richSnippet, terms);
     } else {
       preview.innerHTML = highlightText(
@@ -379,35 +381,62 @@ export const SearchPanel = (() => {
     return words;
   }
 
-  function buildRichSnippet(richHtml: string, snippet: string, maxChars: number): string {
-    // The richHtml contains <mark> and <sup> tags from cleanTextWithStrongs.
-    // We need to produce a clipped version that preserves those tags.
-    // Strategy: strip tags from richHtml to get plain text, find snippet range, then slice with tags.
-
-    const plainFromRich = richHtml
-      .replace(/<[^>]+>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const cleanSnippet = snippet
-      .replace(/^\.\.\./, '')
-      .replace(/\.\.\.$/, '')
-      .trim();
-
-    if (!cleanSnippet) return snippet;
-
-    // Find where the snippet starts in the plain text
-    const idx = plainFromRich.toLowerCase().indexOf(cleanSnippet.toLowerCase().slice(0, 30));
-    if (idx < 0) {
-      // Fallback: just clip the rich HTML by text length
-      return clipRichHtml(richHtml, maxChars);
+  function extractMarkAnchors(richHtml: string): string[] {
+    const anchors: string[] = [];
+    const regex = /<mark>([\s\S]*?)<\/mark>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(richHtml)) !== null) {
+      const plain = htmlPlainText(match[1]).trim();
+      if (plain) anchors.push(plain);
     }
+    return anchors;
+  }
 
-    // Map plain-text positions to richHtml positions
-    const result = sliceRichHtml(richHtml, idx, idx + cleanSnippet.length);
-    let out = result;
-    if (snippet.startsWith('...')) out = '...' + out;
-    if (snippet.endsWith('...')) out = out + '...';
-    return out;
+  function decodeHtmlEntity(entity: string): string {
+    switch (entity.toLowerCase()) {
+      case '&amp;':
+        return '&';
+      case '&lt;':
+        return '<';
+      case '&gt;':
+        return '>';
+      case '&quot;':
+        return '"';
+      case '&nbsp;':
+        return ' ';
+      default: {
+        const decimal = /^&#(\d+);$/.exec(entity);
+        if (decimal) return String.fromCodePoint(Number(decimal[1]));
+        const hex = /^&#x([0-9a-f]+);$/i.exec(entity);
+        if (hex) return String.fromCodePoint(parseInt(hex[1], 16));
+        return ' ';
+      }
+    }
+  }
+
+  /** Plain text with the same character indexes sliceRichHtml walks. */
+  function htmlPlainText(html: string): string {
+    let plain = '';
+    let i = 0;
+    while (i < html.length) {
+      if (html[i] === '<') {
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+        i = tagEnd + 1;
+        continue;
+      }
+      if (html[i] === '&') {
+        const entEnd = html.indexOf(';', i);
+        if (entEnd > i) {
+          plain += decodeHtmlEntity(html.slice(i, entEnd + 1));
+          i = entEnd + 1;
+          continue;
+        }
+      }
+      plain += html[i];
+      i++;
+    }
+    return plain;
   }
 
   function sliceRichHtml(html: string, startPlain: number, endPlain: number): string {
@@ -473,26 +502,6 @@ export const SearchPanel = (() => {
     return result;
   }
 
-  function clipRichHtml(html: string, maxChars: number): string {
-    let plainCount = 0;
-    let i = 0;
-    let result = '';
-    while (i < html.length && plainCount < maxChars) {
-      if (html[i] === '<') {
-        const tagEnd = html.indexOf('>', i);
-        if (tagEnd === -1) break;
-        result += html.slice(i, tagEnd + 1);
-        i = tagEnd + 1;
-      } else {
-        result += html[i];
-        plainCount++;
-        i++;
-      }
-    }
-    if (plainCount >= maxChars) result += '...';
-    return result;
-  }
-
   function extractSearchTerms(query: string): string[] {
     const seen = new Set<string>();
     const terms: string[] = [];
@@ -515,24 +524,37 @@ export const SearchPanel = (() => {
     return terms;
   }
 
-  function buildPreviewSnippet(text: string, terms: string[], maxChars: number): string {
-    const compact = (text || '').replace(/\s+/g, ' ').trim();
-    if (!compact) return '';
-    if (compact.length <= maxChars) return compact;
+  function previewRange(
+    text: string,
+    terms: string[],
+    maxChars: number
+  ): { start: number; end: number } {
+    if (!text) return { start: 0, end: 0 };
+    if (text.length <= maxChars) return { start: 0, end: text.length };
 
-    const firstMatch = findFirstMatchIndex(compact, terms);
-    if (firstMatch < 0) return compact.slice(0, maxChars).trimEnd() + '...';
+    const firstMatch = findFirstMatchIndex(text, terms);
+    if (firstMatch < 0) {
+      return { start: 0, end: moveToWordBoundary(text, maxChars, 1) };
+    }
 
     let start = Math.max(0, firstMatch - Math.floor(maxChars / 2));
-    let end = Math.min(compact.length, start + maxChars);
+    let end = Math.min(text.length, start + maxChars);
     if (end - start < maxChars && start > 0) {
       start = Math.max(0, end - maxChars);
     }
 
-    start = moveToWordBoundary(compact, start, -1);
-    end = moveToWordBoundary(compact, end, 1);
+    start = moveToWordBoundary(text, start, -1);
+    end = moveToWordBoundary(text, end, 1);
+    while (start < end && /\s/.test(text[start])) start++;
+    while (end > start && /\s/.test(text[end - 1])) end--;
+    return { start, end };
+  }
 
-    let snippet = compact.slice(start, end).trim();
+  function buildPreviewSnippet(text: string, terms: string[], maxChars: number): string {
+    const compact = (text || '').replace(/\s+/g, ' ').trim();
+    if (!compact) return '';
+    const { start, end } = previewRange(compact, terms, maxChars);
+    let snippet = compact.slice(start, end);
     if (start > 0) snippet = '...' + snippet;
     if (end < compact.length) snippet = snippet + '...';
     return snippet;
