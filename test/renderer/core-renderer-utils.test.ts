@@ -74,9 +74,9 @@ describe('renderer utility helpers', () => {
     );
     expect(VerseUtils.cleanText(null)).toBe('');
     expect(VerseUtils.cleanTextWithStrongs(null, [])).toBe('');
-    expect(VerseUtils.cleanTextWithStrongs('Word<S>G3056</S>', [{ prefix: 'H', number: '430' }])).toBe(
-      'Word'
-    );
+    expect(
+      VerseUtils.cleanTextWithStrongs('Word<S>G3056</S>', [{ prefix: 'H', number: '430' }])
+    ).toBe('Word');
   });
 
   it('creates lucide icons and rejects missing names', () => {
@@ -102,7 +102,7 @@ describe('I18n', () => {
     expect(I18n.t('missingKey')).toBe('missingKey');
     expect(I18n.bookName(10)).toEqual({ short: 'Gn', long: 'Gênesis' });
     expect(I18n.bookName(999)).toEqual({ short: '999', long: '999' });
-    expect(I18n.findBookByAbbrev('jo')).toBe(220);
+    expect(I18n.bookName(I18n.findBookByAbbrev('jo')!).long).toBe('João');
     expect(I18n.findBookByAbbrev('j')).toBe(60);
     expect(I18n.findBookByAbbrev('zzz')).toBeNull();
 
@@ -114,6 +114,41 @@ describe('I18n', () => {
 
     I18n.setLang('invalid');
     expect(I18n.getCurrentLang()).toBe('pt');
+  });
+
+  it('resolves accented book abbreviations without collapsing Jó into João', () => {
+    const fold = (value: string): string =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+    expect(I18n.bookName(I18n.findBookByAbbrev('JO')!).long).toBe('João');
+    expect(I18n.bookName(I18n.findBookByAbbrev('jó')!).long).toBe('Jó');
+    expect(I18n.bookName(I18n.findBookByAbbrev('Jó')!).long).toBe('Jó');
+    expect(I18n.bookName(I18n.findBookByAbbrev('1Jo')!).long).toBe('1 João');
+    expect(I18n.bookName(I18n.findBookByAbbrev('2jo')!).long).toBe('2 João');
+    expect(I18n.bookName(I18n.findBookByAbbrev('3JO')!).long).toBe('3 João');
+
+    for (const name of I18n._bookNames.pt) {
+      if (fold(name.short) === name.short.toLowerCase()) continue;
+      expect(I18n.bookName(I18n.findBookByAbbrev(name.short)!).long).toBe(name.long);
+      const plainOwner = I18n._bookNames.pt.find(
+        (other) => other.short.toLowerCase() === fold(name.short)
+      );
+      expect(I18n.bookName(I18n.findBookByAbbrev(fold(name.short))!).long).toBe(
+        (plainOwner ?? name).long
+      );
+    }
+
+    I18n.setLang('es');
+    for (const name of I18n._bookNames.es) {
+      if (fold(name.short) === name.short.toLowerCase()) continue;
+      expect(I18n.bookName(I18n.findBookByAbbrev(name.short)!).long).toBe(name.long);
+      expect(I18n.bookName(I18n.findBookByAbbrev(fold(name.short))!).long).toBe(name.long);
+    }
+    expect(I18n.bookName(I18n.findBookByAbbrev('job')!).long).toBe('Job');
+    expect(I18n.bookName(I18n.findBookByAbbrev('jn')!).long).toBe('Juan');
   });
 
   it('updates text, placeholder, and title attributes in the DOM', () => {
