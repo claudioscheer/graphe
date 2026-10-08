@@ -1,0 +1,980 @@
+//! Study session. The window calls these functions; tests call the same ones.
+
+use graphe_domain::i18n;
+#[cfg(test)]
+use graphe_domain::model::BookRecord;
+use graphe_domain::model::{NavHistoryEntry, PaneNode, PaneRecord, PaneType};
+#[cfg(test)]
+use graphe_domain::navigation::NavigationSession;
+use graphe_domain::panes::{self, allocate_pane_label};
+use graphe_domain::search::SearchHit;
+use graphe_domain::shortcuts::{self, ShortcutAction};
+use graphe_domain::workspace::{WorkspaceLocation, WorkspaceManager};
+use indexmap::IndexMap;
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dialog {
+    None,
+    Navigation,
+    Settings,
+    About,
+    Convert,
+    ModuleEditor,
+    Preview,
+    AllCommentaries,
+    Picker,
+}
+
+pub struct Session {
+    pub panes: IndexMap<String, PaneRecord>,
+    pub tree: PaneNode,
+    pub active_pane_id: String,
+    pub link_target: Option<String>,
+    pub sidebar: String,
+    pub sidebar_collapsed: bool,
+    pub dark: bool,
+    pub font_size: f32,
+    pub dialog: Dialog,
+    pub query: String,
+    pub hits: Vec<SearchHit>,
+    pub selected_verses: Vec<i64>,
+    pub chapter_text: Vec<(i64, String)>,
+    pub workspaces: WorkspaceManager,
+    pub next_pane: i64,
+    pub status: String,
+    pub pending_copy: Option<String>,
+    pub preview_pinned: bool,
+    pub show_strongs: bool,
+    pub nav_input: String,
+    pub preview_body: String,
+    pub commentary_overview: String,
+    pub dict_query: String,
+    pub dict_body: String,
+    pub dict_topics: Vec<String>,
+    pub dict_history: Vec<String>,
+    pub dict_cognates: Vec<String>,
+    pub xref_modules: Vec<String>,
+    pub strongs_dicts: Vec<String>,
+    pub search_module_id: Option<String>,
+    pub dict_module_id: Option<String>,
+    pub dict_cache: BTreeMap<String, String>,
+    pub restore_panels: bool,
+}
+
+impl Session {
+    pub fn new() -> Self {
+        i18n::reset_lang();
+        let mut workspaces = WorkspaceManager::new();
+        workspaces.init(None, None);
+        let mut panes = IndexMap::new();
+        panes.insert("pane-1".into(), bible_pane("pane-1", "A"));
+        Self {
+            panes,
+            tree: PaneNode::Leaf {
+                pane_id: "pane-1".into(),
+            },
+            active_pane_id: "pane-1".into(),
+            link_target: None,
+            sidebar: "search".into(),
+            sidebar_collapsed: false,
+            dark: false,
+            font_size: 20.0,
+            dialog: Dialog::None,
+            query: String::new(),
+            hits: Vec::new(),
+            selected_verses: Vec::new(),
+            chapter_text: Vec::new(),
+            workspaces,
+            next_pane: 1,
+            status: String::new(),
+            pending_copy: None,
+            preview_pinned: false,
+            show_strongs: true,
+            nav_input: String::new(),
+            preview_body: String::new(),
+            commentary_overview: String::new(),
+            dict_query: String::new(),
+            dict_body: String::new(),
+            dict_topics: Vec::new(),
+            dict_history: Vec::new(),
+            dict_cognates: Vec::new(),
+            xref_modules: Vec::new(),
+            strongs_dicts: Vec::new(),
+            search_module_id: None,
+            dict_module_id: None,
+            dict_cache: BTreeMap::new(),
+            restore_panels: false,
+        }
+    }
+
+    pub fn from_state(state: &Value) -> Self {
+        let mut session = Self::new();
+        let workspaces = state.get("workspaces").filter(|value| !value.is_null());
+        let legacy = state
+            .get("paneManager")
+            .filter(|value| value.is_object())
+            .cloned();
+        if workspaces.is_some() || legacy.is_some() {
+            session.workspaces.init(workspaces, legacy);
+        }
+        if let Some(pane) = session.workspaces.get_active_pane_state() {
+            session.restore_layout(&pane);
+        }
+        if let Some(settings) = state.get("settings") {
+            session.dark = settings.get("theme").and_then(|value| value.as_str()) == Some("dark");
+            if let Some(size) = settings.get("fontSize").and_then(|value| value.as_f64()) {
+                session.font_size = size as f32;
+            }
+            session.preview_pinned = settings
+                .get("openPinnedRefsInModal")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            session.show_strongs = settings
+                .get("showStrongs")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
+            session.strongs_dicts = string_list(settings.get("strongsDicts"));
+            session.xref_modules = string_list(settings.get("crossRefModules"));
+            if let Some(lang) = settings.get("language").and_then(|value| value.as_str()) {
+                i18n::set_lang(lang);
+            }
+        }
+        if let Some(view) = state
+            .pointer("/workbench/activeView")
+            .and_then(|value| value.as_str())
+        {
+            session.focus_sidebar(view);
+        }
+        if let Some(search) = state.get("searchPanel").filter(|value| value.is_object()) {
+            if let Some(query) = search.get("query").and_then(|value| value.as_str()) {
+                session.query = query.to_string();
+            }
+            session.search_module_id = search
+                .get("moduleId")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+        }
+        if let Some(dict) = state.get("dictPanel").filter(|value| value.is_object()) {
+            session.dict_module_id = dict
+                .get("selectedModuleId")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            if let Some(cache) = dict
+                .get("moduleSearchCache")
+                .and_then(|value| value.as_object())
+            {
+                for (module_id, topic) in cache {
+                    if let Some(topic) = topic.as_str().filter(|topic| !topic.trim().is_empty()) {
+                        session
+                            .dict_cache
+                            .insert(module_id.clone(), topic.to_string());
+                    }
+                }
+            }
+            if let Some(module_id) = session.dict_module_id.clone() {
+                if let Some(topic) = session.dict_cache.get(&module_id) {
+                    session.dict_query = topic.clone();
+                }
+            }
+        }
+        session.restore_panels = !session.query.is_empty() || !session.dict_query.is_empty();
+        session
+    }
+
+    #[cfg(test)]
+    pub fn sidebar_views(&self) -> [&'static str; 3] {
+        graphe_domain::SIDEBAR_VIEWS
+    }
+
+    pub fn show_chapter(&mut self, verses: Vec<(i64, String)>) {
+        self.chapter_text = verses;
+        self.selected_verses.clear();
+    }
+
+    pub fn navigate(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
+        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
+            return;
+        };
+        pane.book_number = book;
+        pane.chapter = chapter;
+        pane.selected_verse = verse;
+        panes::push_nav_history_entry(pane);
+        self.dialog = Dialog::None;
+        if let Some(verse) = verse {
+            self.selected_verses = vec![verse];
+        }
+    }
+
+    pub fn split(&mut self, vertical: bool) -> String {
+        self.next_pane += 1;
+        let id = format!("pane-{}", self.next_pane);
+        let label =
+            allocate_pane_label(&self.panes, PaneType::Bible, None).unwrap_or_else(|| "A".into());
+        let mut pane = bible_pane(&id, &label);
+        if let Some(active) = self.panes.get(&self.active_pane_id) {
+            pane.module_id = active.module_id.clone();
+            pane.book_number = active.book_number;
+            pane.chapter = active.chapter;
+        }
+        self.panes.insert(id.clone(), pane);
+        let replacement = PaneNode::Split {
+            direction: if vertical { "v" } else { "h" }.into(),
+            ratio: 0.5,
+            children: Box::new((
+                PaneNode::Leaf {
+                    pane_id: self.active_pane_id.clone(),
+                },
+                PaneNode::Leaf {
+                    pane_id: id.clone(),
+                },
+            )),
+        };
+        self.tree = replace_leaf(&self.tree, &self.active_pane_id, &replacement);
+        self.active_pane_id = id.clone();
+        id
+    }
+
+    pub fn split_commentary(&mut self, vertical: bool) -> String {
+        let synced = self.bible_target(&self.active_pane_id);
+        self.next_pane += 1;
+        let id = format!("pane-{}", self.next_pane);
+        let label = allocate_pane_label(&self.panes, PaneType::Commentary, None)
+            .unwrap_or_else(|| "A".into());
+        let (book_number, chapter) = self
+            .panes
+            .get(&synced)
+            .map(|pane| (pane.book_number, pane.chapter))
+            .unwrap_or((10, 1));
+        self.panes.insert(
+            id.clone(),
+            PaneRecord {
+                id: id.clone(),
+                pane_type: PaneType::Commentary,
+                window_label: Some(label),
+                module_id: None,
+                book_number,
+                chapter,
+                book_short_name: String::new(),
+                selected_verse: None,
+                nav_history: Vec::new(),
+                nav_history_idx: -1,
+                synced_to_pane_id: Some(synced),
+                content_scroll_top: None,
+            },
+        );
+        let anchor = self.active_pane_id.clone();
+        let replacement = PaneNode::Split {
+            direction: if vertical { "v" } else { "h" }.into(),
+            ratio: 0.5,
+            children: Box::new((
+                PaneNode::Leaf { pane_id: anchor },
+                PaneNode::Leaf {
+                    pane_id: id.clone(),
+                },
+            )),
+        };
+        self.tree = replace_leaf(&self.tree, &self.active_pane_id, &replacement);
+        self.active_pane_id = id.clone();
+        id
+    }
+
+    pub fn toggle_pin(&mut self) {
+        if self.link_target.as_deref() == Some(self.active_pane_id.as_str()) {
+            self.link_target = None;
+        } else {
+            self.link_target = Some(self.active_pane_id.clone());
+        }
+    }
+
+    pub fn select_all(&mut self) {
+        self.selected_verses = self.chapter_text.iter().map(|(verse, _)| *verse).collect();
+    }
+
+    pub fn copy_selection(&self) -> String {
+        let pane = self.panes.get(&self.active_pane_id);
+        let book = pane.map(|pane| pane.book_number).unwrap_or(10);
+        let chapter = pane.map(|pane| pane.chapter).unwrap_or(1);
+        let short = pane
+            .map(|pane| pane.book_short_name.trim())
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| i18n::book_name(book).short);
+        self.chapter_text
+            .iter()
+            .filter(|(verse, _)| self.selected_verses.contains(verse))
+            .map(|(verse, text)| {
+                format!(
+                    "[{short} {chapter}:{verse}] {}",
+                    graphe_domain::markup::visible_verse_line(text)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    pub fn move_verse(&mut self, delta: i64, extend: bool) {
+        let current = self.selected_verses.last().copied().unwrap_or(0);
+        let verses: Vec<i64> = self.chapter_text.iter().map(|(verse, _)| *verse).collect();
+        if verses.is_empty() {
+            return;
+        }
+        let pos = verses
+            .iter()
+            .position(|verse| *verse == current)
+            .unwrap_or(0);
+        let next_pos = (pos as i64 + delta).clamp(0, verses.len() as i64 - 1) as usize;
+        let next = verses[next_pos];
+        if extend {
+            if !self.selected_verses.contains(&next) {
+                self.selected_verses.push(next);
+            }
+        } else {
+            self.selected_verses = vec![next];
+        }
+    }
+
+    pub fn focus_sidebar(&mut self, view: &str) {
+        self.sidebar = if graphe_domain::SIDEBAR_VIEWS.contains(&view) {
+            view.to_string()
+        } else {
+            "search".into()
+        };
+        self.sidebar_collapsed = false;
+    }
+
+    pub fn open_search_hit_in_new_study(&mut self, hit: &SearchHit) {
+        self.remember_layout();
+        let created = self.workspaces.create_workspace(
+            None,
+            Some(WorkspaceLocation {
+                module_id: self
+                    .panes
+                    .get(&self.active_pane_id)
+                    .and_then(|pane| pane.module_id.clone()),
+                book_number: Some(hit.book_number),
+                chapter: Some(hit.chapter),
+                verse: Some(hit.verse),
+            }),
+        );
+        if let Some(created) = created {
+            self.status = created.name.clone();
+            if let Some(pane) = created.pane_manager.clone() {
+                self.restore_layout(&pane);
+            }
+        }
+        self.navigate(hit.book_number, hit.chapter, Some(hit.verse));
+    }
+
+    #[cfg(test)]
+    pub fn apply_quick_ref(&mut self, raw: &str, books: Vec<BookRecord>) -> bool {
+        let pane_id = self.active_pane_id.clone();
+        let mut nav =
+            NavigationSession::new(|_: &str, _: i64| 1, |_: &str, _: i64, _: i64| vec![1], {
+                let pane_id = pane_id.clone();
+                move |pane: &str| (pane == pane_id).then(|| "module".to_string())
+            });
+        nav.open_for(&pane_id, books);
+        nav.input = raw.to_string();
+        nav.submit_input();
+        let Some(action) = nav.navigations.pop() else {
+            return false;
+        };
+        self.navigate(action.book_number, action.chapter, action.verse);
+        true
+    }
+
+    pub fn cycle_favorite(&mut self, ids: &[String]) -> Option<String> {
+        if ids.is_empty() {
+            return None;
+        }
+        let current = self
+            .panes
+            .get(&self.active_pane_id)
+            .and_then(|pane| pane.module_id.clone());
+        let pos = current
+            .as_ref()
+            .and_then(|id| ids.iter().position(|candidate| candidate == id))
+            .unwrap_or(0);
+        let next = ids[(pos + 1) % ids.len()].clone();
+        if let Some(pane) = self.panes.get_mut(&self.active_pane_id) {
+            pane.module_id = Some(next.clone());
+        }
+        Some(next)
+    }
+
+    pub fn reading_location(&self, pane_id: &str) -> (i64, i64, Option<i64>) {
+        let Some(pane) = self.panes.get(pane_id) else {
+            return (10, 1, None);
+        };
+        if pane.pane_type == PaneType::Commentary {
+            if let Some(source) = pane
+                .synced_to_pane_id
+                .as_ref()
+                .and_then(|id| self.panes.get(id))
+            {
+                return (source.book_number, source.chapter, source.selected_verse);
+            }
+        }
+        (pane.book_number, pane.chapter, pane.selected_verse)
+    }
+
+    pub fn layout_value(&self) -> Value {
+        let mut panes = serde_json::Map::new();
+        for (id, pane) in &self.panes {
+            panes.insert(
+                id.clone(),
+                serde_json::to_value(pane).unwrap_or(Value::Null),
+            );
+        }
+        json!({
+            "activePaneId": self.active_pane_id,
+            "linkTargetPaneId": self.link_target,
+            "tree": self.tree,
+            "panes": Value::Object(panes),
+        })
+    }
+
+    pub fn restore_layout(&mut self, value: &Value) {
+        let Some(panes_val) = value.get("panes").and_then(|entry| entry.as_object()) else {
+            return;
+        };
+        let mut panes = IndexMap::new();
+        for (id, entry) in panes_val {
+            let mut entry = entry.clone();
+            if let Some(map) = entry.as_object_mut() {
+                map.entry("id").or_insert_with(|| Value::String(id.clone()));
+            }
+            if let Ok(record) = serde_json::from_value::<PaneRecord>(entry) {
+                panes.insert(id.clone(), record);
+            }
+        }
+        if panes.is_empty() {
+            return;
+        }
+        self.panes = panes;
+        if let Some(tree) = value
+            .get("tree")
+            .and_then(|tree| serde_json::from_value(tree.clone()).ok())
+        {
+            self.tree = tree;
+        } else if let Some(id) = self.panes.keys().next() {
+            self.tree = PaneNode::Leaf {
+                pane_id: id.clone(),
+            };
+        }
+        if let Some(id) = value.get("activePaneId").and_then(|item| item.as_str()) {
+            if self.panes.contains_key(id) {
+                self.active_pane_id = id.to_string();
+            }
+        }
+        if !self.panes.contains_key(&self.active_pane_id) {
+            if let Some(id) = self.panes.keys().next() {
+                self.active_pane_id = id.clone();
+            }
+        }
+        self.link_target = value
+            .get("linkTargetPaneId")
+            .and_then(|item| item.as_str())
+            .filter(|id| self.panes.contains_key(*id))
+            .map(|id| id.to_string());
+        self.next_pane = self
+            .panes
+            .keys()
+            .filter_map(|id| id.strip_prefix("pane-")?.parse::<i64>().ok())
+            .max()
+            .unwrap_or(1);
+    }
+
+    pub fn remember_layout(&mut self) {
+        self.workspaces
+            .update_active_pane_state(Some(self.layout_value()));
+    }
+
+    pub fn open_workspace(&mut self, id: &str) -> bool {
+        let current = self.layout_value();
+        let Some(item) = self.workspaces.activate_workspace(id, Some(current)) else {
+            return false;
+        };
+        if let Some(pane) = item.pane_manager {
+            self.restore_layout(&pane);
+        }
+        true
+    }
+
+    pub fn new_workspace(&mut self) -> Option<String> {
+        self.remember_layout();
+        let location = self
+            .panes
+            .get(&self.active_pane_id)
+            .map(|pane| WorkspaceLocation {
+                module_id: pane.module_id.clone(),
+                book_number: Some(pane.book_number),
+                chapter: Some(pane.chapter),
+                verse: pane.selected_verse,
+            });
+        let created = self.workspaces.create_workspace(None, location)?;
+        if let Some(pane) = created.pane_manager.clone() {
+            self.restore_layout(&pane);
+        }
+        Some(created.id)
+    }
+
+    pub fn close_active_workspace(&mut self) -> bool {
+        let Some(id) = self
+            .workspaces
+            .get_state()
+            .map(|state| state.active_workspace_id)
+        else {
+            return false;
+        };
+        let current = self.layout_value();
+        if !self.workspaces.close_workspace(&id, Some(current)) {
+            return false;
+        }
+        if let Some(pane) = self.workspaces.get_active_pane_state() {
+            self.restore_layout(&pane);
+        }
+        true
+    }
+
+    pub fn bible_target(&self, pane_id: &str) -> String {
+        let Some(pane) = self.panes.get(pane_id) else {
+            return pane_id.to_string();
+        };
+        if pane.pane_type == PaneType::Commentary {
+            if let Some(source) = &pane.synced_to_pane_id {
+                if self.panes.contains_key(source) {
+                    return source.clone();
+                }
+            }
+        }
+        pane_id.to_string()
+    }
+
+    pub fn navigation_target(&self, source_pane: &str) -> String {
+        if let Some(id) = &self.link_target {
+            if self
+                .panes
+                .get(id)
+                .is_some_and(|pane| pane.pane_type == PaneType::Bible)
+            {
+                return id.clone();
+            }
+        }
+        let bible = self.bible_target(source_pane);
+        if self
+            .panes
+            .get(&bible)
+            .is_some_and(|pane| pane.pane_type == PaneType::Bible)
+        {
+            return bible;
+        }
+        self.panes
+            .iter()
+            .find(|(_, pane)| pane.pane_type == PaneType::Bible)
+            .map(|(id, _)| id.clone())
+            .unwrap_or_else(|| source_pane.to_string())
+    }
+
+    /// Cross-references and search hits open in the pinned bible pane.
+    /// The preview modal is only for a reference clicked inside that pinned pane.
+    pub fn follow_link(
+        &mut self,
+        source_pane: &str,
+        book: i64,
+        chapter: i64,
+        verse: Option<i64>,
+    ) -> bool {
+        let target = self.navigation_target(source_pane);
+        let clicked_pin = self.link_target.as_deref() == Some(source_pane);
+        let target_is_pin = self.link_target.as_deref() == Some(target.as_str());
+        if self.preview_pinned && clicked_pin && target_is_pin {
+            return true;
+        }
+        self.active_pane_id = target;
+        self.navigate(book, chapter, verse);
+        false
+    }
+
+    pub fn close_pane(&mut self, pane_id: &str) -> bool {
+        if self.panes.len() <= 1 {
+            return false;
+        }
+        let Some(tree) = remove_leaf(&self.tree, pane_id) else {
+            return false;
+        };
+        self.tree = tree;
+        self.panes.shift_remove(pane_id);
+        if self.link_target.as_deref() == Some(pane_id) {
+            self.link_target = None;
+        }
+        if !self.panes.contains_key(&self.active_pane_id) {
+            let id = graphe_domain::panes::get_first_leaf_id(&self.tree);
+            if self.panes.contains_key(&id) {
+                self.active_pane_id = id;
+            }
+        }
+        true
+    }
+
+    pub fn handle_shortcut_input(
+        &mut self,
+        key: &str,
+        primary: bool,
+        shift: bool,
+        text_focused: bool,
+    ) -> Option<ShortcutAction> {
+        let action = shortcuts::match_shortcut(key, primary, shift)?;
+        if (text_focused || self.dialog != Dialog::None)
+            && shortcuts::suppressed_when_typing(action)
+        {
+            return None;
+        }
+        self.handle_shortcut(key, primary, shift)
+    }
+
+    pub fn handle_shortcut(
+        &mut self,
+        key: &str,
+        primary: bool,
+        shift: bool,
+    ) -> Option<ShortcutAction> {
+        let action = shortcuts::match_shortcut(key, primary, shift)?;
+        match action {
+            ShortcutAction::FocusSearch => self.focus_sidebar("search"),
+            ShortcutAction::OpenNavigation => self.dialog = Dialog::Navigation,
+            ShortcutAction::OpenSettings => self.dialog = Dialog::Settings,
+            ShortcutAction::OpenModuleEditor => self.dialog = Dialog::ModuleEditor,
+            ShortcutAction::SplitHorizontal => {
+                self.split(false);
+            }
+            ShortcutAction::SplitVertical => {
+                self.split(true);
+            }
+            ShortcutAction::SelectAllVerses => self.select_all(),
+            ShortcutAction::CopyVerses => {
+                let text = self.copy_selection();
+                self.status = text.clone();
+                self.pending_copy = Some(text);
+            }
+            ShortcutAction::VerseUp => self.move_verse(-1, false),
+            ShortcutAction::VerseDown => self.move_verse(1, false),
+            ShortcutAction::ExtendUp => self.move_verse(-1, true),
+            ShortcutAction::ExtendDown => self.move_verse(1, true),
+            ShortcutAction::CloseOverlay => self.dialog = Dialog::None,
+            ShortcutAction::NextPane => self.activate_next_pane(),
+            ShortcutAction::ToggleTranslationPicker | ShortcutAction::CycleFavoriteTranslations => {
+            }
+        }
+        Some(action)
+    }
+
+    fn activate_next_pane(&mut self) {
+        let ids = panes::get_all_leaf_ids(Some(&self.tree));
+        if ids.is_empty() {
+            return;
+        }
+        let pos = ids
+            .iter()
+            .position(|id| id == &self.active_pane_id)
+            .unwrap_or(0);
+        self.active_pane_id = ids[(pos + 1) % ids.len()].clone();
+    }
+
+    pub fn back(&mut self) -> bool {
+        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
+            return false;
+        };
+        if !panes::has_nav_back_history(Some(pane)) {
+            return false;
+        }
+        pane.nav_history_idx -= 1;
+        let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
+        apply_entry(pane, &entry);
+        true
+    }
+
+    pub fn forward(&mut self) -> bool {
+        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
+            return false;
+        };
+        if !panes::has_nav_forward_history(Some(pane)) {
+            return false;
+        }
+        pane.nav_history_idx += 1;
+        let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
+        apply_entry(pane, &entry);
+        true
+    }
+}
+
+fn apply_entry(pane: &mut PaneRecord, entry: &NavHistoryEntry) {
+    pane.module_id = Some(entry.module_id.clone());
+    pane.book_number = entry.book_number;
+    pane.chapter = entry.chapter;
+    pane.selected_verse = entry.verse;
+}
+
+fn string_list(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(|item| item.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn remove_leaf(node: &PaneNode, pane_id: &str) -> Option<PaneNode> {
+    match node {
+        PaneNode::Leaf { pane_id: id } if id == pane_id => None,
+        PaneNode::Leaf { pane_id } => Some(PaneNode::Leaf {
+            pane_id: pane_id.clone(),
+        }),
+        PaneNode::Split {
+            direction,
+            ratio,
+            children,
+        } => {
+            let left = remove_leaf(&children.0, pane_id);
+            let right = remove_leaf(&children.1, pane_id);
+            match (left, right) {
+                (None, Some(other)) | (Some(other), None) => Some(other),
+                (Some(left), Some(right)) => Some(PaneNode::Split {
+                    direction: direction.clone(),
+                    ratio: *ratio,
+                    children: Box::new((left, right)),
+                }),
+                (None, None) => None,
+            }
+        }
+    }
+}
+
+fn bible_pane(id: &str, label: &str) -> PaneRecord {
+    PaneRecord {
+        id: id.into(),
+        pane_type: PaneType::Bible,
+        window_label: Some(label.into()),
+        module_id: None,
+        book_number: 10,
+        chapter: 1,
+        book_short_name: String::new(),
+        selected_verse: None,
+        nav_history: Vec::new(),
+        nav_history_idx: -1,
+        synced_to_pane_id: None,
+        content_scroll_top: None,
+    }
+}
+
+fn replace_leaf(node: &PaneNode, pane_id: &str, replacement: &PaneNode) -> PaneNode {
+    match node {
+        PaneNode::Leaf { pane_id: id } if id == pane_id => clone_tree(replacement),
+        PaneNode::Leaf { pane_id } => PaneNode::Leaf {
+            pane_id: pane_id.clone(),
+        },
+        PaneNode::Split {
+            direction,
+            ratio,
+            children,
+        } => PaneNode::Split {
+            direction: direction.clone(),
+            ratio: *ratio,
+            children: Box::new((
+                replace_leaf(&children.0, pane_id, replacement),
+                replace_leaf(&children.1, pane_id, replacement),
+            )),
+        },
+    }
+}
+
+fn clone_tree(node: &PaneNode) -> PaneNode {
+    match node {
+        PaneNode::Leaf { pane_id } => PaneNode::Leaf {
+            pane_id: pane_id.clone(),
+        },
+        PaneNode::Split {
+            direction,
+            ratio,
+            children,
+        } => PaneNode::Split {
+            direction: direction.clone(),
+            ratio: *ratio,
+            children: Box::new((clone_tree(&children.0), clone_tree(&children.1))),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn starts_with_one_bible_pane_and_three_sidebar_views() {
+        let session = Session::new();
+        assert_eq!(session.workspaces.get_state().unwrap().items.len(), 1);
+        assert_eq!(session.sidebar_views(), ["search", "dictionary", "modules"]);
+        assert!(matches!(session.tree, PaneNode::Leaf { .. }));
+    }
+
+    #[test]
+    fn splits_navigates_copies_and_opens_a_hit_in_a_new_study() {
+        let mut session = Session::new();
+        session.show_chapter(vec![
+            (1, "In the beginning".into()),
+            (2, "And the earth".into()),
+        ]);
+        session.handle_shortcut("H", true, true);
+        assert!(matches!(session.tree, PaneNode::Split { .. }));
+        assert_eq!(session.panes.len(), 2);
+        session.navigate(10, 1, Some(1));
+        assert!(session.panes[&session.active_pane_id].nav_history.len() >= 1);
+        session.handle_shortcut("A", true, false);
+        assert_eq!(
+            session.copy_selection(),
+            "[Gn 1:1] In the beginning\n[Gn 1:2] And the earth"
+        );
+        session.show_chapter(vec![(1, "<E>Word<e><S>1</S><X>pr=hidden<x>".into())]);
+        session.selected_verses = vec![1];
+        assert_eq!(session.copy_selection(), "[Gn 1:1] Word");
+        assert!(!session.copy_selection().contains("pr="));
+        session.handle_shortcut("F3", false, false);
+        assert_eq!(session.dialog, Dialog::Navigation);
+        session.handle_shortcut("Escape", false, false);
+        assert_eq!(session.dialog, Dialog::None);
+        let before = session.workspaces.get_state().unwrap().items.len();
+        session.open_search_hit_in_new_study(&SearchHit {
+            book_number: 470,
+            chapter: 5,
+            verse: 3,
+            text: "blessed".into(),
+        });
+        assert!(session.workspaces.get_state().unwrap().items.len() > before);
+        assert_eq!(session.panes[&session.active_pane_id].book_number, 470);
+        assert_eq!(
+            session.workspaces.get_state().unwrap().items[0]
+                .pane_manager
+                .is_some(),
+            true
+        );
+    }
+
+    #[test]
+    fn quick_ref_commentary_split_history_and_workspace_switch_use_the_domain() {
+        i18n::reset_lang();
+        let mut session = Session::new();
+        let books = vec![
+            BookRecord {
+                book_number: 10,
+                short_name: Some("Gn".into()),
+                long_name: Some("Gênesis".into()),
+            },
+            BookRecord {
+                book_number: 470,
+                short_name: Some("Mt".into()),
+                long_name: Some("Mateus".into()),
+            },
+        ];
+        assert!(session.apply_quick_ref("Gn 1:3", books.clone()));
+        assert_eq!(session.panes[&session.active_pane_id].book_number, 10);
+        assert_eq!(session.panes[&session.active_pane_id].chapter, 1);
+        assert_eq!(
+            session.panes[&session.active_pane_id].selected_verse,
+            Some(3)
+        );
+        assert!(session.apply_quick_ref("Mt 5", books));
+        assert_eq!(session.panes[&session.active_pane_id].book_number, 470);
+        assert_eq!(session.panes[&session.active_pane_id].chapter, 5);
+        assert_eq!(session.panes[&session.active_pane_id].selected_verse, None);
+        assert!(session.back());
+        assert_eq!(session.panes[&session.active_pane_id].book_number, 10);
+        assert!(session.forward());
+        assert_eq!(session.panes[&session.active_pane_id].book_number, 470);
+        let bible = session.active_pane_id.clone();
+        let commentary = session.split_commentary(false);
+        assert_eq!(session.panes[&commentary].pane_type, PaneType::Commentary);
+        assert_eq!(
+            session.panes[&commentary].synced_to_pane_id.as_deref(),
+            Some(bible.as_str())
+        );
+        assert_eq!(session.reading_location(&commentary).0, 470);
+        let first = session
+            .workspaces
+            .get_state()
+            .unwrap()
+            .active_workspace_id
+            .clone();
+        let second = session.new_workspace().unwrap();
+        assert_ne!(first, second);
+        assert!(session.open_workspace(&first));
+        assert!(session
+            .panes
+            .values()
+            .any(|pane| pane.pane_type == PaneType::Commentary));
+    }
+
+    #[test]
+    fn pinned_pane_receives_refs_and_only_a_click_there_previews() {
+        let mut session = Session::new();
+        let other = session.split(false);
+        session.active_pane_id = "pane-1".into();
+        session.toggle_pin();
+        session.preview_pinned = true;
+        assert!(session.follow_link("pane-1", 470, 5, Some(3)));
+        assert_eq!(session.panes["pane-1"].book_number, 10);
+        assert!(!session.follow_link(&other, 470, 5, Some(3)));
+        assert_eq!(session.panes["pane-1"].book_number, 470);
+        assert_eq!(session.panes["pane-1"].chapter, 5);
+        assert_eq!(session.active_pane_id, "pane-1");
+    }
+
+    #[test]
+    fn typing_and_dialogs_do_not_move_the_verse_selection() {
+        let mut session = Session::new();
+        session.show_chapter(vec![(1, "a".into()), (2, "b".into())]);
+        session.selected_verses = vec![1];
+        assert!(session
+            .handle_shortcut_input("ArrowDown", false, false, true)
+            .is_none());
+        assert_eq!(session.selected_verses, vec![1]);
+        session.dialog = Dialog::Navigation;
+        assert!(session
+            .handle_shortcut_input("A", true, false, false)
+            .is_none());
+        assert_eq!(session.selected_verses, vec![1]);
+        session.dialog = Dialog::None;
+        assert_eq!(
+            session.handle_shortcut_input("ArrowDown", false, false, false),
+            Some(ShortcutAction::VerseDown)
+        );
+        assert_eq!(session.selected_verses, vec![2]);
+    }
+
+    #[test]
+    fn saved_search_and_dictionary_panels_come_back() {
+        let state = json!({
+            "searchPanel": {"moduleId": "kjv", "query": "faith"},
+            "dictPanel": {
+                "selectedModuleId": "strong",
+                "moduleSearchCache": {"strong": "G3056", "empty": "  "}
+            }
+        });
+        let session = Session::from_state(&state);
+        assert_eq!(session.query, "faith");
+        assert_eq!(session.search_module_id.as_deref(), Some("kjv"));
+        assert_eq!(session.dict_module_id.as_deref(), Some("strong"));
+        assert_eq!(session.dict_query, "G3056");
+        assert_eq!(
+            session.dict_cache.get("strong").map(String::as_str),
+            Some("G3056")
+        );
+        assert!(session.restore_panels);
+    }
+}

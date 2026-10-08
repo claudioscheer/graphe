@@ -1,14 +1,4 @@
-node_modules/
-out/
-dist/
-src/renderer/dist.css
+/target/
 data
 tmp
-release-assets
-aur/graphe-bin/src/
-aur/graphe-bin/pkg/
-aur/graphe-bin/*.pkg.tar.*
-aur/graphe-bin/*.zip
-aur/graphe-bin/*.log
 .superpowers
-coverage

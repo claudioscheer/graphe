@@ -8,27 +8,15 @@ Disponível para **Windows**, **Linux** e **macOS**. Gratuito e de código abert
 
 ![Screenshot do Graphe](assets/demo/demo.jpg)
 
-## Download
+## Executar
 
-Baixe a versão mais recente na página de [releases](https://github.com/claudioscheer/graphe/releases/latest).
-
-O app avisa quando há uma versão nova disponível no GitHub.
-
-### Arch Linux
-
-Pacote AUR `graphe-bin` (instala o zip Linux das releases):
+Requer um toolchain Rust recente.
 
 ```bash
-yay -S graphe-bin
-# ou: paru -S graphe-bin
+cargo run -p graphe
 ```
 
-Para instalar a partir deste repositório (sem AUR):
-
-```bash
-cd aur/graphe-bin
-makepkg -si
-```
+O app avisa quando há uma versão nova disponível no GitHub. Problemas e sugestões: [issues](https://github.com/claudioscheer/graphe/issues).
 
 ## Funcionalidades
 
@@ -170,44 +158,21 @@ Permite inspecionar e editar dados do módulo instalado (conforme o tipo):
 
 ## Problemas ou sugestões
 
-Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues) ou use **Help → Report Issue** no app.
+Abra uma issue no [GitHub](https://github.com/claudioscheer/graphe/issues) ou use **Reportar problema** na barra do app.
 
 ## Desenvolvimento
 
-### Pré-requisitos
+Três crates:
 
-- Node.js 20+
-- npm
-
-### Instalação
-
-```bash
-npm install
-```
-
-### Desenvolvimento
+| Crate | Papel |
+| ----- | ----- |
+| `graphe-domain` | Livros, referências, i18n, painéis, busca, morfologia. Sem interface e sem disco. |
+| `graphe-store` | Módulos SQLite, conversão theWord/MySword e `~/.graphe/state.json`. |
+| `graphe` | Janela egui. |
 
 ```bash
-npm run dev
-```
-
-### Testes e checagens
-
-```bash
-npm test
-npm run typecheck
-npm run lint
-npm run format
-```
-
-### Gerar instaladores locais
-
-```bash
-npm run make
-# ou por plataforma:
-npm run make:linux
-npm run make:win
-npm run make:mac
+cargo test
+cargo run -p graphe
 ```
 
 ## Licença
