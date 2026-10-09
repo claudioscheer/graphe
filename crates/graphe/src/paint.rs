@@ -49,6 +49,11 @@ pub(crate) fn color(hex: &str) -> egui::Color32 {
     )
 }
 
+pub(crate) fn color_alpha(hex: &str, alpha: u8) -> egui::Color32 {
+    let opaque = color(hex);
+    egui::Color32::from_rgba_unmultiplied(opaque.r(), opaque.g(), opaque.b(), alpha)
+}
+
 pub(crate) fn canon_books() -> Vec<BookRecord> {
     GRAPHE_BOOK_NUMBERS
         .iter()

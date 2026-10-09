@@ -93,7 +93,7 @@ impl GrapheApp {
             .auto_shrink([false, false])
             .max_height(ui.available_height())
             .show(ui, |ui| {
-                for hit in hits {
+                for (index, hit) in hits.into_iter().enumerate() {
                     let snippet = search_preview_snippet(&hit.text, &terms, 160);
                     let marked = highlight_text(&snippet, &terms);
                     let label = format!(
@@ -102,45 +102,62 @@ impl GrapheApp {
                         hit.chapter,
                         hit.verse
                     );
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
-                        let response = ui.add(
-                            egui::Label::new(
+                    let hit_id = ui.id().with((
+                        "search-hit",
+                        index,
+                        hit.book_number,
+                        hit.chapter,
+                        hit.verse,
+                    ));
+                    let hovered = ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
+                    let fill = if hovered {
+                        paint::color(palette.ui_accent_bg_soft)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
+                    let row = egui::Frame::new()
+                        .fill(fill)
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            paint::color(palette.ui_border_soft),
+                        ))
+                        .inner_margin(egui::Margin::symmetric(8, 6))
+                        .corner_radius(egui::CornerRadius::same(2))
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(
                                 egui::RichText::new(label)
                                     .strong()
                                     .size(13.0)
                                     .color(paint::color(palette.ui_link)),
-                            )
-                            .sense(egui::Sense::click()),
-                        );
-                        if response.clicked() {
-                            let primary =
-                                ui.input(|input| input.modifiers.command || input.modifiers.ctrl);
-                            if primary {
-                                self.session.open_search_hit_in_new_study(&hit);
-                                self.note_workspaces();
-                            } else {
-                                let source = self.session.active_pane_id.clone();
-                                let target = self.session.navigation_target(&source);
-                                self.session.active_pane_id = target;
-                                self.session.navigate(
-                                    hit.book_number,
-                                    hit.chapter,
-                                    Some(hit.verse),
-                                );
-                            }
-                            self.loaded_key.clear();
-                            self.sync_active_chapter();
+                            );
+                            draw_marked(
+                                ui,
+                                &marked,
+                                13.0,
+                                paint::color(palette.ui_text),
+                                paint::color(palette.ui_link),
+                            );
+                        });
+                    let response = ui.interact(row.response.rect, hit_id, egui::Sense::click());
+                    let hovered = response.hovered();
+                    let clicked = response.clicked();
+                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    ui.data_mut(|data| data.insert_temp(hit_id, hovered));
+                    if clicked {
+                        let primary =
+                            ui.input(|input| input.modifiers.command || input.modifiers.ctrl);
+                        if primary {
+                            self.session.open_search_hit_in_new_study(&hit);
+                            self.note_workspaces();
+                        } else {
+                            self.session.open_search_hit(&hit);
                         }
-                        draw_marked(
-                            ui,
-                            &marked,
-                            13.0,
-                            paint::color(palette.ui_text),
-                            paint::color(palette.ui_link),
-                        );
-                    });
-                    ui.separator();
+                        self.loaded_key.clear();
+                        self.sync_active_chapter();
+                    }
+                    ui.add_space(2.0);
                 }
             });
     }

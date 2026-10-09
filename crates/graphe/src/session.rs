@@ -40,6 +40,13 @@ pub struct Session {
     pub query: String,
     pub hits: Vec<SearchHit>,
     pub selected_verses: Vec<i64>,
+    /// Verse that starts a shift-click range. Stays put while shift is held.
+    pub selection_anchor: Option<i64>,
+    /// The next `show_chapter` replaces the selection with the active pane's verse.
+    pub reveal_verse: bool,
+    /// Verse the Bible pane should bring into view, then clear.
+    pub scroll_verse: Option<i64>,
+    pub scroll_center: bool,
     pub chapter_text: Vec<(i64, String)>,
     pub workspaces: WorkspaceManager,
     pub next_pane: i64,
@@ -85,6 +92,10 @@ impl Session {
             query: String::new(),
             hits: Vec::new(),
             selected_verses: Vec::new(),
+            selection_anchor: None,
+            reveal_verse: false,
+            scroll_verse: None,
+            scroll_center: false,
             chapter_text: Vec::new(),
             workspaces,
             next_pane: 1,
@@ -192,7 +203,25 @@ impl Session {
 
     pub fn show_chapter(&mut self, verses: Vec<(i64, String)>) {
         self.chapter_text = verses;
-        self.selected_verses.clear();
+        let present: Vec<i64> = self.chapter_text.iter().map(|(verse, _)| *verse).collect();
+        if self.reveal_verse {
+            self.reveal_verse = false;
+            let verse = self
+                .panes
+                .get(&self.active_pane_id)
+                .and_then(|pane| pane.selected_verse)
+                .filter(|verse| present.contains(verse));
+            self.selected_verses = verse.into_iter().collect();
+            self.selection_anchor = verse;
+            return;
+        }
+        self.selected_verses.retain(|verse| present.contains(verse));
+        if self
+            .selection_anchor
+            .is_some_and(|anchor| !present.contains(&anchor))
+        {
+            self.selection_anchor = self.selected_verses.first().copied();
+        }
     }
 
     pub fn navigate(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
@@ -204,8 +233,71 @@ impl Session {
         pane.selected_verse = verse;
         panes::push_nav_history_entry(pane);
         self.dialog = Dialog::None;
-        if let Some(verse) = verse {
+        self.reveal_selected_verse(verse.is_some());
+    }
+
+    /// Copy the active pane's verse into the visible selection and ask the view to scroll to it.
+    pub fn reveal_selected_verse(&mut self, center: bool) {
+        let verse = self
+            .panes
+            .get(&self.active_pane_id)
+            .and_then(|pane| pane.selected_verse);
+        self.reveal_verse = true;
+        self.scroll_center = center;
+        match verse {
+            Some(verse) => {
+                self.selected_verses = vec![verse];
+                self.selection_anchor = Some(verse);
+                self.scroll_verse = Some(verse);
+            }
+            None => {
+                self.selected_verses.clear();
+                self.selection_anchor = None;
+                self.scroll_verse = None;
+            }
+        }
+    }
+
+    /// Open a search hit in the pinned Bible pane, or the active one.
+    pub fn open_search_hit(&mut self, hit: &SearchHit) {
+        let source = self.active_pane_id.clone();
+        let target = self.navigation_target(&source);
+        self.active_pane_id = target;
+        self.navigate(hit.book_number, hit.chapter, Some(hit.verse));
+    }
+
+    /// Plain click replaces the selection. Shift extends from the anchor. Ctrl or Cmd toggles.
+    pub fn select_verse(&mut self, verse: i64, shift: bool, toggle: bool) {
+        let order: Vec<i64> = self.chapter_text.iter().map(|(item, _)| *item).collect();
+        if !order.contains(&verse) {
+            return;
+        }
+        if shift {
+            let anchor = self
+                .selection_anchor
+                .filter(|anchor| order.contains(anchor))
+                .unwrap_or(verse);
+            if let (Some(from), Some(to)) = (
+                order.iter().position(|item| *item == anchor),
+                order.iter().position(|item| *item == verse),
+            ) {
+                let (start, end) = if from <= to { (from, to) } else { (to, from) };
+                self.selected_verses = order[start..=end].to_vec();
+            }
+        } else if toggle {
+            if let Some(index) = self.selected_verses.iter().position(|item| *item == verse) {
+                self.selected_verses.remove(index);
+            } else {
+                self.selected_verses.push(verse);
+            }
+            self.selection_anchor = Some(verse);
+        } else {
             self.selected_verses = vec![verse];
+            self.selection_anchor = Some(verse);
+        }
+        let target = self.bible_target(&self.active_pane_id);
+        if let Some(pane) = self.panes.get_mut(&target) {
+            pane.selected_verse = self.selected_verses.last().copied();
         }
     }
 
@@ -292,6 +384,7 @@ impl Session {
 
     pub fn select_all(&mut self) {
         self.selected_verses = self.chapter_text.iter().map(|(verse, _)| *verse).collect();
+        self.selection_anchor = self.selected_verses.first().copied();
     }
 
     pub fn copy_selection(&self) -> String {
@@ -334,7 +427,14 @@ impl Session {
             }
         } else {
             self.selected_verses = vec![next];
+            self.selection_anchor = Some(next);
         }
+        let target = self.bible_target(&self.active_pane_id);
+        if let Some(pane) = self.panes.get_mut(&target) {
+            pane.selected_verse = Some(next);
+        }
+        self.scroll_verse = Some(next);
+        self.scroll_center = false;
     }
 
     pub fn focus_sidebar(&mut self, view: &str) {
@@ -686,28 +786,36 @@ impl Session {
     }
 
     pub fn back(&mut self) -> bool {
-        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
-            return false;
+        let center = {
+            let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
+                return false;
+            };
+            if !panes::has_nav_back_history(Some(pane)) {
+                return false;
+            }
+            pane.nav_history_idx -= 1;
+            let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
+            apply_entry(pane, &entry);
+            entry.verse.is_some()
         };
-        if !panes::has_nav_back_history(Some(pane)) {
-            return false;
-        }
-        pane.nav_history_idx -= 1;
-        let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
-        apply_entry(pane, &entry);
+        self.reveal_selected_verse(center);
         true
     }
 
     pub fn forward(&mut self) -> bool {
-        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
-            return false;
+        let center = {
+            let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
+                return false;
+            };
+            if !panes::has_nav_forward_history(Some(pane)) {
+                return false;
+            }
+            pane.nav_history_idx += 1;
+            let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
+            apply_entry(pane, &entry);
+            entry.verse.is_some()
         };
-        if !panes::has_nav_forward_history(Some(pane)) {
-            return false;
-        }
-        pane.nav_history_idx += 1;
-        let entry = pane.nav_history[pane.nav_history_idx as usize].clone();
-        apply_entry(pane, &entry);
+        self.reveal_selected_verse(center);
         true
     }
 }
@@ -976,5 +1084,66 @@ mod tests {
             Some("G3056")
         );
         assert!(session.restore_panels);
+    }
+
+    #[test]
+    fn a_search_hit_selects_the_pinned_verse_after_the_chapter_loads() {
+        let mut session = Session::new();
+        let other = session.split(false);
+        session.active_pane_id = other;
+        session.link_target = Some("pane-1".into());
+        session.open_search_hit(&SearchHit {
+            book_number: 10,
+            chapter: 12,
+            verse: 16,
+            text: "amor".into(),
+        });
+        assert_eq!(session.active_pane_id, "pane-1");
+        assert_eq!(session.panes["pane-1"].book_number, 10);
+        assert_eq!(session.panes["pane-1"].chapter, 12);
+        assert_eq!(session.panes["pane-1"].selected_verse, Some(16));
+        assert_eq!(session.selected_verses, vec![16]);
+        assert_eq!(session.scroll_verse, Some(16));
+        assert!(session.scroll_center);
+        session.show_chapter(vec![
+            (15, "antes".into()),
+            (16, "amor".into()),
+            (17, "depois".into()),
+        ]);
+        assert_eq!(session.selected_verses, vec![16]);
+        assert_eq!(session.scroll_verse, Some(16));
+    }
+
+    #[test]
+    fn shift_click_selects_a_range_and_ctrl_click_toggles() {
+        let mut session = Session::new();
+        session.show_chapter(vec![
+            (1, "a".into()),
+            (2, "b".into()),
+            (3, "c".into()),
+            (4, "d".into()),
+        ]);
+        session.select_verse(2, false, false);
+        session.select_verse(4, true, false);
+        assert_eq!(session.selected_verses, vec![2, 3, 4]);
+        session.select_verse(3, false, true);
+        assert_eq!(session.selected_verses, vec![2, 4]);
+        session.select_verse(3, false, true);
+        assert_eq!(session.selected_verses, vec![2, 4, 3]);
+        session.select_all();
+        assert_eq!(session.selected_verses, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn reloading_the_same_chapter_keeps_a_multi_select() {
+        let mut session = Session::new();
+        session.show_chapter(vec![(1, "a".into()), (2, "b".into())]);
+        session.select_all();
+        session.show_chapter(vec![(1, "a".into()), (2, "b changed".into())]);
+        assert_eq!(session.selected_verses, vec![1, 2]);
+        session.navigate(470, 5, None);
+        session.show_chapter(vec![(1, "x".into()), (2, "y".into())]);
+        assert!(session.selected_verses.is_empty());
+        assert!(session.scroll_verse.is_none());
     }
 }

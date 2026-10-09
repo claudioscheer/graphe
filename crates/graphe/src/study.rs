@@ -36,6 +36,7 @@ impl GrapheApp {
             pane.chapter = (pane.chapter + delta).max(1);
             pane.selected_verse = Some(1);
         }
+        self.session.reveal_selected_verse(true);
         self.loaded_key.clear();
         self.sync_active_chapter();
     }
@@ -212,120 +213,191 @@ impl GrapheApp {
             .auto_shrink([false, false])
             .max_height(ui.available_height())
             .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
                 for (verse, text) in verses {
                     let selected = active_bible && self.session.selected_verses.contains(&verse);
-                    ui.horizontal_wrapped(|ui| {
-                        if ui.button(verse.to_string()).clicked() {
-                            self.session.active_pane_id = pane_id.to_string();
-                            let shift = ui.input(|input| input.modifiers.shift);
-                            if shift {
-                                if !self.session.selected_verses.contains(&verse) {
-                                    self.session.selected_verses.push(verse);
-                                }
-                            } else {
-                                self.session.selected_verses = vec![verse];
-                                if let Some(pane) = self.session.panes.get_mut(pane_id) {
-                                    pane.selected_verse = Some(verse);
-                                }
-                            }
-                        }
-                        let (spans, _) =
-                            markup::verse_spans(&text, self.session.show_strongs, prefix);
-                        for span in spans {
-                            match span {
-                                VerseSpan::Text(body) => {
-                                    ui.label(
-                                        egui::RichText::new(body)
-                                            .size(self.session.font_size)
-                                            .color(paint::color(if selected {
-                                                palette.ui_link
-                                            } else {
-                                                palette.ui_text
-                                            })),
-                                    );
-                                }
-                                VerseSpan::Strong {
-                                    display,
-                                    morph,
-                                    lemma,
-                                } => {
-                                    let mark = egui::RichText::new(display.clone())
-                                        .size(self.session.font_size * 0.55)
-                                        .color(paint::color(palette.ui_text_subtle));
-                                    let response =
-                                        ui.add(egui::Label::new(mark).sense(egui::Sense::click()));
-                                    if response.hovered() {
-                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                                    }
-                                    if response.clicked() {
-                                        self.lookup_dict(&display);
-                                    }
-                                    response.context_menu(|ui| {
-                                        if ui.button(i18n::t("strongsSearchOccurrences")).clicked()
-                                        {
-                                            self.session.query = format!("strong:{display}");
-                                            self.session.focus_sidebar("search");
-                                            self.run_search();
-                                            ui.close();
+                    let fill = if selected {
+                        verse_selected_fill(self.session.dark, palette)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
+                    let mut strong_clicked = false;
+                    let row = egui::Frame::new()
+                        .fill(fill)
+                        .inner_margin(egui::Margin::symmetric(8, 4))
+                        .corner_radius(egui::CornerRadius::same(2))
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                ui.label(
+                                    egui::RichText::new(verse.to_string())
+                                        .strong()
+                                        .size(self.session.font_size * 0.8)
+                                        .color(paint::color(palette.ui_verse_num)),
+                                );
+                                let (spans, _) =
+                                    markup::verse_spans(&text, self.session.show_strongs, prefix);
+                                for span in spans {
+                                    match span {
+                                        VerseSpan::Text(body) => {
+                                            ui.label(
+                                                egui::RichText::new(body)
+                                                    .size(self.session.font_size)
+                                                    .color(paint::color(palette.ui_text)),
+                                            );
                                         }
-                                        if ui.button(i18n::t("strongsDictionaryLookup")).clicked() {
-                                            self.lookup_dict(&display);
-                                            ui.close();
-                                        }
-                                    });
-                                    let mut tip = Vec::new();
-                                    if let Some(lemma) = lemma {
-                                        tip.push(lemma);
-                                    }
-                                    if let Some(code) = &morph {
-                                        if let Some(path) = &module_path {
-                                            let meaning = self.morph_text(path, code);
-                                            if !meaning.is_empty() {
-                                                response
-                                                    .on_hover_text(format!("{code}: {meaning}"));
+                                        VerseSpan::Strong {
+                                            display,
+                                            morph,
+                                            lemma,
+                                        } => {
+                                            let mark = egui::RichText::new(display.clone())
+                                                .size(self.session.font_size * 0.55)
+                                                .color(paint::color(palette.ui_text_subtle));
+                                            let response = ui
+                                                .add(
+                                                    egui::Label::new(mark)
+                                                        .sense(egui::Sense::click()),
+                                                )
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                            if response.clicked() {
+                                                strong_clicked = true;
+                                                let (shift, toggle) = click_modifiers(ui);
+                                                self.select_bible_verse(
+                                                    pane_id,
+                                                    verse,
+                                                    active_bible,
+                                                    shift,
+                                                    toggle,
+                                                );
+                                                self.lookup_dict(&display);
+                                            }
+                                            response.context_menu(|ui| {
+                                                if ui
+                                                    .button(i18n::t("strongsSearchOccurrences"))
+                                                    .clicked()
+                                                {
+                                                    self.session.query =
+                                                        format!("strong:{display}");
+                                                    self.session.focus_sidebar("search");
+                                                    self.run_search();
+                                                    ui.close();
+                                                }
+                                                if ui
+                                                    .button(i18n::t("strongsDictionaryLookup"))
+                                                    .clicked()
+                                                {
+                                                    self.lookup_dict(&display);
+                                                    ui.close();
+                                                }
+                                            });
+                                            let mut tip = Vec::new();
+                                            if let Some(lemma) = lemma {
+                                                tip.push(lemma);
+                                            }
+                                            if let Some(code) = &morph {
+                                                if let Some(path) = &module_path {
+                                                    let meaning = self.morph_text(path, code);
+                                                    if !meaning.is_empty() {
+                                                        response.on_hover_text(format!(
+                                                            "{code}: {meaning}"
+                                                        ));
+                                                    }
+                                                }
                                             }
                                         }
+                                        VerseSpan::Annotation {
+                                            original,
+                                            transliteration,
+                                            pronunciation,
+                                            glosses,
+                                            references,
+                                        } => {
+                                            let mut notes = Vec::new();
+                                            if let Some(value) = original {
+                                                notes.push(value);
+                                            }
+                                            if let Some(value) = transliteration {
+                                                notes.push(value);
+                                            }
+                                            if let Some(value) = pronunciation {
+                                                notes.push(value);
+                                            }
+                                            notes.extend(glosses);
+                                            notes.extend(references);
+                                            if !notes.is_empty() {
+                                                ui.label(
+                                                    egui::RichText::new(notes.join(" · "))
+                                                        .size(self.session.font_size * 0.72)
+                                                        .color(paint::color(palette.ui_text_muted)),
+                                                );
+                                            }
+                                        }
+                                        VerseSpan::Footnote(note) => {
+                                            ui.small(
+                                                egui::RichText::new(note)
+                                                    .color(paint::color(palette.ui_text_muted)),
+                                            );
+                                        }
                                     }
                                 }
-                                VerseSpan::Annotation {
-                                    original,
-                                    transliteration,
-                                    pronunciation,
-                                    glosses,
-                                    references,
-                                } => {
-                                    let mut notes = Vec::new();
-                                    if let Some(value) = original {
-                                        notes.push(value);
-                                    }
-                                    if let Some(value) = transliteration {
-                                        notes.push(value);
-                                    }
-                                    if let Some(value) = pronunciation {
-                                        notes.push(value);
-                                    }
-                                    notes.extend(glosses);
-                                    notes.extend(references);
-                                    if !notes.is_empty() {
-                                        ui.label(
-                                            egui::RichText::new(notes.join(" · "))
-                                                .size(self.session.font_size * 0.72)
-                                                .color(paint::color(palette.ui_text_muted)),
-                                        );
-                                    }
-                                }
-                                VerseSpan::Footnote(note) => {
-                                    ui.small(
-                                        egui::RichText::new(note)
-                                            .color(paint::color(palette.ui_text_muted)),
-                                    );
-                                }
-                            }
-                        }
-                    });
+                            });
+                        });
+                    let rect = row.response.rect;
+                    if ui.rect_contains_pointer(rect) {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    let bar = if selected {
+                        paint::color(if self.session.dark {
+                            palette.ui_link
+                        } else {
+                            palette.ui_link_strong
+                        })
+                    } else if ui.rect_contains_pointer(rect) {
+                        paint::color_alpha(palette.ui_link, 140)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
+                    let marker =
+                        egui::Rect::from_min_size(rect.left_top(), egui::vec2(3.0, rect.height()));
+                    ui.painter().rect_filled(marker, 0.0, bar);
+                    if active_bible && self.session.scroll_verse == Some(verse) {
+                        ui.scroll_to_rect(
+                            rect,
+                            self.session.scroll_center.then_some(egui::Align::Center),
+                        );
+                    }
+                    if !strong_clicked && pointer_clicked(ui, rect) {
+                        let (shift, toggle) = click_modifiers(ui);
+                        self.select_bible_verse(pane_id, verse, active_bible, shift, toggle);
+                    }
                     self.draw_verse_refs(ui, pane_id, &cross_refs, verse, palette);
                 }
+                if active_bible && self.session.scroll_verse.is_some() {
+                    self.session.scroll_verse = None;
+                }
             });
+    }
+
+    fn select_bible_verse(
+        &mut self,
+        pane_id: &str,
+        verse: i64,
+        active_bible: bool,
+        shift: bool,
+        toggle: bool,
+    ) {
+        self.session.active_pane_id = pane_id.to_string();
+        if active_bible {
+            self.session.select_verse(verse, shift, toggle);
+            return;
+        }
+        if let Some(pane) = self.session.panes.get_mut(pane_id) {
+            pane.selected_verse = Some(verse);
+        }
+        self.session.reveal_selected_verse(false);
+        self.loaded_key.clear();
     }
 
     fn chapter_cross_refs(
@@ -635,6 +707,36 @@ impl GrapheApp {
             .map(|result| result.display_text)
             .unwrap_or_default()
     }
+}
+
+fn verse_selected_fill(dark: bool, palette: &UiPalette) -> egui::Color32 {
+    if dark {
+        paint::color_alpha(palette.ui_link_soft, 96)
+    } else {
+        paint::color_alpha(palette.ui_link_strong, 64)
+    }
+}
+
+fn click_modifiers(ui: &egui::Ui) -> (bool, bool) {
+    ui.input(|input| {
+        (
+            input.modifiers.shift,
+            input.modifiers.ctrl || input.modifiers.command,
+        )
+    })
+}
+
+fn pointer_clicked(ui: &egui::Ui, rect: egui::Rect) -> bool {
+    if egui::Popup::is_any_open(ui.ctx()) {
+        return false;
+    }
+    ui.input(|input| {
+        input.pointer.primary_clicked()
+            && input
+                .pointer
+                .interact_pos()
+                .is_some_and(|pos| rect.contains(pos))
+    })
 }
 
 pub(crate) fn choose_module(
