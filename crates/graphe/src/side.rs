@@ -31,8 +31,7 @@ impl GrapheApp {
             .show(ctx, |ui| {
 
                 // Shared by search, dictionary, and modules. 34px, padding 0 8px 0 12px.
-                // Center the glyph box, not the line box: capitals sit low in the line box
-                // because it reserves space for descenders.
+                // Align by font line metrics so all tab titles have identical baseline and cap height.
                 let header_height = 34.0;
                 let (header_rect, _) = ui.allocate_exact_size(
                     egui::vec2(ui.available_width(), header_height),
@@ -51,12 +50,7 @@ impl GrapheApp {
                     f32::INFINITY,
                     egui::FontSelection::default(),
                 );
-                let glyphs = galley.mesh_bounds;
-                let text_y = if glyphs.height() > 0.0 {
-                    header_rect.center().y - glyphs.center().y
-                } else {
-                    header_rect.center().y - galley.rect.height() / 2.0
-                };
+                let text_y = header_rect.center().y - galley.rect.height() / 4.0;
                 ui.painter().galley(
                     egui::pos2(header_rect.left() + 12.0, text_y),
                     galley,
@@ -67,7 +61,7 @@ impl GrapheApp {
                 let toggle_rect = egui::Rect::from_center_size(
                     egui::pos2(
                         header_rect.right() - 8.0 - toggle_size.x / 2.0,
-                        header_rect.center().y,
+                        header_rect.center().y + 2.0,
                     ),
                     toggle_size,
                 );
@@ -962,6 +956,7 @@ fn search_input_box(
                 egui::TextEdit::singleline(query)
                     .frame(false)
                     .margin(egui::Margin::ZERO)
+                    .vertical_align(egui::Align::Center)
                     .hint_text(hint)
                     .font(egui::FontId::proportional(13.0))
                     .text_color(paint::color(palette.ui_text))
@@ -1159,5 +1154,39 @@ fn append_snippet(
                 ..Default::default()
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_header_galley_consistency() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let tabs = ["DICIONÁRIO", "PESQUISAR", "MÓDULOS"];
+                let heights: Vec<f32> = tabs
+                    .iter()
+                    .map(|title| {
+                        let galley = egui::WidgetText::from(
+                            egui::RichText::new(*title)
+                                .size(11.0)
+                                .strong()
+                                .color(egui::Color32::WHITE),
+                        )
+                        .into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::FontSelection::default(),
+                        );
+                        galley.rect.height()
+                    })
+                    .collect();
+
+                assert_eq!(heights[0], heights[1]);
+                assert_eq!(heights[1], heights[2]);
+            });
+        });
     }
 }

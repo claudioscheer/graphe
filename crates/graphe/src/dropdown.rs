@@ -13,6 +13,7 @@ pub struct DropdownItem {
     pub id: String,
     pub name: String,
     pub subtitle: Option<String>,
+    pub tooltip: Option<String>,
 }
 
 /// Unified dropdown component for selecting Bible, commentary, dictionary, and other modules.
@@ -52,10 +53,23 @@ impl<'a> ModuleDropdown<'a> {
                 } else {
                     None
                 };
+                let mut tooltip_lines = vec![m.name.clone()];
+                if let Some(sub) = &subtitle {
+                    if sub != &m.name {
+                        tooltip_lines.push(sub.clone());
+                    }
+                }
+                if let Some(desc) = &m.description {
+                    if desc != &m.name && Some(desc) != subtitle.as_ref() {
+                        tooltip_lines.push(desc.clone());
+                    }
+                }
+                let tooltip = Some(tooltip_lines.join("\n"));
                 DropdownItem {
                     id: m.id.clone(),
                     name: m.name.clone(),
                     subtitle,
+                    tooltip,
                 }
             })
             .collect();
@@ -69,7 +83,7 @@ impl<'a> ModuleDropdown<'a> {
             allow_none: false,
             none_label: "—".into(),
             width: None,
-            min_dropdown_width: 220.0,
+            min_dropdown_width: 240.0,
             truncate_length: 50,
         }
     }
@@ -94,10 +108,23 @@ impl<'a> ModuleDropdown<'a> {
                 } else {
                     None
                 };
+                let mut tooltip_lines = vec![m.name.clone()];
+                if let Some(sub) = &subtitle {
+                    if sub != &m.name {
+                        tooltip_lines.push(sub.clone());
+                    }
+                }
+                if let Some(desc) = &m.description {
+                    if desc != &m.name && Some(desc) != subtitle.as_ref() {
+                        tooltip_lines.push(desc.clone());
+                    }
+                }
+                let tooltip = Some(tooltip_lines.join("\n"));
                 DropdownItem {
                     id: m.id.clone(),
                     name: m.name.clone(),
                     subtitle,
+                    tooltip,
                 }
             })
             .collect();
@@ -111,7 +138,7 @@ impl<'a> ModuleDropdown<'a> {
             allow_none: false,
             none_label: "—".into(),
             width: None,
-            min_dropdown_width: 220.0,
+            min_dropdown_width: 240.0,
             truncate_length: 50,
         }
     }
@@ -235,7 +262,7 @@ impl<'a> ModuleDropdown<'a> {
         }
 
         let mut chosen = None;
-        let popup_width = rect.width().max(self.min_dropdown_width).min(380.0);
+        let popup_width = rect.width().max(self.min_dropdown_width);
 
         let popup_frame = egui::Frame::new()
             .fill(paint::color(palette.ui_surface_elevated))
@@ -304,14 +331,15 @@ impl<'a> ModuleDropdown<'a> {
                 );
 
                 let is_empty = search_query.is_empty();
-                let text_edit_rect = if is_empty {
-                    box_rect.shrink2(egui::vec2(8.0, 3.0))
+                let text_w = if is_empty {
+                    box_rect.width() - 16.0
                 } else {
-                    egui::Rect::from_min_max(
-                        egui::pos2(box_rect.left() + 8.0, box_rect.top() + 3.0),
-                        egui::pos2(box_rect.right() - 24.0, box_rect.bottom() - 3.0),
-                    )
+                    box_rect.width() - 32.0
                 };
+                let text_edit_rect = egui::Rect::from_min_size(
+                    egui::pos2(box_rect.left() + 8.0, box_rect.top()),
+                    egui::vec2(text_w, box_rect.height()),
+                );
 
                 let text_resp = ui.put(
                     text_edit_rect,
@@ -319,6 +347,7 @@ impl<'a> ModuleDropdown<'a> {
                         .hint_text(i18n::t("searchPlaceholder"))
                         .frame(false)
                         .margin(egui::Margin::ZERO)
+                        .vertical_align(egui::Align::Center)
                         .font(egui::FontId::proportional(13.0)),
                 );
 
@@ -371,11 +400,12 @@ impl<'a> ModuleDropdown<'a> {
                 };
 
                 let mut matching_items = Vec::new();
-                if self.allow_none {
+                if self.allow_none && (query.is_empty() || self.none_label.to_lowercase().contains(&query)) {
                     matching_items.push(DropdownItem {
                         id: String::new(),
                         name: self.none_label.clone(),
                         subtitle: None,
+                        tooltip: Some(self.none_label.clone()),
                     });
                 }
 
@@ -427,16 +457,15 @@ impl<'a> ModuleDropdown<'a> {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         if fav_items.is_empty() && non_fav_items.is_empty() {
-                            ui.add_space(10.0);
-                            ui.horizontal(|ui| {
-                                ui.add_space(10.0);
+                            ui.add_space(14.0);
+                            ui.vertical_centered(|ui| {
                                 ui.label(
-                                    egui::RichText::new("—")
-                                        .size(13.0)
+                                    egui::RichText::new(i18n::t("searchNoResults"))
+                                        .size(12.0)
                                         .color(paint::color(palette.ui_text_subtle)),
                                 );
                             });
-                            ui.add_space(10.0);
+                            ui.add_space(14.0);
                             return;
                         }
 
@@ -526,18 +555,75 @@ impl<'a> ModuleDropdown<'a> {
         palette: &UiPalette,
         popup_id: egui::Id,
     ) -> Option<String> {
-        let has_subtitle = item.subtitle.is_some();
-        let row_height = if has_subtitle { 38.0 } else { 28.0 };
-        let (row_rect, row_resp) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), row_height),
-            egui::Sense::click(),
-        );
-
         let is_selected = if item.id.is_empty() {
             self.current_id.is_none()
         } else {
             self.current_id == Some(&item.id)
         };
+
+        let star_width = if self.show_favorites && !item.id.is_empty() {
+            26.0_f32
+        } else {
+            8.0_f32
+        };
+
+        let max_text_width = (ui.available_width() - star_width - 8.0).max(20.0);
+
+        let name_color = if is_selected {
+            paint::color(palette.ui_link_strong)
+        } else {
+            paint::color(palette.ui_text)
+        };
+
+        let mut title_job = egui::text::LayoutJob::simple(
+            item.name.clone(),
+            egui::FontId::proportional(13.0),
+            name_color,
+            max_text_width,
+        );
+        title_job.wrap.max_rows = 1;
+        title_job.wrap.overflow_character = Some('…');
+        title_job.wrap.break_anywhere = true;
+        let title_galley = ui.painter().layout_job(title_job);
+        let is_title_truncated = title_galley.elided;
+
+        let (row_height, sub_layout) = if let Some(subtitle) = &item.subtitle {
+            let sub_color = paint::color(palette.ui_text_subtle);
+            let mut sub_job = egui::text::LayoutJob::simple(
+                subtitle.clone(),
+                egui::FontId::proportional(11.0),
+                sub_color,
+                max_text_width,
+            );
+            sub_job.wrap.max_rows = 2;
+            sub_job.wrap.overflow_character = Some('…');
+            sub_job.wrap.break_anywhere = true;
+            let sub_galley = ui.painter().layout_job(sub_job);
+            let is_sub_truncated = sub_galley.elided;
+            let h = 5.0 + title_galley.size().y + 2.0 + sub_galley.size().y + 5.0;
+            (h.max(38.0), Some((sub_galley, is_sub_truncated)))
+        } else {
+            (28.0_f32, None)
+        };
+
+        let (row_rect, mut row_resp) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), row_height),
+            egui::Sense::click(),
+        );
+
+        let is_sub_truncated = sub_layout.as_ref().map_or(false, |(_, truncated)| *truncated);
+        let has_subtitle = item.subtitle.as_ref().map_or(false, |s| !s.is_empty() && s != &item.name);
+        if is_title_truncated || is_sub_truncated || has_subtitle || item.tooltip.is_some() {
+            let tooltip_text = item.tooltip.clone().unwrap_or_else(|| {
+                if has_subtitle {
+                    let sub = item.subtitle.as_deref().unwrap_or("");
+                    format!("{}\n{}", item.name, sub)
+                } else {
+                    item.name.clone()
+                }
+            });
+            row_resp = row_resp.on_hover_text_at_pointer(tooltip_text);
+        }
 
         // Row background
         let bg_fill = if is_selected {
@@ -559,7 +645,7 @@ impl<'a> ModuleDropdown<'a> {
         }
 
         let mut star_clicked = false;
-        let star_width = if self.show_favorites && !item.id.is_empty() {
+        if self.show_favorites && !item.id.is_empty() {
             let star_center = egui::pos2(row_rect.left() + 14.0, row_rect.center().y);
             let star_box = egui::Rect::from_center_size(star_center, egui::vec2(22.0, 22.0));
 
@@ -585,52 +671,24 @@ impl<'a> ModuleDropdown<'a> {
             };
 
             draw_star(&painter, star_center, 6.5, star_color, is_fav);
-            26.0
-        } else {
-            8.0
-        };
+        }
 
         let text_left = row_rect.left() + star_width;
 
         // Render label text
-        if let Some(subtitle) = &item.subtitle {
-            // Line 1: Name
-            let name_color = if is_selected {
-                paint::color(palette.ui_link_strong)
-            } else {
-                paint::color(palette.ui_text)
-            };
-            let name_galley = painter.layout_no_wrap(
-                item.name.clone(),
-                egui::FontId::proportional(13.0),
-                name_color,
-            );
-            let name_pos = egui::pos2(text_left, row_rect.top() + 4.0);
-            painter.galley(name_pos, name_galley, name_color);
+        if let Some((sub_galley, _)) = sub_layout {
+            let title_pos = egui::pos2(text_left, row_rect.top() + 5.0);
+            let title_h = title_galley.size().y;
+            painter.galley(title_pos, title_galley, name_color);
 
-            // Line 2: Subtitle
-            let sub_color = paint::color(palette.ui_text_subtle);
-            let sub_galley = painter.layout_no_wrap(
-                subtitle.clone(),
-                egui::FontId::proportional(11.0),
-                sub_color,
-            );
-            let sub_pos = egui::pos2(text_left, row_rect.top() + 20.0);
-            painter.galley(sub_pos, sub_galley, sub_color);
+            let sub_pos = egui::pos2(text_left, title_pos.y + title_h + 2.0);
+            painter.galley(sub_pos, sub_galley, paint::color(palette.ui_text_subtle));
         } else {
-            // Single line vertically centered
-            let text_color = if is_selected {
-                paint::color(palette.ui_link_strong)
-            } else {
-                paint::color(palette.ui_text)
-            };
-            let galley = painter.layout_no_wrap(
-                item.name.clone(),
-                egui::FontId::proportional(13.0),
-                text_color,
+            let text_pos = egui::pos2(
+                text_left,
+                row_rect.center().y - title_galley.size().y / 2.0,
             );
-            let text_pos = egui::pos2(text_left, row_rect.center().y - galley.rect.height() / 2.0);
-            painter.galley(text_pos, galley, text_color);
+            painter.galley(text_pos, title_galley, name_color);
         }
 
         if row_resp.hovered() && !star_clicked {
@@ -769,5 +827,19 @@ mod tests {
         assert_eq!(dd.width, Some(300.0));
         assert_eq!(dd.min_dropdown_width, 260.0);
         assert_eq!(dd.truncate_length, 40);
+    }
+
+    #[test]
+    fn tooltip_includes_name_and_description() {
+        let mods = sample_modules();
+        let dd = ModuleDropdown::from_installed("test-salt", "bible", None, &mods);
+        let acf_item = &dd.items[0];
+        assert_eq!(acf_item.id, "acf");
+        assert_eq!(acf_item.name, "Almeida Corrigida Fiel");
+        // Tooltip includes name, subtitle (acf), and description (Almeida Corrigida Fiel 2011)
+        let tooltip = acf_item.tooltip.as_deref().unwrap();
+        assert!(tooltip.contains("Almeida Corrigida Fiel"));
+        assert!(tooltip.contains("acf"));
+        assert!(tooltip.contains("Almeida Corrigida Fiel 2011"));
     }
 }
