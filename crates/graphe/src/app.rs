@@ -11,6 +11,7 @@ use graphe_domain::commentary_ref::{
 use graphe_domain::i18n::{self, Lang};
 use graphe_domain::model::BookRecord;
 use graphe_domain::navigation::NavigationSession;
+use graphe_domain::panes::{canon_chapter_spans, ChapterSpan};
 use graphe_domain::picker::{favorites, ModulePicker};
 use graphe_domain::shortcuts::ShortcutAction;
 use graphe_domain::theme::{self, UiPalette};
@@ -87,7 +88,10 @@ pub fn run() -> eframe::Result {
                 loaded_key: String::new(),
                 save_seen: 0,
                 rename: String::new(),
-                rename_for: String::new(),
+                mark: None,
+                renaming: None,
+                rename_focus: false,
+                chapter_span_cache: HashMap::new(),
                 editor_path: None,
                 editor_info_name: "description".into(),
                 editor_info_value: String::new(),
@@ -106,7 +110,7 @@ pub fn run() -> eframe::Result {
 pub(crate) struct GrapheApp {
     pub(crate) session: Session,
     pub(crate) modules: Vec<InstalledModule>,
-    update_notice: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    pub(crate) update_notice: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     update_started: bool,
     pub(crate) persisted: Value,
     pub(crate) store: AppStateStore,
@@ -121,7 +125,10 @@ pub(crate) struct GrapheApp {
     pub(crate) loaded_key: String,
     save_seen: usize,
     pub(crate) rename: String,
-    rename_for: String,
+    pub(crate) mark: Option<egui::TextureHandle>,
+    pub(crate) renaming: Option<String>,
+    pub(crate) rename_focus: bool,
+    chapter_span_cache: HashMap<String, Vec<ChapterSpan>>,
     pub(crate) editor_path: Option<PathBuf>,
     pub(crate) editor_info_name: String,
     pub(crate) editor_info_value: String,
@@ -153,9 +160,8 @@ impl eframe::App for GrapheApp {
         self.restore_saved_panels();
         self.handle_keys(ctx);
         let palette = theme::palette(self.session.dark);
-        self.menu_bar(ctx);
-        self.workspace_strip(ctx, palette);
-        self.command_strip(ctx, palette);
+        self.update_banner(ctx, palette);
+        self.top_strip(ctx, palette);
         self.activity_bar(ctx, palette);
         self.sidebar(ctx, palette);
         self.editor(ctx, palette);
@@ -245,8 +251,39 @@ impl GrapheApp {
 
     pub(crate) fn reload_modules(&mut self) {
         self.modules = catalog::scan_modules(&modules_dir(&state::user_home()));
+        self.chapter_span_cache.clear();
         self.loaded_key.clear();
         self.sync_active_chapter();
+    }
+
+    pub(crate) fn chapter_spans(&mut self, pane_id: &str) -> Vec<ChapterSpan> {
+        let module_id = self
+            .session
+            .panes
+            .get(pane_id)
+            .and_then(|pane| pane.module_id.clone())
+            .unwrap_or_default();
+        if let Some(cached) = self.chapter_span_cache.get(&module_id) {
+            return cached.clone();
+        }
+        let from_module = {
+            let id = (!module_id.is_empty()).then_some(module_id.as_str());
+            self.bible_path(id)
+                .map(sqlite::chapter_spans_in_file)
+                .filter(|rows| !rows.is_empty())
+        };
+        let spans = from_module
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(book_number, chapters)| ChapterSpan {
+                        book_number,
+                        chapters: chapters.max(1),
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(canon_chapter_spans);
+        self.chapter_span_cache.insert(module_id, spans.clone());
+        spans
     }
 
     pub(crate) fn sync_active_chapter(&mut self) {
@@ -506,176 +543,6 @@ impl GrapheApp {
         }
     }
 
-    fn menu_bar(&mut self, ctx: &egui::Context) {
-        let menu_bg = if self.session.dark {
-            "#2b2b2b"
-        } else {
-            "#f3f3f3"
-        };
-        egui::TopBottomPanel::top("menu")
-            .exact_height(26.0)
-            .frame(paint::panel(menu_bg).inner_margin(egui::Margin::symmetric(4, 0)))
-            .show(ctx, |ui| {
-                egui::MenuBar::new().ui(ui, |ui| {
-                    ui.menu_button("File", |ui| {
-                        if ui.button(i18n::t("installModules")).clicked() {
-                            self.install();
-                            ui.close();
-                        }
-                        if ui.button(i18n::t("convertModules")).clicked() {
-                            self.session.dialog = Dialog::Convert;
-                            ui.close();
-                        }
-                        if ui.button(i18n::t("reloadModules")).clicked() {
-                            self.reload_modules();
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button(i18n::t("settings")).clicked() {
-                            self.session.dialog = Dialog::Settings;
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button("Quit").clicked() {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.menu_button("Edit", |ui| {
-                        if ui.button(i18n::t("editModuleData")).clicked() {
-                            self.session.dialog = Dialog::ModuleEditor;
-                            ui.close();
-                        }
-                    });
-                    ui.menu_button("View", |ui| {
-                        ui.menu_button("Split Horizontal", |ui| {
-                            if ui.button("Bible View").clicked() {
-                                self.session.split(false);
-                                self.after_split();
-                                ui.close();
-                            }
-                            if ui.button(i18n::t("commentary")).clicked() {
-                                self.session.split_commentary(false);
-                                self.after_split();
-                                ui.close();
-                            }
-                        });
-                        ui.menu_button("Split Vertical", |ui| {
-                            if ui.button("Bible View").clicked() {
-                                self.session.split(true);
-                                self.after_split();
-                                ui.close();
-                            }
-                            if ui.button(i18n::t("commentary")).clicked() {
-                                self.session.split_commentary(true);
-                                self.after_split();
-                                ui.close();
-                            }
-                        });
-                    });
-                    ui.menu_button("Help", |ui| {
-                        if ui.button(i18n::t("aboutTitle")).clicked() {
-                            self.session.dialog = Dialog::About;
-                            ui.close();
-                        }
-                        if ui.button(i18n::t("reportIssue")).clicked() {
-                            let _ = open::that(crate::update::ISSUES_URL);
-                            ui.close();
-                        }
-                    });
-                    if let Some(version) = self
-                        .update_notice
-                        .lock()
-                        .ok()
-                        .and_then(|notice| notice.clone())
-                    {
-                        ui.label(i18n::t_fmt(
-                            "updateAvailable",
-                            &[("version", version.as_str())],
-                        ));
-                    }
-                });
-            });
-    }
-
-    fn after_split(&mut self) {
-        self.loaded_key.clear();
-        self.sync_active_chapter();
-        self.note_workspaces();
-    }
-
-    fn workspace_strip(&mut self, ctx: &egui::Context, palette: &UiPalette) {
-        egui::TopBottomPanel::top("workspaces")
-            .exact_height(28.0)
-            .frame(
-                paint::panel(palette.ui_surface_muted).inner_margin(egui::Margin::symmetric(8, 2)),
-            )
-            .show(ctx, |ui| {
-                let tabs = self.session.workspaces.get_tab_state();
-                ui.horizontal(|ui| {
-                    let items = tabs.items.clone();
-                    for (id, name) in items {
-                        let active = tabs.active_workspace_id.as_deref() == Some(id.as_str());
-                        ui.push_id(&id, |ui| {
-                            if ui
-                                .selectable_label(active, egui::RichText::new(name).size(12.0))
-                                .clicked()
-                                && self.session.open_workspace(&id)
-                            {
-                                self.loaded_key.clear();
-                                self.sync_active_chapter();
-                                self.note_workspaces();
-                            }
-                            if active
-                                && ui.small_button("×").clicked()
-                                && self.session.close_active_workspace()
-                            {
-                                self.loaded_key.clear();
-                                self.sync_active_chapter();
-                                self.note_workspaces();
-                            }
-                        });
-                    }
-                    if ui.small_button("+").clicked() {
-                        self.session.new_workspace();
-                        self.loaded_key.clear();
-                        self.sync_active_chapter();
-                        self.note_workspaces();
-                    }
-                    self.active_rename(ui);
-                });
-            });
-    }
-
-    fn command_strip(&mut self, ctx: &egui::Context, palette: &UiPalette) {
-        egui::TopBottomPanel::top("command")
-            .exact_height(36.0)
-            .frame(
-                paint::panel(palette.ui_surface_muted).inner_margin(egui::Margin::symmetric(8, 4)),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Graphe").strong().size(12.0));
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new(i18n::t("navPlaceholder"))
-                                    .size(12.0)
-                                    .color(paint::color(palette.ui_text_subtle)),
-                            )
-                            .min_size(egui::vec2(320.0, 24.0))
-                            .corner_radius(egui::CornerRadius::same(4)),
-                        )
-                        .clicked()
-                    {
-                        self.open_navigation();
-                    }
-                    if !self.session.status.is_empty() {
-                        ui.label(self.session.status.clone());
-                    }
-                });
-            });
-    }
-
     fn activity_bar(&mut self, ctx: &egui::Context, palette: &UiPalette) {
         let bar = if self.session.dark {
             "#181818"
@@ -731,31 +598,6 @@ impl GrapheApp {
             let dir = modules_dir(&state::user_home());
             catalog::install_files(&dir, &files);
             self.reload_modules();
-        }
-    }
-
-    pub(crate) fn active_rename(&mut self, ui: &mut egui::Ui) {
-        let Some(state) = self.session.workspaces.get_state() else {
-            return;
-        };
-        let active = state.active_workspace_id.clone();
-        let name = state
-            .items
-            .iter()
-            .find(|item| item.id == active)
-            .map(|item| item.name.clone())
-            .unwrap_or_default();
-        if self.rename_for != active {
-            self.rename_for = active.clone();
-            self.rename = name;
-        }
-        if ui.text_edit_singleline(&mut self.rename).lost_focus()
-            && self
-                .session
-                .workspaces
-                .rename_workspace(&active, &self.rename)
-        {
-            self.note_workspaces();
         }
     }
 }
@@ -823,7 +665,10 @@ mod tests {
             loaded_key: String::new(),
             save_seen: 0,
             rename: String::new(),
-            rename_for: String::new(),
+            mark: None,
+            renaming: None,
+            rename_focus: false,
+            chapter_span_cache: HashMap::new(),
             editor_path: None,
             editor_info_name: String::new(),
             editor_info_value: String::new(),
@@ -867,6 +712,83 @@ mod tests {
         app.lookup_dict("G3056");
         assert_eq!(app.session.sidebar, "dictionary");
         assert_eq!(app.session.dialog, Dialog::None);
+    }
+
+    #[test]
+    fn split_panes_pin_the_toolbar_to_the_top_and_fill_the_rest_with_the_chapter() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.split(false);
+        app.session.split(true);
+        app.session.chapter_text = (1..=24)
+            .map(|verse| {
+                (
+                    verse,
+                    "No princípio criou Deus os céus e a terra.".to_string(),
+                )
+            })
+            .collect();
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let palette = theme::palette(false);
+        let mut marks = Vec::new();
+        for _ in 0..2 {
+            let _ = ctx.run(raw.clone(), |ctx| {
+                app.editor(ctx, palette);
+                marks = ctx.data(|data| {
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                        .unwrap_or_default()
+                });
+            });
+        }
+        let toolbars: Vec<_> = marks
+            .iter()
+            .filter(|(key, _)| key.starts_with("toolbar:"))
+            .collect();
+        let bodies: Vec<_> = marks
+            .iter()
+            .filter(|(key, _)| key.starts_with("body:"))
+            .collect();
+        assert_eq!(toolbars.len(), 3, "one column plus a vertical split: {marks:?}");
+        assert_eq!(bodies.len(), 3, "{marks:?}");
+        let mut tops: Vec<f32> = toolbars.iter().map(|(_, rect)| rect[1]).collect();
+        tops.sort_by(f32::total_cmp);
+        assert!(
+            tops[0] < 80.0,
+            "the upper toolbars sit under the study tabs, not mid-pane: {marks:?}"
+        );
+        assert!(
+            (tops[0] - tops[1]).abs() < 2.0,
+            "side-by-side toolbars share a row: {marks:?}"
+        );
+        assert!(
+            tops[2] > 300.0 && tops[2] < 560.0,
+            "the lower pane toolbar starts its own half: {marks:?}"
+        );
+        for (key, rect) in &toolbars {
+            assert!(
+                (rect[3] - 44.0).abs() < 2.0,
+                "{key} is a 44px strip, got {}",
+                rect[3]
+            );
+            let pane = key.trim_start_matches("toolbar:");
+            let body = bodies
+                .iter()
+                .find(|(body_key, _)| body_key == &format!("body:{pane}"))
+                .unwrap_or_else(|| panic!("missing body for {pane}: {marks:?}"));
+            assert!(
+                (body.1[1] - (rect[1] + rect[3])).abs() < 4.0,
+                "{pane} chapter starts under its toolbar: {marks:?}"
+            );
+            assert!(
+                body.1[3] > 200.0,
+                "{pane} chapter fills its pane, height {}: {marks:?}",
+                body.1[3]
+            );
+        }
     }
 
     #[test]

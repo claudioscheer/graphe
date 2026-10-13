@@ -28,6 +28,8 @@ pub struct ModuleDropdown<'a> {
     pub width: Option<f32>,
     pub min_dropdown_width: f32,
     pub truncate_length: usize,
+    /// Pane toolbar trigger: no box, just the name and a chevron.
+    pub plain: bool,
 }
 
 impl<'a> ModuleDropdown<'a> {
@@ -85,6 +87,7 @@ impl<'a> ModuleDropdown<'a> {
             width: None,
             min_dropdown_width: 240.0,
             truncate_length: 50,
+            plain: false,
         }
     }
 
@@ -140,6 +143,7 @@ impl<'a> ModuleDropdown<'a> {
             width: None,
             min_dropdown_width: 240.0,
             truncate_length: 50,
+            plain: false,
         }
     }
 
@@ -174,6 +178,25 @@ impl<'a> ModuleDropdown<'a> {
         self
     }
 
+    /// Draw the trigger as text and a chevron, without a bordered box.
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
+        self
+    }
+
+    fn trigger_label(&self) -> String {
+        if self.allow_none && self.current_id.is_none() {
+            return self.none_label.clone();
+        }
+        if let Some(id) = self.current_id {
+            if let Some(item) = self.items.iter().find(|item| item.id == id) {
+                return item.name.clone();
+            }
+            return id.to_string();
+        }
+        "—".to_string()
+    }
+
     /// Maximum character length before truncating trigger button text.
     #[allow(dead_code)]
     pub fn truncate_length(mut self, len: usize) -> Self {
@@ -190,46 +213,49 @@ impl<'a> ModuleDropdown<'a> {
         dark: bool,
     ) -> Option<String> {
         ui.push_id(self.salt, |ui| {
-            let trigger_width = self.width.unwrap_or_else(|| ui.available_width());
-            let height = 30.0_f32;
+            let trigger_text = self.trigger_label();
+            let font_size = if self.plain { 12.0 } else { 13.0 };
+            let height = if self.plain { 28.0 } else { 30.0 };
+            let trigger_width = self.width.unwrap_or_else(|| {
+                if self.plain {
+                    (trigger_text.chars().count() as f32 * 7.2 + 28.0).clamp(72.0, 168.0)
+                } else {
+                    ui.available_width()
+                }
+            });
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(trigger_width, height), egui::Sense::click());
 
             let popup_id = resp.id.with("popup");
         let is_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
 
-        // Draw trigger button background and border
-        let (fill, stroke_color) = if resp.hovered() || is_open {
-            (
-                paint::color(palette.ui_surface),
-                paint::color(palette.ui_border_strong),
-            )
-        } else {
-            (
-                paint::color(palette.ui_surface),
-                paint::color(palette.ui_border_soft),
-            )
-        };
-
-        ui.painter().rect(
-            rect,
-            egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-            fill,
-            egui::Stroke::new(1.0_f32, stroke_color),
-            egui::StrokeKind::Inside,
-        );
-
-        // Determine trigger text
-        let trigger_text = if self.allow_none && self.current_id.is_none() {
-            self.none_label.clone()
-        } else if let Some(id) = self.current_id {
-            if let Some(item) = self.items.iter().find(|item| item.id == id) {
-                item.name.clone()
-            } else {
-                id.to_string()
+        if self.plain {
+            if resp.hovered() || is_open {
+                ui.painter().rect_filled(
+                    rect,
+                    egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
+                    paint::color_alpha(palette.ui_surface, if dark { 28 } else { 120 }),
+                );
             }
         } else {
-            "—".to_string()
-        };
+            let (fill, stroke_color) = if resp.hovered() || is_open {
+                (
+                    paint::color(palette.ui_surface),
+                    paint::color(palette.ui_border_strong),
+                )
+            } else {
+                (
+                    paint::color(palette.ui_surface),
+                    paint::color(palette.ui_border_soft),
+                )
+            };
+            ui.painter().rect(
+                rect,
+                egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
+                fill,
+                egui::Stroke::new(1.0_f32, stroke_color),
+                egui::StrokeKind::Inside,
+            );
+        }
 
         let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
         let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
@@ -242,7 +268,7 @@ impl<'a> ModuleDropdown<'a> {
 
         let galley = ui.painter().layout_no_wrap(
             display_text,
-            egui::FontId::proportional(13.0),
+            egui::FontId::proportional(font_size),
             paint::color(palette.ui_text),
         );
         let text_pos = egui::pos2(rect.left() + 8.0, rect.center().y - galley.rect.height() / 2.0);

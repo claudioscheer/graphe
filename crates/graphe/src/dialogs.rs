@@ -44,6 +44,15 @@ impl GrapheApp {
                 Dialog::Settings => self.settings_body(ui),
                 Dialog::About => {
                     ui.label(i18n::t("aboutOpenSource"));
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("GitHub").clicked() {
+                            let _ = open::that("https://github.com/claudioscheer/graphe");
+                        }
+                        if ui.button(i18n::t("reportIssue")).clicked() {
+                            let _ = open::that(crate::update::ISSUES_URL);
+                        }
+                    });
                 }
                 Dialog::Navigation => self.navigation_body(ui),
                 Dialog::Convert => self.convert_body(ui),

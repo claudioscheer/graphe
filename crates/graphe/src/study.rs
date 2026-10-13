@@ -17,10 +17,19 @@ use std::path::Path;
 
 impl GrapheApp {
     pub(crate) fn editor(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+        #[cfg(test)]
+        ctx.data_mut(|data| {
+            data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+        });
         self.sync_active_chapter();
         egui::CentralPanel::default()
-            .frame(paint::panel(palette.ui_bg))
+            .frame(
+                egui::Frame::new()
+                    .fill(paint::color(palette.ui_bg))
+                    .inner_margin(egui::Margin::ZERO),
+            )
             .show(ctx, |ui| {
+                self.workspace_tabs(ui, palette);
                 let tree = self.session.tree.clone();
                 self.draw_node(ui, &tree, palette);
                 if self.session.chapter_text.is_empty()
@@ -31,54 +40,75 @@ impl GrapheApp {
             });
     }
 
-    fn step_chapter(&mut self, delta: i64) {
-        let target = self.session.bible_target(&self.session.active_pane_id);
-        if let Some(pane) = self.session.panes.get_mut(&target) {
-            pane.chapter = (pane.chapter + delta).max(1);
-            pane.selected_verse = Some(1);
-        }
-        self.session.reveal_selected_verse(true);
-        self.loaded_key.clear();
-        self.sync_active_chapter();
-    }
-
     fn draw_node(&mut self, ui: &mut egui::Ui, node: &PaneNode, palette: &UiPalette) {
+        let width = ui.available_width().max(0.0);
+        let height = ui.available_height().max(0.0);
         match node {
-            PaneNode::Leaf { pane_id } => self.draw_pane(ui, pane_id, palette),
+            PaneNode::Leaf { pane_id } => {
+                let pane_id = pane_id.clone();
+                self.fit_region(ui, width, height, |app, ui| {
+                    app.draw_pane(ui, &pane_id, palette);
+                });
+            }
             PaneNode::Split {
                 direction,
                 ratio,
                 children,
             } => {
                 let ratio = (*ratio as f32).clamp(0.2, 0.8);
+                let gap = 5.0;
                 if direction == "v" {
-                    let height = ui.available_height().max(160.0);
+                    let top_h = ((height - gap) * ratio).max(0.0);
+                    let bottom_h = (height - gap - top_h).max(0.0);
                     ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), height * ratio),
+                        egui::vec2(width, height),
                         egui::Layout::top_down(egui::Align::Min),
-                        |ui| self.draw_node(ui, &children.0, palette),
+                        |ui| {
+                            self.fit_region(ui, width, top_h, |app, ui| {
+                                app.draw_node(ui, &children.0, palette);
+                            });
+                            split_rule(ui, width, gap, false, palette);
+                            self.fit_region(ui, width, bottom_h, |app, ui| {
+                                app.draw_node(ui, &children.1, palette);
+                            });
+                        },
                     );
-                    ui.separator();
-                    self.draw_node(ui, &children.1, palette);
                 } else {
-                    let width = ui.available_width().max(240.0);
-                    let height = ui.available_height().max(160.0);
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(width * ratio, height),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| self.draw_node(ui, &children.0, palette),
-                        );
-                        ui.separator();
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(width * (1.0 - ratio), height),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| self.draw_node(ui, &children.1, palette),
-                        );
-                    });
+                    let left_w = ((width - gap) * ratio).max(0.0);
+                    let right_w = (width - gap - left_w).max(0.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(width, height),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            self.fit_region(ui, left_w, height, |app, ui| {
+                                app.draw_node(ui, &children.0, palette);
+                            });
+                            split_rule(ui, height, gap, true, palette);
+                            self.fit_region(ui, right_w, height, |app, ui| {
+                                app.draw_node(ui, &children.1, palette);
+                            });
+                        },
+                    );
                 }
             }
         }
+    }
+
+    fn fit_region(
+        &mut self,
+        ui: &mut egui::Ui,
+        width: f32,
+        height: f32,
+        draw: impl FnOnce(&mut Self, &mut egui::Ui),
+    ) {
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_min_size(egui::vec2(width, height));
+                draw(self, ui);
+            },
+        );
     }
 
     fn draw_pane(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
@@ -86,94 +116,22 @@ impl GrapheApp {
             return;
         };
         let (book, chapter, verse) = self.session.reading_location(pane_id);
-        let active = self.session.active_pane_id == pane_id;
-        let pinned = self.session.link_target.as_deref() == Some(pane_id);
         ui.push_id(pane_id, |ui| {
-            ui.horizontal(|ui| {
-                let title = pane
-                    .window_label
-                    .clone()
-                    .unwrap_or_else(|| pane_id.to_string());
-                if ui.selectable_label(active, title).clicked() {
-                    self.session.active_pane_id = pane_id.to_string();
-                    self.loaded_key.clear();
-                    self.sync_active_chapter();
+            self.pane_toolbar(ui, pane_id, palette);
+            let body = egui::vec2(ui.available_width(), ui.available_height().max(0.0));
+            ui.allocate_ui_with_layout(body, egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_min_size(body);
+                #[cfg(test)]
+                crate::chrome::mark_layout(ui, &format!("body:{pane_id}"), ui.max_rect());
+                if pane.pane_type == graphe_domain::model::PaneType::Bible {
+                    self.draw_favorite_quick_bar(ui, pane_id, palette);
                 }
-                self.module_combo(ui, pane_id, &pane.pane_type);
-                let place = format!("{} {}", i18n::book_name(book).short, chapter);
-                if ui.small_button("<").clicked() {
-                    self.session.active_pane_id = self.session.bible_target(pane_id);
-                    self.step_chapter(-1);
+                if pane.pane_type == graphe_domain::model::PaneType::Commentary {
+                    self.draw_commentary(ui, pane_id, book, chapter, verse, palette);
+                } else {
+                    self.draw_bible(ui, pane_id, book, chapter, palette);
                 }
-                if ui.button(place).clicked() {
-                    self.session.active_pane_id = pane_id.to_string();
-                    self.open_navigation();
-                }
-                if ui.small_button(">").clicked() {
-                    self.session.active_pane_id = self.session.bible_target(pane_id);
-                    self.step_chapter(1);
-                }
-                if pinned {
-                    ui.label("📌");
-                }
-                ui.menu_button("⋯", |ui| {
-                    if ui.button(i18n::t("back")).clicked() {
-                        self.session.active_pane_id = self.session.bible_target(pane_id);
-                        if self.session.back() {
-                            self.loaded_key.clear();
-                            self.sync_active_chapter();
-                        }
-                        ui.close();
-                    }
-                    if ui.button("→").clicked() {
-                        self.session.active_pane_id = self.session.bible_target(pane_id);
-                        if self.session.forward() {
-                            self.loaded_key.clear();
-                            self.sync_active_chapter();
-                        }
-                        ui.close();
-                    }
-                    if ui.button(i18n::t("pinLinkTarget")).clicked() {
-                        self.session.active_pane_id = pane_id.to_string();
-                        self.session.toggle_pin();
-                        self.note_workspaces();
-                        ui.close();
-                    }
-                    if ui.button("Split Horizontal").clicked() {
-                        self.session.active_pane_id = pane_id.to_string();
-                        self.session.split(false);
-                        self.note_workspaces();
-                        ui.close();
-                    }
-                    if ui.button("Split Vertical").clicked() {
-                        self.session.active_pane_id = pane_id.to_string();
-                        self.session.split(true);
-                        self.note_workspaces();
-                        ui.close();
-                    }
-                    if ui.button(i18n::t("commentary")).clicked() {
-                        self.session.active_pane_id = pane_id.to_string();
-                        self.session.split_commentary(false);
-                        self.note_workspaces();
-                        ui.close();
-                    }
-                    if ui.button("×").clicked() && self.session.close_pane(pane_id) {
-                        self.loaded_key.clear();
-                        self.sync_active_chapter();
-                        self.note_workspaces();
-                        ui.close();
-                    }
-                });
             });
-            if pane.pane_type == graphe_domain::model::PaneType::Bible {
-                self.draw_favorite_quick_bar(ui, pane_id, palette);
-            }
-            if pane.pane_type == graphe_domain::model::PaneType::Commentary {
-                self.draw_commentary(ui, pane_id, book, chapter, verse, palette);
-            } else {
-                self.draw_bible(ui, pane_id, book, chapter, palette);
-            }
-            ui.separator();
         });
     }
 
@@ -633,7 +591,7 @@ impl GrapheApp {
         self.sync_active_chapter();
     }
 
-    fn module_combo(
+    pub(crate) fn module_combo(
         &mut self,
         ui: &mut egui::Ui,
         pane_id: &str,
@@ -655,7 +613,7 @@ impl GrapheApp {
             current.as_deref(),
             &self.modules,
         )
-        .width(160.0);
+        .plain();
 
         if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
             if let Some(pane) = self.session.panes.get_mut(pane_id) {
@@ -781,6 +739,24 @@ impl GrapheApp {
     }
 }
 
+fn split_rule(ui: &mut egui::Ui, span: f32, gap: f32, vertical: bool, palette: &UiPalette) {
+    let (rect, _) = ui.allocate_exact_size(
+        if vertical {
+            egui::vec2(gap, span)
+        } else {
+            egui::vec2(span, gap)
+        },
+        egui::Sense::hover(),
+    );
+    let mid = if vertical {
+        [rect.center_top(), rect.center_bottom()]
+    } else {
+        [rect.left_center(), rect.right_center()]
+    };
+    ui.painter()
+        .line_segment(mid, egui::Stroke::new(1.0_f32, paint::color(palette.ui_border)));
+}
+
 fn verse_selected_fill(dark: bool, palette: &UiPalette) -> egui::Color32 {
     if dark {
         paint::color_alpha(palette.ui_link_soft, 96)
@@ -810,8 +786,6 @@ fn pointer_clicked(ui: &egui::Ui, rect: egui::Rect) -> bool {
                 .is_some_and(|pos| rect.contains(pos))
     })
 }
-
-
 
 fn slice_between(text: &str, start: usize, end: usize) -> &str {
     if start <= end

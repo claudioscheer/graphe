@@ -5,6 +5,7 @@
 //! `graphe-store`.
 
 mod app;
+mod chrome;
 mod dialogs;
 pub(crate) mod dropdown;
 mod icon;

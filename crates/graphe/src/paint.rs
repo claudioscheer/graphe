@@ -55,6 +55,35 @@ pub(crate) fn color_alpha(hex: &str, alpha: u8) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(opaque.r(), opaque.g(), opaque.b(), alpha)
 }
 
+pub(crate) fn mix(from_hex: &str, to_hex: &str, from_weight: f32) -> egui::Color32 {
+    let from = color(from_hex);
+    let to = color(to_hex);
+    let weight = from_weight.clamp(0.0, 1.0);
+    let channel = |a: u8, b: u8| (a as f32 * weight + b as f32 * (1.0 - weight)).round() as u8;
+    egui::Color32::from_rgb(
+        channel(from.r(), to.r()),
+        channel(from.g(), to.g()),
+        channel(from.b(), to.b()),
+    )
+}
+
+/// Active workspace tab and pane toolbar fill from the Electron stylesheet.
+pub(crate) fn workspace_tab_active(dark: bool) -> egui::Color32 {
+    if dark {
+        mix("#252526", "#000000", 0.72)
+    } else {
+        mix("#f8f5ed", "#1a1612", 0.945)
+    }
+}
+
+pub(crate) fn top_strip_bg(dark: bool, palette: &UiPalette) -> egui::Color32 {
+    if dark {
+        color("#202020")
+    } else {
+        color(palette.ui_surface_muted)
+    }
+}
+
 pub(crate) fn canon_books() -> Vec<BookRecord> {
     GRAPHE_BOOK_NUMBERS
         .iter()
@@ -103,6 +132,12 @@ pub(crate) enum Icon {
     ChevronLeft,
     ChevronRight,
     Info,
+    Plus,
+    Close,
+    Ellipsis,
+    ArrowLeft,
+    ArrowRight,
+    Pin,
 }
 
 pub(crate) fn icon_button(
@@ -331,6 +366,70 @@ pub(crate) fn draw_icon(
             painter.circle_filled(center + egui::vec2(0.0, -2.5), 0.9, ink);
             painter.line_segment(
                 [center + egui::vec2(0.0, -0.5), center + egui::vec2(0.0, 3.5)],
+                stroke,
+            );
+        }
+        Icon::Plus => {
+            painter.line_segment(
+                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(5.0, 0.0)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(0.0, -5.0), center + egui::vec2(0.0, 5.0)],
+                stroke,
+            );
+        }
+        Icon::Close => {
+            painter.line_segment(
+                [center + egui::vec2(-4.0, -4.0), center + egui::vec2(4.0, 4.0)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(4.0, -4.0), center + egui::vec2(-4.0, 4.0)],
+                stroke,
+            );
+        }
+        Icon::Ellipsis => {
+            for offset in [-5.0, 0.0, 5.0] {
+                painter.circle_filled(center + egui::vec2(offset, 0.0), 1.3, ink);
+            }
+        }
+        Icon::ArrowLeft => {
+            painter.line_segment(
+                [center + egui::vec2(5.0, 0.0), center + egui::vec2(-5.0, 0.0)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(-1.0, -3.5)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(-1.0, 3.5)],
+                stroke,
+            );
+        }
+        Icon::ArrowRight => {
+            painter.line_segment(
+                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(5.0, 0.0)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(5.0, 0.0), center + egui::vec2(1.0, -3.5)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(5.0, 0.0), center + egui::vec2(1.0, 3.5)],
+                stroke,
+            );
+        }
+        Icon::Pin => {
+            painter.circle_stroke(center + egui::vec2(0.0, -3.0), 3.0, stroke);
+            painter.line_segment(
+                [center + egui::vec2(0.0, 0.0), center + egui::vec2(0.0, 6.0)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + egui::vec2(-3.0, 3.0), center + egui::vec2(3.0, 3.0)],
                 stroke,
             );
         }

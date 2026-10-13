@@ -631,20 +631,19 @@ impl Session {
         Some(created.id)
     }
 
-    pub fn close_active_workspace(&mut self) -> bool {
-        let Some(id) = self
+    pub fn close_workspace(&mut self, id: &str) -> bool {
+        let was_active = self
             .workspaces
             .get_state()
-            .map(|state| state.active_workspace_id)
-        else {
-            return false;
-        };
+            .is_some_and(|state| state.active_workspace_id == id);
         let current = self.layout_value();
-        if !self.workspaces.close_workspace(&id, Some(current)) {
+        if !self.workspaces.close_workspace(id, Some(current)) {
             return false;
         }
-        if let Some(pane) = self.workspaces.get_active_pane_state() {
-            self.restore_layout(&pane);
+        if was_active {
+            if let Some(pane) = self.workspaces.get_active_pane_state() {
+                self.restore_layout(&pane);
+            }
         }
         true
     }

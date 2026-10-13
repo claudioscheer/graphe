@@ -12,6 +12,10 @@ pub(crate) const APP_ID: &str = "graphe";
 
 const ICON_PNG: &[u8] = include_bytes!("../../../assets/graphe.png");
 
+pub(crate) fn mark_png() -> &'static [u8] {
+    ICON_PNG
+}
+
 pub(crate) fn load_icon() -> Option<egui::IconData> {
     match eframe::icon_data::from_png_bytes(ICON_PNG) {
         Ok(icon) => Some(icon),

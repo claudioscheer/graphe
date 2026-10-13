@@ -612,6 +612,20 @@ pub fn chapter_count_in_file(path: &Path, book_number: i64) -> i64 {
         .unwrap_or(0)
 }
 
+/// Books present in the module, each with its chapter count, from one connection.
+pub fn chapter_spans_in_file(path: &Path) -> Vec<(i64, i64)> {
+    let Some(db) = open_read(path) else {
+        return Vec::new();
+    };
+    get_books(&db)
+        .into_iter()
+        .filter_map(|book| {
+            let count = get_chapter_count(&db, book.book_number);
+            (count > 0).then_some((book.book_number, count))
+        })
+        .collect()
+}
+
 pub fn commentary_coverage_in_file(path: &Path) -> BTreeMap<i64, Vec<i64>> {
     open_read(path)
         .map(|db| get_commentary_coverage(&db))
