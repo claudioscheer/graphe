@@ -1,6 +1,8 @@
 //! Settings, navigation, conversion, module editor, and preview windows.
 
 use crate::app::{language_button, GrapheApp};
+use crate::dropdown::ModuleDropdown;
+use crate::paint;
 use crate::session::Dialog;
 use graphe_domain::i18n::{self, Lang};
 use graphe_domain::navigation::NavScreen;
@@ -102,11 +104,7 @@ impl GrapheApp {
         ui.label(i18n::t("strongsDictsHint"));
         self.module_combo_setting(ui, "dictionary", true);
         ui.label(i18n::t("crossRefModulesHint"));
-        egui::ScrollArea::vertical()
-            .max_height(180.0)
-            .show(ui, |ui| {
-                self.toggle_module_list(ui, "crossreference", false);
-            });
+        self.module_combo_setting(ui, "crossreference", false);
         let mut preview = self.session.preview_pinned;
         if ui
             .checkbox(&mut preview, i18n::t("crossRefPinnedModal"))
@@ -123,88 +121,40 @@ impl GrapheApp {
     }
 
     fn module_combo_setting(&mut self, ui: &mut egui::Ui, kind: &str, strongs: bool) {
-        let modules: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|module| module.kind == kind)
-            .cloned()
-            .collect();
+        let palette = graphe_domain::theme::palette(self.session.dark);
         let current = if strongs {
             self.session.strongs_dicts.first().cloned()
         } else {
             self.session.xref_modules.first().cloned()
         };
-        let label = modules
-            .iter()
-            .find(|module| current.as_deref() == Some(module.id.as_str()))
-            .map(|module| module.name.clone())
-            .unwrap_or_else(|| i18n::t("coverageNone"));
-        egui::ComboBox::from_id_salt(format!("settings-{kind}"))
-            .width(ui.available_width().min(420.0))
-            .selected_text(label)
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(current.is_none(), i18n::t("coverageNone"))
-                    .clicked()
-                {
-                    if strongs {
-                        self.session.strongs_dicts.clear();
-                        self.patch_settings(json!({"strongsDicts": null}));
-                    } else {
-                        self.session.xref_modules.clear();
-                        self.patch_settings(json!({"crossRefModules": null}));
-                    }
-                }
-                for module in &modules {
-                    let selected = current.as_deref() == Some(module.id.as_str());
-                    if ui.selectable_label(selected, &module.name).clicked() {
-                        if strongs {
-                            self.session.strongs_dicts = vec![module.id.clone()];
-                            self.patch_settings(
-                                json!({"strongsDicts": self.session.strongs_dicts}),
-                            );
-                        } else if !self.session.xref_modules.iter().any(|id| id == &module.id) {
-                            self.session.xref_modules.push(module.id.clone());
-                            self.patch_settings(
-                                json!({"crossRefModules": self.session.xref_modules}),
-                            );
-                        }
-                    }
-                }
-            });
-    }
+        let salt = format!("settings-{kind}");
+        let dropdown = ModuleDropdown::from_installed(
+            &salt,
+            kind,
+            current.as_deref(),
+            &self.modules,
+        )
+        .allow_none(true)
+        .none_label(i18n::t("coverageNone"))
+        .show_favorites(false)
+        .width(ui.available_width().min(420.0));
 
-    fn toggle_module_list(&mut self, ui: &mut egui::Ui, kind: &str, strongs: bool) {
-        let modules = self
-            .modules
-            .iter()
-            .filter(|module| module.kind == kind)
-            .cloned()
-            .collect::<Vec<_>>();
-        for module in modules {
-            let selected = if strongs {
-                self.session.strongs_dicts.iter().any(|id| id == &module.id)
+        if let Some(chosen_id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
+            let val = if chosen_id.is_empty() {
+                None
             } else {
-                self.session.xref_modules.iter().any(|id| id == &module.id)
+                Some(chosen_id)
             };
-            if ui.selectable_label(selected, &module.name).clicked() {
-                let list = if strongs {
-                    &mut self.session.strongs_dicts
-                } else {
-                    &mut self.session.xref_modules
-                };
-                if let Some(pos) = list.iter().position(|id| id == &module.id) {
-                    list.remove(pos);
-                } else {
-                    list.push(module.id.clone());
-                }
-                if strongs {
-                    let values = self.session.strongs_dicts.clone();
-                    self.patch_settings(json!({"strongsDicts": values}));
-                } else {
-                    let values = self.session.xref_modules.clone();
-                    self.patch_settings(json!({"crossRefModules": values}));
-                }
+            if strongs {
+                self.session.strongs_dicts = val.clone().into_iter().collect();
+                self.patch_settings(json!({
+                    "strongsDicts": val.map(|id| vec![id])
+                }));
+            } else {
+                self.session.xref_modules = val.clone().into_iter().collect();
+                self.patch_settings(json!({
+                    "crossRefModules": val.map(|id| vec![id])
+                }));
             }
         }
     }
@@ -365,6 +315,7 @@ impl GrapheApp {
         if self.picker.is_none() {
             self.open_picker();
         }
+        let palette = graphe_domain::theme::palette(self.session.dark);
         let mut search = self
             .picker
             .as_ref()
@@ -388,18 +339,29 @@ impl GrapheApp {
                 PickerRow::Item {
                     id,
                     name,
+                    subtitle,
                     is_fav,
                     highlighted,
                     ..
                 } => {
                     ui.horizontal(|ui| {
-                        if ui.selectable_label(*highlighted, name).clicked() {
-                            if let Some(picker) = self.picker.as_mut() {
-                                picker.click_index(index);
-                            }
-                        }
-                        let mark = if *is_fav { "★" } else { "☆" };
-                        if ui.button(mark).clicked() {
+                        let (star_rect, star_resp) = ui.allocate_exact_size(
+                            egui::vec2(20.0, 24.0),
+                            egui::Sense::click(),
+                        );
+                        let star_color = if *is_fav || star_resp.hovered() {
+                            paint::color(palette.ui_warn)
+                        } else {
+                            paint::color(palette.ui_text_dim)
+                        };
+                        crate::dropdown::draw_star(
+                            ui.painter(),
+                            star_rect.center(),
+                            6.0,
+                            star_color,
+                            *is_fav,
+                        );
+                        if star_resp.clicked() {
                             let module_id = id.clone();
                             let mut picker = self.picker.take();
                             if let Some(picker) = picker.as_mut() {
@@ -407,6 +369,21 @@ impl GrapheApp {
                             }
                             self.picker = picker;
                         }
+
+                        ui.vertical(|ui| {
+                            if ui.selectable_label(*highlighted, name).clicked() {
+                                if let Some(picker) = self.picker.as_mut() {
+                                    picker.click_index(index);
+                                }
+                            }
+                            if let Some(sub) = subtitle {
+                                ui.label(
+                                    egui::RichText::new(sub)
+                                        .size(11.0)
+                                        .color(paint::color(palette.ui_text_subtle)),
+                                );
+                            }
+                        });
                     });
                 }
             }
@@ -417,12 +394,20 @@ impl GrapheApp {
         if self.editor_path.is_none() {
             self.editor_path = self.modules.first().map(|module| module.path.clone());
         }
-        for module in self.modules.clone() {
-            let selected = self.editor_path.as_ref() == Some(&module.path);
-            if ui
-                .selectable_label(selected, format!("{} ({})", module.name, module.kind))
-                .clicked()
-            {
+        let current_id = self.editor_path.as_ref().and_then(|path| {
+            self.modules.iter().find(|m| &m.path == path).map(|m| m.id.as_str())
+        });
+        let palette = graphe_domain::theme::palette(self.session.dark);
+        let dropdown = ModuleDropdown::from_all_installed(
+            "editor-module",
+            current_id,
+            &self.modules,
+        )
+        .show_favorites(false)
+        .width(ui.available_width().min(420.0));
+
+        if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
+            if let Some(module) = self.modules.iter().find(|m| m.id == id) {
                 self.editor_path = Some(module.path.clone());
                 self.editor_armed = false;
             }

@@ -6,6 +6,7 @@
 
 mod app;
 mod dialogs;
+pub(crate) mod dropdown;
 mod icon;
 mod paint;
 mod session;

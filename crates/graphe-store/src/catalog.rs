@@ -11,6 +11,21 @@ pub struct InstalledModule {
     pub path: PathBuf,
     pub kind: String,
     pub name: String,
+    pub short_title: Option<String>,
+    pub description: Option<String>,
+}
+
+impl InstalledModule {
+    pub fn to_module_record(&self) -> graphe_domain::model::ModuleRecord {
+        graphe_domain::model::ModuleRecord {
+            id: self.id.clone(),
+            kind: self.kind.clone(),
+            display_name: self.name.clone(),
+            list_label: None,
+            short_title: self.short_title.clone(),
+            description: self.description.clone(),
+        }
+    }
 }
 
 pub fn scan_modules(dir: &Path) -> Vec<InstalledModule> {
@@ -40,17 +55,28 @@ pub fn scan_modules(dir: &Path) -> Vec<InstalledModule> {
 fn describe(path: &Path, id: &str) -> Option<InstalledModule> {
     let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
     let kind = detect_type(&db).to_string();
-    let name = sqlite::info_rows(&db)
-        .into_iter()
-        .find(|(key, _)| key == "description" || key == "short.title")
-        .map(|(_, value)| value)
-        .filter(|value| !value.is_empty())
+    let rows = sqlite::info_rows(&db);
+    let short_title = rows
+        .iter()
+        .find(|(key, _)| key == "short.title" || key == "short_title")
+        .map(|(_, value)| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let description = rows
+        .iter()
+        .find(|(key, _)| key == "description")
+        .map(|(_, value)| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let name = short_title
+        .clone()
+        .or_else(|| description.clone())
         .unwrap_or_else(|| id.to_string());
     Some(InstalledModule {
         id: id.to_string(),
         path: path.to_path_buf(),
         kind,
         name,
+        short_title,
+        description,
     })
 }
 
@@ -101,5 +127,36 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].kind, "bible");
         assert_eq!(found[0].name, "King James");
+        assert_eq!(found[0].description.as_deref(), Some("King James"));
+    }
+
+    #[test]
+    fn prefers_short_title_for_name_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("acf.SQLite3");
+        let db = Connection::open(&file).unwrap();
+        db.execute_batch(
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);
+             INSERT INTO info VALUES ('short.title', 'ACF11*');
+             INSERT INTO info VALUES ('description', 'Almeida Corrigida Fiel 2011 com Strong');
+             INSERT INTO verses VALUES (10, 1, 1, 'No principio');",
+        )
+        .unwrap();
+        drop(db);
+        let found = scan_modules(dir.path());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "ACF11*");
+        assert_eq!(found[0].short_title.as_deref(), Some("ACF11*"));
+        assert_eq!(
+            found[0].description.as_deref(),
+            Some("Almeida Corrigida Fiel 2011 com Strong")
+        );
+        let rec = found[0].to_module_record();
+        assert_eq!(rec.short_title.as_deref(), Some("ACF11*"));
+        assert_eq!(
+            rec.description.as_deref(),
+            Some("Almeida Corrigida Fiel 2011 com Strong")
+        );
     }
 }

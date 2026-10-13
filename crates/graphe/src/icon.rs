@@ -22,6 +22,7 @@ pub(crate) fn load_icon() -> Option<egui::IconData> {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn desktop_entry(exe: &str) -> String {
     format!(
         "[Desktop Entry]\n\
@@ -37,6 +38,7 @@ pub(crate) fn desktop_entry(exe: &str) -> String {
 }
 
 /// Writes the hicolor PNGs and the desktop file. Returns whether an icon file changed.
+#[allow(dead_code)]
 pub(crate) fn install_desktop_files(data_dir: &Path, exe: &str) -> bool {
     let apps_dir = data_dir.join("applications");
     let png_256 = data_dir.join("icons/hicolor/256x256/apps");
@@ -55,6 +57,7 @@ pub(crate) fn install_desktop_files(data_dir: &Path, exe: &str) -> bool {
     icon_updated
 }
 
+#[allow(dead_code)]
 fn write_if_changed(path: &Path, bytes: &[u8]) -> bool {
     if std::fs::read(path).ok().as_deref() == Some(bytes) {
         return false;

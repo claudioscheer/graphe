@@ -347,9 +347,7 @@ impl GrapheApp {
             .modules
             .iter()
             .filter(|module| module.kind == kind)
-            .map(|module| {
-                graphe_domain::model::ModuleRecord::new(&module.id, &module.kind, &module.name)
-            })
+            .map(|module| module.to_module_record())
             .collect();
         let mut picker = ModulePicker::create(graphe_domain::picker::PickerOptions {
             modules,
@@ -686,8 +684,23 @@ impl GrapheApp {
         };
         egui::SidePanel::left("activity")
             .exact_width(48.0)
-            .frame(paint::panel(bar).inner_margin(egui::Margin::ZERO))
+            .resizable(false)
+            .frame(paint::panel(bar).inner_margin(egui::Margin {
+                left: 2,
+                right: 2,
+                top: 6,
+                bottom: 6,
+            }))
             .show(ctx, |ui| {
+                let border_x = ui.max_rect().right() + 2.0;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(border_x, ui.max_rect().top() - 6.0),
+                        egui::pos2(border_x, ui.max_rect().bottom() + 6.0),
+                    ],
+                    egui::Stroke::new(1.0_f32, paint::color(palette.ui_border)),
+                );
+                ui.spacing_mut().item_spacing.y = 2.0;
                 ui.vertical(|ui| {
                     for (view, icon) in [
                         ("search", paint::Icon::Search),
@@ -713,7 +726,7 @@ impl GrapheApp {
             });
     }
 
-    fn install(&mut self) {
+    pub(crate) fn install(&mut self) {
         if let Some(files) = rfd::FileDialog::new().pick_files() {
             let dir = modules_dir(&state::user_home());
             catalog::install_files(&dir, &files);
@@ -854,5 +867,56 @@ mod tests {
         app.lookup_dict("G3056");
         assert_eq!(app.session.sidebar, "dictionary");
         assert_eq!(app.session.dialog, Dialog::None);
+    }
+
+    #[test]
+    fn sidebar_width_stays_stable_on_pointer_events() {
+        for view in ["modules", "search", "dictionary"] {
+            let ctx = egui::Context::default();
+            let mut app = bare(Session::from_state(&json!({
+                "workbench": {"activeView": view}
+            })));
+            app.modules = vec![graphe_store::catalog::InstalledModule {
+                id: "acf".to_string(),
+                name: "Almeida Corrigida Fiel".to_string(),
+                kind: "bible".to_string(),
+                path: std::path::PathBuf::from("acf.bible"),
+                short_title: Some("ACF".to_string()),
+                description: Some("Almeida Corrigida Fiel".to_string()),
+            }];
+            app.session.sidebar = view.to_string();
+            if view == "dictionary" {
+                app.session.dict_query = "G3056".to_string();
+                app.session.dict_body = "<p>Palavra grega logos</p>".to_string();
+                app.session.dict_cognates = vec!["G3004".to_string(), "G3050".to_string()];
+            }
+            if view == "search" {
+                app.session.query = "deus".to_string();
+                app.session.hits = vec![
+                    graphe_domain::search::SearchHit {
+                        book_number: 1,
+                        chapter: 1,
+                        verse: 1,
+                        text: "No princípio criou Deus os céus e a terra.".to_string(),
+                    },
+                    graphe_domain::search::SearchHit {
+                        book_number: 1,
+                        chapter: 1,
+                        verse: 3,
+                        text: "E disse Deus: Haja luz; e houve luz.".to_string(),
+                    },
+                ];
+            }
+            for frame in 0..10 {
+                let mut raw = egui::RawInput::default();
+                raw.events.push(egui::Event::PointerMoved(egui::pos2(150.0 + frame as f32, 150.0)));
+                let _ = ctx.run(raw, |ctx| {
+                    let palette = theme::palette(app.session.dark);
+                    app.sidebar(ctx, palette);
+                });
+                let state = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"));
+                assert_eq!(state.map(|s| s.rect.width()), Some(300.0), "View {} grew at frame {}", view, frame);
+            }
+        }
     }
 }

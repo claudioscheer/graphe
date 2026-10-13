@@ -1,6 +1,7 @@
 //! Study tabs, split panes, verse text, commentary, and cross-references.
 
 use crate::app::GrapheApp;
+use crate::dropdown::ModuleDropdown;
 use crate::paint;
 use crate::session::Dialog;
 use graphe_domain::books::GRAPHE_BOOK_NUMBERS;
@@ -164,6 +165,9 @@ impl GrapheApp {
                     }
                 });
             });
+            if pane.pane_type == graphe_domain::model::PaneType::Bible {
+                self.draw_favorite_quick_bar(ui, pane_id, palette);
+            }
             if pane.pane_type == graphe_domain::model::PaneType::Commentary {
                 self.draw_commentary(ui, pane_id, book, chapter, verse, palette);
             } else {
@@ -271,7 +275,12 @@ impl GrapheApp {
                                                     shift,
                                                     toggle,
                                                 );
-                                                self.lookup_dict(&display);
+                                                self.lookup_dict_with_context(
+                                                    &display,
+                                                    morph.as_deref(),
+                                                    lemma.as_deref(),
+                                                    module_path.as_deref(),
+                                                );
                                             }
                                             response.context_menu(|ui| {
                                                 if ui
@@ -288,7 +297,12 @@ impl GrapheApp {
                                                     .button(i18n::t("strongsDictionaryLookup"))
                                                     .clicked()
                                                 {
-                                                    self.lookup_dict(&display);
+                                                    self.lookup_dict_with_context(
+                                                        &display,
+                                                        morph.as_deref(),
+                                                        lemma.as_deref(),
+                                                        module_path.as_deref(),
+                                                    );
                                                     ui.close();
                                                 }
                                             });
@@ -629,34 +643,92 @@ impl GrapheApp {
             graphe_domain::model::PaneType::Commentary => "commentary",
             graphe_domain::model::PaneType::Bible => "bible",
         };
-        let modules: Vec<_> = self
-            .modules
-            .iter()
-            .filter(|module| module.kind == wanted)
-            .cloned()
-            .collect();
         let current = self
             .session
             .panes
             .get(pane_id)
             .and_then(|pane| pane.module_id.clone());
-        let label = modules
-            .iter()
-            .find(|module| current.as_deref() == Some(module.id.as_str()))
-            .map(|module| module.name.clone())
-            .unwrap_or_else(|| "—".into());
-        let label = if label.chars().count() > 28 {
-            format!("{}…", label.chars().take(28).collect::<String>())
-        } else {
-            label
-        };
-        let options: Vec<(String, String)> = modules
-            .iter()
-            .map(|module| (module.id.clone(), module.name.clone()))
-            .collect();
-        if let Some(id) = choose_module(ui, pane_id, &label, &options, current.as_deref()) {
+        let palette = graphe_domain::theme::palette(self.session.dark);
+        let dropdown = ModuleDropdown::from_installed(
+            pane_id,
+            wanted,
+            current.as_deref(),
+            &self.modules,
+        )
+        .width(160.0);
+
+        if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
             if let Some(pane) = self.session.panes.get_mut(pane_id) {
                 pane.module_id = Some(id);
+            }
+            self.loaded_key.clear();
+            self.sync_active_chapter();
+        }
+    }
+
+    fn draw_favorite_quick_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        pane_id: &str,
+        palette: &UiPalette,
+    ) {
+        let favs = graphe_domain::picker::favorites(&self.store, "bible");
+        if favs.is_empty() {
+            return;
+        }
+        let current_mod = self
+            .session
+            .panes
+            .get(pane_id)
+            .and_then(|p| p.module_id.clone());
+
+        let mut switch_to = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            for fav_id in &favs {
+                let Some(module) = self.modules.iter().find(|m| &m.id == fav_id) else {
+                    continue;
+                };
+                let is_active = current_mod.as_deref() == Some(fav_id.as_str());
+                let label = module.short_title.as_deref().unwrap_or(&module.name);
+
+                let text = egui::RichText::new(label)
+                    .size(11.0)
+                    .color(if is_active {
+                        paint::color(palette.ui_accent_ink)
+                    } else {
+                        paint::color(palette.ui_text_muted)
+                    });
+                let stroke = egui::Stroke::new(
+                    1.0_f32,
+                    paint::color(if is_active {
+                        palette.ui_border_strong
+                    } else {
+                        palette.ui_border_soft
+                    }),
+                );
+                let fill = paint::color(if is_active {
+                    palette.ui_accent_bg
+                } else {
+                    palette.ui_surface
+                });
+
+                let button = egui::Button::new(text)
+                    .corner_radius(egui::CornerRadius::same(12))
+                    .stroke(stroke)
+                    .fill(fill)
+                    .min_size(egui::vec2(0.0, 20.0));
+
+                let response = ui.add(button);
+                if response.clicked() && !is_active {
+                    switch_to = Some(fav_id.clone());
+                }
+            }
+        });
+
+        if let Some(new_id) = switch_to {
+            if let Some(pane) = self.session.panes.get_mut(pane_id) {
+                pane.module_id = Some(new_id);
             }
             self.loaded_key.clear();
             self.sync_active_chapter();
@@ -686,7 +758,7 @@ impl GrapheApp {
         format!("{} {}:{} {plain}", name.short, chapter, verse.unwrap_or(1))
     }
 
-    fn morph_text(&mut self, path: &Path, code: &str) -> String {
+    pub(crate) fn morph_text(&mut self, path: &Path, code: &str) -> String {
         if !self.morphs.contains_key(path) {
             self.morphs
                 .insert(path.to_path_buf(), sqlite::load_morphology_in_file(path));
@@ -739,56 +811,7 @@ fn pointer_clicked(ui: &egui::Ui, rect: egui::Rect) -> bool {
     })
 }
 
-pub(crate) fn choose_module(
-    ui: &mut egui::Ui,
-    salt: &str,
-    label: &str,
-    options: &[(String, String)],
-    current: Option<&str>,
-) -> Option<String> {
-    ui.push_id(salt, |ui| {
-        let response = ui.add(egui::Button::new(label).min_size(egui::vec2(160.0, 22.0)));
-        let mut chosen = None;
-        egui::Popup::menu(&response).width(280.0).show(|ui| {
-            let filter_id = ui.id().with("filter");
-            let mut filter = ui
-                .ctx()
-                .data(|data| data.get_temp::<String>(filter_id).unwrap_or_default());
-            ui.add(
-                egui::TextEdit::singleline(&mut filter)
-                    .hint_text(i18n::t("searchPlaceholder"))
-                    .desired_width(260.0),
-            );
-            let needle = filter.to_lowercase();
-            ui.ctx()
-                .data_mut(|data| data.insert_temp(filter_id, filter));
-            egui::ScrollArea::vertical()
-                .id_salt(("module-scroll", salt))
-                .max_height(260.0)
-                .show(ui, |ui| {
-                    let mut shown = 0;
-                    for (id, name) in options {
-                        if !needle.is_empty() && !name.to_lowercase().contains(&needle) {
-                            continue;
-                        }
-                        shown += 1;
-                        if shown > 40 {
-                            ui.label("…");
-                            break;
-                        }
-                        if ui
-                            .selectable_label(current == Some(id.as_str()), name)
-                            .clicked()
-                        {
-                            chosen = Some(id.clone());
-                        }
-                    }
-                });
-        });
-        chosen
-    })
-    .inner
-}
+
 
 fn slice_between(text: &str, start: usize, end: usize) -> &str {
     if start <= end

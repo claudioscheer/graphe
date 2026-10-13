@@ -127,6 +127,114 @@ pub fn search_preview_plain(text: &str) -> String {
     collapse_ws(&cleaned)
 }
 
+/// Verse wording with matched Strong's numbers highlighted as `<mark>{word} [{clean_number}]</mark>`.
+pub fn clean_text_with_strongs(text: &str, strong_terms: &[SearchStrongTerm]) -> String {
+    if strong_terms.is_empty() {
+        return search_preview_plain(text);
+    }
+    static PRE_STEPS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    let steps = PRE_STEPS.get_or_init(|| {
+        [
+            (r"(?i)<n>[\s\S]*?</n>", ""),
+            (r"<O[GH]?>[\s\S]*?<o[gh]?>", ""),
+            (r"<T[GH]?>[\s\S]*?<t[gh]?>", ""),
+            (r"(?i)<X>[\s\S]*?<x>", ""),
+            (r"(?i)<m>[\s\S]*?</m>", ""),
+            (r"(?i)<l>[\s\S]*?</l>", ""),
+            (r"(?i)<pb\s*/?>", " "),
+            (r"(?i)<f>[\s\S]*?</f>", " "),
+            (r"(?i)<i>([\s\S]*?)</i>", "$1"),
+            (r"<E>([\s\S]*?)<e>", "$1"),
+        ]
+        .into_iter()
+        .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
+        .collect()
+    });
+    let mut cleaned = text.to_string();
+    for (pattern, replacement) in steps {
+        cleaned = pattern.replace_all(&cleaned, *replacement).into_owned();
+    }
+    let mut match_set = std::collections::HashSet::new();
+    for term in strong_terms {
+        let full = format!("{}{}", term.prefix, term.number).to_uppercase();
+        let num = term.number.to_uppercase();
+        match_set.insert(full);
+        match_set.insert(num);
+    }
+    static S_RE: OnceLock<Regex> = OnceLock::new();
+    let s_re = S_RE.get_or_init(|| Regex::new(r"(\S+)\s*<S[^>]*>([\s\S]*?)</S>").unwrap());
+    cleaned = s_re
+        .replace_all(&cleaned, |caps: &regex::Captures| {
+            let word = &caps[1];
+            let raw_code = caps[2].trim().to_uppercase();
+            if match_set.contains(&raw_code)
+                || match_set
+                    .iter()
+                    .any(|m| raw_code.ends_with(m) || m.ends_with(&raw_code))
+            {
+                let clean_num = raw_code.trim_start_matches(|c: char| c.is_alphabetic());
+                format!("<mark>{word} [{clean_num}]</mark>")
+            } else {
+                word.to_string()
+            }
+        })
+        .into_owned();
+    static TAG_RE: OnceLock<Regex> = OnceLock::new();
+    let tag_re = TAG_RE.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
+    cleaned = tag_re
+        .replace_all(&cleaned, |caps: &regex::Captures| {
+            let tag = &caps[0];
+            if tag == "<mark>" || tag == "</mark>" {
+                tag.to_string()
+            } else {
+                " ".to_string()
+            }
+        })
+        .into_owned();
+    collapse_ws(&cleaned)
+}
+
+/// A short window around the first match, with Strong's tags highlighted.
+pub fn search_preview_rich_snippet(
+    text: &str,
+    terms: &[String],
+    strong_terms: &[SearchStrongTerm],
+    max_chars: usize,
+) -> String {
+    if strong_terms.is_empty() {
+        let snippet = search_preview_snippet(text, terms, max_chars);
+        return highlight_text(&snippet, terms);
+    }
+    let with_strongs = clean_text_with_strongs(text, strong_terms);
+    if with_strongs.len() <= max_chars {
+        return with_strongs;
+    }
+    let lower = with_strongs.to_lowercase();
+    let mark_pos = lower.find("<mark>").unwrap_or(0);
+    let chars: Vec<char> = with_strongs.chars().collect();
+    let mark_char_idx = with_strongs[..mark_pos].chars().count();
+    let mut start = mark_char_idx.saturating_sub(max_chars / 3);
+    let mut end = (start + max_chars).min(chars.len());
+    if end - start < max_chars && start > 0 {
+        start = end.saturating_sub(max_chars);
+    }
+    start = word_boundary(&chars, start, -1);
+    end = word_boundary(&chars, end, 1);
+    let mut snippet: String = chars[start..end].iter().collect();
+    if snippet.contains("<mark>") && !snippet.contains("</mark>") {
+        snippet.push_str("</mark>");
+    } else if !snippet.contains("<mark>") && snippet.contains("</mark>") {
+        snippet.insert_str(0, "<mark>");
+    }
+    if start > 0 {
+        snippet.insert_str(0, "...");
+    }
+    if end < chars.len() {
+        snippet.push_str("...");
+    }
+    snippet
+}
+
 /// A short window around the first match, the same 160-character preview the search list used.
 pub fn search_preview_snippet(text: &str, terms: &[String], max_chars: usize) -> String {
     let compact = search_preview_plain(text);
@@ -419,4 +527,24 @@ mod search_query_tests {
         assert!(result.strongs.is_empty());
         assert!(result.text_terms.is_empty());
     }
+
+    #[test]
+    fn clean_text_with_strongs_marks_matched_occurrences() {
+        let raw = "E as ensinarás<S>8150</S> a teus filhos e delas falarás assentado em tua casa,";
+        let strongs = vec![SearchStrongTerm {
+            prefix: "H".into(),
+            number: "8150".into(),
+        }];
+        let marked = clean_text_with_strongs(raw, &strongs);
+        assert_eq!(
+            marked,
+            "E as <mark>ensinarás [8150]</mark> a teus filhos e delas falarás assentado em tua casa,"
+        );
+        let snippet = search_preview_rich_snippet(raw, &[], &strongs, 160);
+        assert_eq!(
+            snippet,
+            "E as <mark>ensinarás [8150]</mark> a teus filhos e delas falarás assentado em tua casa,"
+        );
+    }
 }
+

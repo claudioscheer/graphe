@@ -8,6 +8,7 @@ pub enum PickerRow {
     Item {
         id: String,
         name: String,
+        subtitle: Option<String>,
         is_fav: bool,
         is_none: bool,
         highlighted: bool,
@@ -223,13 +224,7 @@ impl ModulePicker {
     }
 
     pub fn toggle_favorite(&mut self, store: &mut AppStateStore, module_id: &str) {
-        let mut favs = favorites(store, &self.module_type);
-        if let Some(pos) = favs.iter().position(|id| id == module_id) {
-            favs.remove(pos);
-        } else {
-            favs.push(module_id.to_string());
-        }
-        set_favorites(store, &self.module_type, favs);
+        toggle_favorite_id(store, &self.module_type, module_id);
         self.favorite_events.push(self.module_type.clone());
         self.render_with(store);
     }
@@ -269,36 +264,57 @@ impl ModulePicker {
         let query = query.trim();
         let mut all = Vec::new();
         if self.allow_none {
-            all.push((String::new(), self.none_label.clone(), false, true));
+            all.push((String::new(), self.none_label.clone(), None, false, true));
         }
         for module in &self.modules {
             let name = display_name(module);
             if !query.is_empty()
                 && !name.to_lowercase().contains(query)
                 && !module.id.to_lowercase().contains(query)
+                && !module
+                    .description
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(query)
             {
                 continue;
             }
+            let subtitle = if !module.id.is_empty() && module.id != name {
+                Some(module.id.clone())
+            } else if let Some(desc) = &module.description {
+                if desc != &name {
+                    Some(desc.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             all.push((
                 module.id.clone(),
                 name,
+                subtitle,
                 fav_ids.iter().any(|id| id == &module.id),
                 false,
             ));
         }
-        let favs: Vec<_> = all.iter().filter(|item| item.2).cloned().collect();
-        let rest: Vec<_> = all.iter().filter(|item| !item.2).cloned().collect();
+        let favs: Vec<_> = all.iter().filter(|item| item.3).cloned().collect();
+        let rest: Vec<_> = all.iter().filter(|item| !item.3).cloned().collect();
         let mut rows = Vec::new();
-        let push_item = |rows: &mut Vec<PickerRow>, item: (String, String, bool, bool)| {
-            rows.push(PickerRow::Item {
-                id: item.0,
-                name: item.1,
-                is_fav: item.2,
-                is_none: item.3,
-                highlighted: false,
-                selected: false,
-            });
-        };
+        let push_item =
+            |rows: &mut Vec<PickerRow>,
+             item: (String, String, Option<String>, bool, bool)| {
+                rows.push(PickerRow::Item {
+                    id: item.0,
+                    name: item.1,
+                    subtitle: item.2,
+                    is_fav: item.3,
+                    is_none: item.4,
+                    highlighted: false,
+                    selected: false,
+                });
+            };
         if !favs.is_empty() {
             for item in favs {
                 push_item(&mut rows, item);
@@ -361,6 +377,7 @@ pub fn display_name(module: &ModuleRecord) -> String {
     module
         .list_label
         .clone()
+        .or_else(|| module.short_title.clone())
         .or_else(|| {
             if module.display_name.is_empty() {
                 None
@@ -368,7 +385,6 @@ pub fn display_name(module: &ModuleRecord) -> String {
                 Some(module.display_name.clone())
             }
         })
-        .or_else(|| module.short_title.clone())
         .or_else(|| module.description.clone())
         .unwrap_or_else(|| module.id.clone())
 }
@@ -407,6 +423,19 @@ pub fn set_favorites(store: &mut AppStateStore, module_type: &str, ids: Vec<Stri
         Value::Array(ids.into_iter().map(Value::String).collect()),
     );
     store.set_settings(json!({"favoriteModules": Value::Object(favs)}));
+}
+
+pub fn toggle_favorite_id(store: &mut AppStateStore, module_type: &str, module_id: &str) -> bool {
+    let mut favs = favorites(store, module_type);
+    let now_fav = if let Some(pos) = favs.iter().position(|id| id == module_id) {
+        favs.remove(pos);
+        false
+    } else {
+        favs.push(module_id.to_string());
+        true
+    };
+    set_favorites(store, module_type, favs);
+    now_fav
 }
 
 #[cfg(test)]
@@ -520,5 +549,65 @@ mod module_picker_tests {
         second.clear_search(&store);
         second.close();
         assert!(!second.open);
+    }
+
+    #[test]
+    fn picker_displays_subtitles_and_prefers_short_title() {
+        let mut store = AppStateStore::new();
+        let mut mod_acf = ModuleRecord::new(
+            "Almeida Corrigida Fiel 2011 com Strong.bible",
+            "bible",
+            "ACF11*",
+        );
+        mod_acf.short_title = Some("ACF11*".into());
+        mod_acf.description = Some("Almeida Corrigida Fiel 2011 com Strong".into());
+
+        assert_eq!(display_name(&mod_acf), "ACF11*");
+
+        let mut picker = ModulePicker::create(PickerOptions {
+            modules: vec![mod_acf],
+            selected_id: Some("Almeida Corrigida Fiel 2011 com Strong.bible".into()),
+            module_type: "bible".into(),
+            show_favorites: true,
+            ..PickerOptions::default()
+        });
+
+        picker.open_dropdown(&store, 0.0, 0.0, 20.0, 1000.0, 800.0);
+        assert_eq!(picker.rows.len(), 1);
+        if let PickerRow::Item {
+            name,
+            subtitle,
+            is_fav,
+            ..
+        } = &picker.rows[0]
+        {
+            assert_eq!(name, "ACF11*");
+            assert_eq!(
+                subtitle.as_deref(),
+                Some("Almeida Corrigida Fiel 2011 com Strong.bible")
+            );
+            assert!(!is_fav);
+        } else {
+            panic!("expected PickerRow::Item");
+        }
+
+        // Test toggle_favorite_id directly
+        let is_now_fav = toggle_favorite_id(
+            &mut store,
+            "bible",
+            "Almeida Corrigida Fiel 2011 com Strong.bible",
+        );
+        assert!(is_now_fav);
+        assert_eq!(
+            favorites(&store, "bible"),
+            vec!["Almeida Corrigida Fiel 2011 com Strong.bible".to_string()]
+        );
+        let is_now_fav2 = toggle_favorite_id(
+            &mut store,
+            "bible",
+            "Almeida Corrigida Fiel 2011 com Strong.bible",
+        );
+        assert!(!is_now_fav2);
+        assert!(favorites(&store, "bible").is_empty());
     }
 }
