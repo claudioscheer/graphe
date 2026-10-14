@@ -126,25 +126,39 @@ jobs:
           mkdir -p deb-pkg/DEBIAN
           mkdir -p deb-pkg/usr/bin
           mkdir -p deb-pkg/usr/share/applications
+          mkdir -p deb-pkg/usr/share/pixmaps
           mkdir -p deb-pkg/usr/share/icons/hicolor/256x256/apps
+          mkdir -p deb-pkg/usr/share/icons/hicolor/512x512/apps
           mkdir -p deb-pkg/usr/share/doc/graphe
 
           cp target/release/graphe deb-pkg/usr/bin/
+          chmod 755 deb-pkg/usr/bin/graphe
+          cp assets/graphe.png deb-pkg/usr/share/pixmaps/graphe.png
           cp assets/graphe.png deb-pkg/usr/share/icons/hicolor/256x256/apps/graphe.png
+          cp assets/graphe.png deb-pkg/usr/share/icons/hicolor/512x512/apps/graphe.png
+          chmod 644 deb-pkg/usr/share/pixmaps/graphe.png
+          chmod 644 deb-pkg/usr/share/icons/hicolor/256x256/apps/graphe.png
+          chmod 644 deb-pkg/usr/share/icons/hicolor/512x512/apps/graphe.png
+
           cp packaging/linux/graphe.desktop deb-pkg/usr/share/applications/graphe.desktop
+          chmod 644 deb-pkg/usr/share/applications/graphe.desktop
           cp LICENSE deb-pkg/usr/share/doc/graphe/copyright
+          chmod 644 deb-pkg/usr/share/doc/graphe/copyright
           sed "s/VERSION_PLACEHOLDER/${VERSION}/g" packaging/linux/control.template > deb-pkg/DEBIAN/control
+          chmod 644 deb-pkg/DEBIAN/control
 
           mkdir -p dist
-          dpkg-deb --build deb-pkg dist/graphe-linux.deb
+          dpkg-deb --root-owner-group --build deb-pkg dist/graphe-linux.deb
 
       - name: Package AppImage (.AppImage)
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
           cp target/release/graphe AppDir/usr/bin/
           cp assets/graphe.png AppDir/graphe.png
           cp assets/graphe.png AppDir/usr/share/icons/hicolor/256x256/apps/graphe.png
+          cp assets/graphe.png AppDir/usr/share/icons/hicolor/512x512/apps/graphe.png
           cp packaging/linux/graphe.desktop AppDir/graphe.desktop
           cp packaging/linux/AppRun AppDir/AppRun
           chmod +x AppDir/AppRun

@@ -31,13 +31,14 @@ pub(crate) fn desktop_entry(exe: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Name=Graphe\n\
-         Comment=Bible study\n\
+         Comment=Bible study app with split panes and Strong's numbers\n\
          Exec={exe}\n\
          Icon={APP_ID}\n\
          Terminal=false\n\
          Type=Application\n\
-         Categories=Education;\n\
-         StartupWMClass={APP_ID}\n"
+         Categories=Education;Utility;\n\
+         StartupWMClass={APP_ID}\n\
+         Keywords=Bible;Study;Theology;Scripture;\n"
     )
 }
 
@@ -114,6 +115,7 @@ mod tests {
         assert!(entry.contains("Exec=/usr/bin/graphe\n"));
         assert!(entry.contains("Icon=graphe\n"));
         assert!(entry.contains("StartupWMClass=graphe\n"));
+        assert!(entry.contains("Categories=Education;Utility;\n"));
     }
 
     #[test]
