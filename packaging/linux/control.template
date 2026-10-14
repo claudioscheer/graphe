@@ -1,0 +1,7 @@
+Package: graphe
+Version: VERSION_PLACEHOLDER
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Claudio Scheer
+Description: Bible study app with split panes and Strong's numbers

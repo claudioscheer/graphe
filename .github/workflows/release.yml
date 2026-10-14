@@ -109,16 +109,7 @@ jobs:
           cp assets/graphe.png deb-pkg/usr/share/icons/hicolor/256x256/apps/graphe.png
           cp packaging/linux/graphe.desktop deb-pkg/usr/share/applications/graphe.desktop
           cp LICENSE deb-pkg/usr/share/doc/graphe/copyright
-
-          cat << EOF > deb-pkg/DEBIAN/control
-Package: graphe
-Version: ${VERSION}
-Section: utils
-Priority: optional
-Architecture: amd64
-Maintainer: Claudio Scheer
-Description: Bible study app with split panes and Strong's numbers
-EOF
+          sed "s/VERSION_PLACEHOLDER/${VERSION}/g" packaging/linux/control.template > deb-pkg/DEBIAN/control
 
           mkdir -p dist
           dpkg-deb --build deb-pkg dist/graphe-linux.deb
@@ -131,14 +122,7 @@ EOF
           cp assets/graphe.png AppDir/graphe.png
           cp assets/graphe.png AppDir/usr/share/icons/hicolor/256x256/apps/graphe.png
           cp packaging/linux/graphe.desktop AppDir/graphe.desktop
-
-          cat << 'EOF' > AppDir/AppRun
-#!/bin/sh
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PATH="${HERE}/usr/bin:${PATH}"
-exec "${HERE}/usr/bin/graphe" "$@"
-EOF
+          cp packaging/linux/AppRun AppDir/AppRun
           chmod +x AppDir/AppRun
 
           curl -L -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
