@@ -112,8 +112,14 @@ fi
 
 # 5. Update files
 echo "Updating Cargo.toml..."
-sed -i.bak -E 's/(\[workspace\.package\][^[]*version\s*=\s*)"[^"]+"/\1"'"$NEW_VERSION"'"/' Cargo.toml
+sed -i.bak -E 's/^version = "[^"]+"/version = "'"$NEW_VERSION"'"/' Cargo.toml
 rm -f Cargo.toml.bak
+
+CARGO_UPDATED="$(cargo pkgid -p graphe | awk -F'[@#]' '{print $NF}')"
+if [ "$CARGO_UPDATED" != "$NEW_VERSION" ]; then
+  echo "Error: Failed to update Cargo.toml to $NEW_VERSION (still $CARGO_UPDATED)."
+  exit 1
+fi
 
 if [ -f "packaging/windows/setup.iss" ]; then
   echo "Updating packaging/windows/setup.iss..."
@@ -123,8 +129,7 @@ fi
 
 if [ -f "packaging/macos/Info.plist" ]; then
   echo "Updating packaging/macos/Info.plist..."
-  sed -i.bak -E "s/(<key>CFBundleShortVersionString<\/key>[[:space:]]*<string>)[^<]+(<\/string>)/\1${NEW_VERSION}\2/" packaging/macos/Info.plist
-  sed -i.bak -E "s/(<key>CFBundleVersion<\/key>[[:space:]]*<string>)[^<]+(<\/string>)/\1${NEW_VERSION}\2/" packaging/macos/Info.plist
+  sed -i.bak -E '/<key>CFBundle(ShortVersionString|Version)<\/key>/{n;s|<string>[^<]+</string>|<string>'"$NEW_VERSION"'</string>|;}' packaging/macos/Info.plist
   rm -f packaging/macos/Info.plist.bak
 fi
 

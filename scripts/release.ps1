@@ -147,10 +147,16 @@ if ($DryRun) {
 Write-Host "Updating Cargo.toml..."
 $updatedCargo = [regex]::Replace(
     $cargoToml,
-    '(\[workspace\.package\][^\[]*version\s*=\s*)"[^"]+"',
+    '(?m)(^version\s*=\s*)"[^"]+"',
     "`${1}`"$newVersion`""
 )
 Set-Content "Cargo.toml" -Value $updatedCargo -NoNewline
+
+$cargoUpdated = (cargo pkgid -p graphe).Split('#')[-1]
+if ($cargoUpdated -ne $newVersion) {
+    Write-Error "Failed to update Cargo.toml to $newVersion (still $cargoUpdated)."
+    exit 1
+}
 
 Write-Host "Updating packaging/windows/setup.iss..."
 if (Test-Path "packaging/windows/setup.iss") {
