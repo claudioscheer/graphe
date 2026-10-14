@@ -92,6 +92,7 @@ pub fn run() -> eframe::Result {
                 renaming: None,
                 rename_focus: false,
                 chapter_span_cache: HashMap::new(),
+                reading: crate::study::ReadingCache::new(),
                 editor_path: None,
                 editor_info_name: "description".into(),
                 editor_info_value: String::new(),
@@ -129,6 +130,7 @@ pub(crate) struct GrapheApp {
     pub(crate) renaming: Option<String>,
     pub(crate) rename_focus: bool,
     chapter_span_cache: HashMap<String, Vec<ChapterSpan>>,
+    pub(crate) reading: crate::study::ReadingCache,
     pub(crate) editor_path: Option<PathBuf>,
     pub(crate) editor_info_name: String,
     pub(crate) editor_info_value: String,
@@ -252,6 +254,7 @@ impl GrapheApp {
     pub(crate) fn reload_modules(&mut self) {
         self.modules = catalog::scan_modules(&modules_dir(&state::user_home()));
         self.chapter_span_cache.clear();
+        self.reading.clear();
         self.loaded_key.clear();
         self.sync_active_chapter();
     }
@@ -669,6 +672,7 @@ mod tests {
             renaming: None,
             rename_focus: false,
             chapter_span_cache: HashMap::new(),
+            reading: crate::study::ReadingCache::new(),
             editor_path: None,
             editor_info_name: String::new(),
             editor_info_value: String::new(),
@@ -752,7 +756,11 @@ mod tests {
             .iter()
             .filter(|(key, _)| key.starts_with("body:"))
             .collect();
-        assert_eq!(toolbars.len(), 3, "one column plus a vertical split: {marks:?}");
+        assert_eq!(
+            toolbars.len(),
+            3,
+            "one column plus a vertical split: {marks:?}"
+        );
         assert_eq!(bodies.len(), 3, "{marks:?}");
         let mut tops: Vec<f32> = toolbars.iter().map(|(_, rect)| rect[1]).collect();
         tops.sort_by(f32::total_cmp);
@@ -831,14 +839,263 @@ mod tests {
             }
             for frame in 0..10 {
                 let mut raw = egui::RawInput::default();
-                raw.events.push(egui::Event::PointerMoved(egui::pos2(150.0 + frame as f32, 150.0)));
+                raw.events.push(egui::Event::PointerMoved(egui::pos2(
+                    150.0 + frame as f32,
+                    150.0,
+                )));
                 let _ = ctx.run(raw, |ctx| {
                     let palette = theme::palette(app.session.dark);
                     app.sidebar(ctx, palette);
                 });
-                let state = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"));
-                assert_eq!(state.map(|s| s.rect.width()), Some(300.0), "View {} grew at frame {}", view, frame);
+                let state =
+                    egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"));
+                assert_eq!(
+                    state.map(|s| s.rect.width()),
+                    Some(300.0),
+                    "View {} grew at frame {}",
+                    view,
+                    frame
+                );
             }
         }
+    }
+
+    fn study_frame(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        time: f64,
+        modifiers: egui::Modifiers,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, [f32; 4])> {
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.time = Some(time);
+        raw.modifiers = modifiers;
+        raw.events = events;
+        let palette = theme::palette(false);
+        let mut marks = Vec::new();
+        let _ = ctx.run(raw, |ctx| {
+            app.editor(ctx, palette);
+            marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+        });
+        marks
+    }
+
+    fn mark<'a>(marks: &'a [(String, [f32; 4])], key: &str) -> &'a [f32; 4] {
+        marks
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, rect)| rect)
+            .unwrap_or_else(|| panic!("missing {key} in {marks:?}"))
+    }
+
+    #[test]
+    fn commentary_padding_keeps_the_text_inside_a_scrollable_view() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(40);
+        let mut pieces = Vec::new();
+        for verse in 1..=16 {
+            if verse > 1 {
+                pieces.push(crate::study::CommentaryPiece::Text("\n\n".into()));
+            }
+            pieces.push(crate::study::CommentaryPiece::Text(format!(
+                "{verse} {paragraph}"
+            )));
+            pieces.push(crate::study::CommentaryPiece::Link {
+                label: "Jo 1:1".into(),
+                book: 43,
+                chapter: 1,
+                verse: Some(1),
+            });
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading.commentary.insert(
+            key,
+            crate::study::CommentaryPaint {
+                coverage_text: "Gn — Genesis".into(),
+                coverage_class: graphe_domain::coverage::CoverageClass::Full,
+                pieces: std::sync::Arc::new(pieces),
+            },
+        );
+        let settled = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let view = *mark(&settled, &format!("commentary-view:{pane}"));
+        let text = *mark(&settled, &format!("commentary-text:{pane}"));
+        let frame = *mark(&settled, &format!("commentary-frame:{pane}"));
+        assert!(
+            text[0] >= view[0] + 12.0,
+            "left padding, text x {} view x {}",
+            text[0],
+            view[0]
+        );
+        assert!(
+            text[1] >= view[1] + 8.0,
+            "top padding, text y {} view y {}",
+            text[1],
+            view[1]
+        );
+        assert!(
+            (view[0] + view[2]) - (text[0] + text[2]) >= 12.0,
+            "right padding, text ends at {} view ends at {}",
+            text[0] + text[2],
+            view[0] + view[2]
+        );
+        assert!(
+            (frame[1] + frame[3]) - (text[1] + text[3]) >= 20.0,
+            "bottom padding, frame bottom {} text bottom {}",
+            frame[1] + frame[3],
+            text[1] + text[3]
+        );
+        assert!(
+            frame[3] > view[3] + 28.0,
+            "the commentary is taller than the viewport so it can scroll: frame {} view {}",
+            frame[3],
+            view[3]
+        );
+        let pointer = egui::pos2(view[0] + view[2] * 0.5, view[1] + view[3] * 0.5);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.2,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(pointer)],
+        );
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.3,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -280.0),
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        let scrolled = study_frame(&ctx, &mut app, 0.4, egui::Modifiers::default(), Vec::new());
+        let moved = *mark(&scrolled, &format!("commentary-text:{pane}"));
+        assert!(
+            moved[1] < text[1] - 20.0,
+            "wheel scrolls the commentary, y {} -> {}",
+            text[1],
+            moved[1]
+        );
+    }
+
+    #[test]
+    fn chapter_scroll_and_ctrl_click_stay_on_the_visible_rows() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.loaded_key = ":10:1:pane-1".into();
+        let line = "No princípio criou Deus os céus e a terra <S>7225</S> e a luz <S>216</S> sobre o abismo.";
+        app.session.chapter_text = (1..=150).map(|verse| (verse, line.to_string())).collect();
+        app.session.show_strongs = true;
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let warmed = study_frame(&ctx, &mut app, 0.2, egui::Modifiers::default(), Vec::new());
+        assert!(
+            app.reading.rows_painted > 0 && app.reading.rows_painted < 40,
+            "a 150-verse chapter paints only the visible rows, painted {}",
+            app.reading.rows_painted
+        );
+        let body = *mark(&warmed, "body:pane-1");
+        let verse_one = *mark(&warmed, "verse:pane-1:1");
+        let verse_two = *mark(&warmed, "verse:pane-1:2");
+        assert!(
+            verse_one[0] >= body[0] + 6.0,
+            "the chapter text is inset from the pane edge"
+        );
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let click = |pos: egui::Pos2| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: ctrl,
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: ctrl,
+                },
+            ]
+        };
+        let started = std::time::Instant::now();
+        let mut time = 0.3;
+        for frame in 0..24 {
+            let (modifiers, events) = if frame == 0 {
+                (
+                    ctrl,
+                    click(egui::pos2(
+                        verse_one[0] + 48.0,
+                        verse_one[1] + verse_one[3] * 0.5,
+                    )),
+                )
+            } else if frame == 1 {
+                (
+                    ctrl,
+                    click(egui::pos2(
+                        verse_two[0] + 48.0,
+                        verse_two[1] + verse_two[3] * 0.5,
+                    )),
+                )
+            } else {
+                (
+                    egui::Modifiers::default(),
+                    vec![
+                        egui::Event::PointerMoved(egui::pos2(body[0] + 80.0, body[1] + 120.0)),
+                        egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: egui::vec2(0.0, if frame % 2 == 0 { -90.0 } else { 70.0 }),
+                            modifiers: egui::Modifiers::default(),
+                        },
+                    ],
+                )
+            };
+            let _ = study_frame(&ctx, &mut app, time, modifiers, events);
+            time += 1.0 / 60.0;
+            assert!(
+                app.reading.rows_painted > 0 && app.reading.rows_painted < 40,
+                "frame {frame} painted {} rows",
+                app.reading.rows_painted
+            );
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            app.session.selected_verses.len() >= 2,
+            "ctrl-click keeps both verses, got {:?}",
+            app.session.selected_verses
+        );
+        assert!(
+            elapsed.as_millis() < 900,
+            "scrolling and ctrl-selecting a long chapter took {} ms",
+            elapsed.as_millis()
+        );
     }
 }

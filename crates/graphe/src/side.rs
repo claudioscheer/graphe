@@ -29,7 +29,6 @@ impl GrapheApp {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
-
                 // Shared by search, dictionary, and modules. 34px, padding 0 8px 0 12px.
                 // Align by font line metrics so all tab titles have identical baseline and cap height.
                 let header_height = 34.0;
@@ -106,7 +105,8 @@ impl GrapheApp {
                 // Title row: Search icon + "Pesquisar" label
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                     paint::draw_icon(
                         ui.painter(),
                         icon_rect.center(),
@@ -261,9 +261,8 @@ impl GrapheApp {
                             response.on_hover_cursor(egui::CursorIcon::PointingHand);
                             ui.data_mut(|data| data.insert_temp(hit_id, hovered));
                             if clicked {
-                                let primary = ui.input(|input| {
-                                    input.modifiers.command || input.modifiers.ctrl
-                                });
+                                let primary = ui
+                                    .input(|input| input.modifiers.command || input.modifiers.ctrl);
                                 if primary {
                                     self.session.open_search_hit_in_new_study(&hit);
                                     self.note_workspaces();
@@ -334,7 +333,8 @@ impl GrapheApp {
                 // Row 1: BookOpen icon + "Dicionário" on left, < > ⓘ on right
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                     paint::draw_icon(
                         ui.painter(),
                         icon_rect.center(),
@@ -349,7 +349,8 @@ impl GrapheApp {
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let (i_rect, i_resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                        let (i_rect, i_resp) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
                         let i_color = if i_resp.hovered() {
                             paint::color(palette.ui_text)
                         } else {
@@ -369,17 +370,32 @@ impl GrapheApp {
                         };
                         let (f_rect, f_resp) = ui.allocate_exact_size(
                             egui::vec2(18.0, 18.0),
-                            if has_fwd { egui::Sense::click() } else { egui::Sense::hover() },
+                            if has_fwd {
+                                egui::Sense::click()
+                            } else {
+                                egui::Sense::hover()
+                            },
                         );
-                        paint::draw_icon(ui.painter(), f_rect.center(), fwd_color, paint::Icon::ChevronRight);
+                        paint::draw_icon(
+                            ui.painter(),
+                            f_rect.center(),
+                            fwd_color,
+                            paint::Icon::ChevronRight,
+                        );
                         if has_fwd && f_resp.clicked() {
                             self.session.dict_history_index -= 1;
-                            if let Some(topic) = self.session.dict_history.get(self.session.dict_history_index).cloned() {
+                            if let Some(topic) = self
+                                .session
+                                .dict_history
+                                .get(self.session.dict_history_index)
+                                .cloned()
+                            {
                                 self.lookup_dict(&topic);
                             }
                         }
 
-                        let has_back = self.session.dict_history_index + 1 < self.session.dict_history.len();
+                        let has_back =
+                            self.session.dict_history_index + 1 < self.session.dict_history.len();
                         let back_color = if has_back {
                             paint::color(palette.ui_text_subtle)
                         } else {
@@ -387,12 +403,26 @@ impl GrapheApp {
                         };
                         let (b_rect, b_resp) = ui.allocate_exact_size(
                             egui::vec2(18.0, 18.0),
-                            if has_back { egui::Sense::click() } else { egui::Sense::hover() },
+                            if has_back {
+                                egui::Sense::click()
+                            } else {
+                                egui::Sense::hover()
+                            },
                         );
-                        paint::draw_icon(ui.painter(), b_rect.center(), back_color, paint::Icon::ChevronLeft);
+                        paint::draw_icon(
+                            ui.painter(),
+                            b_rect.center(),
+                            back_color,
+                            paint::Icon::ChevronLeft,
+                        );
                         if has_back && b_resp.clicked() {
                             self.session.dict_history_index += 1;
-                            if let Some(topic) = self.session.dict_history.get(self.session.dict_history_index).cloned() {
+                            if let Some(topic) = self
+                                .session
+                                .dict_history
+                                .get(self.session.dict_history_index)
+                                .cloned()
+                            {
                                 self.lookup_dict(&topic);
                             }
                         }
@@ -461,7 +491,9 @@ impl GrapheApp {
                 egui::Frame::new()
                     .inner_margin(egui::Margin::symmetric(12, 10))
                     .show(ui, |ui| {
-                        if !topic.is_empty() && (entry.is_some() || !self.session.dict_body.is_empty()) {
+                        if !topic.is_empty()
+                            && (entry.is_some() || !self.session.dict_body.is_empty())
+                        {
                             // Module Header
                             ui.label(
                                 egui::RichText::new(&display_title)
@@ -485,7 +517,11 @@ impl GrapheApp {
                             ui.add_space(4.0);
 
                             // Large lexeme title
-                            if let Some(lexeme) = entry.as_ref().and_then(|e| e.get("lexeme")).filter(|l| !l.is_empty()) {
+                            if let Some(lexeme) = entry
+                                .as_ref()
+                                .and_then(|e| e.get("lexeme"))
+                                .filter(|l| !l.is_empty())
+                            {
                                 ui.label(
                                     egui::RichText::new(lexeme)
                                         .size(24.0)
@@ -495,8 +531,16 @@ impl GrapheApp {
                             }
 
                             // Transliteration / pronunciation meta
-                            let translit = entry.as_ref().and_then(|e| e.get("transliteration")).cloned().unwrap_or_default();
-                            let pron = entry.as_ref().and_then(|e| e.get("pronunciation")).cloned().unwrap_or_default();
+                            let translit = entry
+                                .as_ref()
+                                .and_then(|e| e.get("transliteration"))
+                                .cloned()
+                                .unwrap_or_default();
+                            let pron = entry
+                                .as_ref()
+                                .and_then(|e| e.get("pronunciation"))
+                                .cloned()
+                                .unwrap_or_default();
                             let meta = match (!translit.is_empty(), !pron.is_empty()) {
                                 (true, true) => format!("{translit} — {pron}"),
                                 (true, false) => translit,
@@ -514,7 +558,11 @@ impl GrapheApp {
                             }
 
                             // Short definition (if present)
-                            if let Some(short_def) = entry.as_ref().and_then(|e| e.get("short_definition")).filter(|s| !s.is_empty()) {
+                            if let Some(short_def) = entry
+                                .as_ref()
+                                .and_then(|e| e.get("short_definition"))
+                                .filter(|s| !s.is_empty())
+                            {
                                 ui.label(
                                     egui::RichText::new(short_def)
                                         .size(13.0)
@@ -526,8 +574,13 @@ impl GrapheApp {
 
                             // Morphology Section Box (if morphology context is present)
                             if let Some(code) = self.session.dict_morph_code.clone() {
-                                let lemma = self.session.dict_morph_lemma.clone().unwrap_or_default();
-                                let meaning = self.session.dict_morph_meaning.clone().unwrap_or_else(|| code.clone());
+                                let lemma =
+                                    self.session.dict_morph_lemma.clone().unwrap_or_default();
+                                let meaning = self
+                                    .session
+                                    .dict_morph_meaning
+                                    .clone()
+                                    .unwrap_or_else(|| code.clone());
                                 morphology_box(ui, &code, &lemma, &meaning, palette);
                                 ui.add_space(6.0);
                             }
@@ -714,10 +767,19 @@ impl GrapheApp {
             .inner_margin(egui::Margin::symmetric(10, 10))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
-                if command_button(ui, paint::Icon::Library, &i18n::t("installModules"), palette).clicked() {
+                if command_button(
+                    ui,
+                    paint::Icon::Library,
+                    &i18n::t("installModules"),
+                    palette,
+                )
+                .clicked()
+                {
                     self.install();
                 }
-                if command_button(ui, paint::Icon::Files, &i18n::t("convertModules"), palette).clicked() {
+                if command_button(ui, paint::Icon::Files, &i18n::t("convertModules"), palette)
+                    .clicked()
+                {
                     self.session.dialog = Dialog::Convert;
                 }
             });
@@ -728,9 +790,21 @@ impl GrapheApp {
             .inner_margin(egui::Margin::symmetric(10, 10))
             .show(ui, |ui| {
                 let bible_count = self.modules.iter().filter(|m| m.kind == "bible").count();
-                let dict_count = self.modules.iter().filter(|m| m.kind == "dictionary").count();
-                let comm_count = self.modules.iter().filter(|m| m.kind == "commentary").count();
-                let xref_count = self.modules.iter().filter(|m| m.kind == "crossreference").count();
+                let dict_count = self
+                    .modules
+                    .iter()
+                    .filter(|m| m.kind == "dictionary")
+                    .count();
+                let comm_count = self
+                    .modules
+                    .iter()
+                    .filter(|m| m.kind == "commentary")
+                    .count();
+                let xref_count = self
+                    .modules
+                    .iter()
+                    .filter(|m| m.kind == "crossreference")
+                    .count();
 
                 let avail = ui.available_width();
                 let card_w = ((avail - 6.0) / 2.0).max(60.0);
@@ -836,13 +910,7 @@ fn command_button(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn stat_card(
-    ui: &mut egui::Ui,
-    width: f32,
-    count: usize,
-    label: &str,
-    palette: &UiPalette,
-) {
+fn stat_card(ui: &mut egui::Ui, width: f32, count: usize, label: &str, palette: &UiPalette) {
     let height = 38.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     ui.painter().rect(
@@ -872,18 +940,16 @@ fn stat_card(
         paint::color(palette.ui_link),
     );
     ui.painter().galley(
-        egui::pos2(x_start + num_w + 6.0, baseline_y - label_galley.rect.height() - 1.0),
+        egui::pos2(
+            x_start + num_w + 6.0,
+            baseline_y - label_galley.rect.height() - 1.0,
+        ),
         label_galley,
         paint::color(palette.ui_text_subtle),
     );
 }
 
-fn module_row(
-    ui: &mut egui::Ui,
-    name: &str,
-    kind: &str,
-    palette: &UiPalette,
-) -> egui::Response {
+fn module_row(ui: &mut egui::Ui, name: &str, kind: &str, palette: &UiPalette) -> egui::Response {
     let row_id = ui.id().with(("module-row", name, kind));
     let hovered = ui.data(|data| data.get_temp(row_id).unwrap_or(false));
     let (fill, stroke_color) = if hovered {
@@ -892,10 +958,7 @@ fn module_row(
             paint::color(palette.ui_border),
         )
     } else {
-        (
-            egui::Color32::TRANSPARENT,
-            egui::Color32::TRANSPARENT,
-        )
+        (egui::Color32::TRANSPARENT, egui::Color32::TRANSPARENT)
     };
     let frame = egui::Frame::new()
         .fill(fill)
@@ -930,8 +993,6 @@ fn module_row(
     response
 }
 
-
-
 fn search_input_box(
     ui: &mut egui::Ui,
     query: &mut String,
@@ -941,7 +1002,10 @@ fn search_input_box(
     let mut cleared = false;
     let frame = egui::Frame::new()
         .fill(paint::color(palette.ui_surface))
-        .stroke(egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            paint::color(palette.ui_border_soft),
+        ))
         .corner_radius(egui::CornerRadius::same(4))
         .inner_margin(egui::Margin::symmetric(8, 5));
     let inner_resp = frame.show(ui, |ui| {
@@ -972,11 +1036,17 @@ fn search_input_box(
                 };
                 let center = btn_rect.center();
                 ui.painter().line_segment(
-                    [center + egui::vec2(-4.0, -4.0), center + egui::vec2(4.0, 4.0)],
+                    [
+                        center + egui::vec2(-4.0, -4.0),
+                        center + egui::vec2(4.0, 4.0),
+                    ],
                     egui::Stroke::new(1.2_f32, icon_color),
                 );
                 ui.painter().line_segment(
-                    [center + egui::vec2(4.0, -4.0), center + egui::vec2(-4.0, 4.0)],
+                    [
+                        center + egui::vec2(4.0, -4.0),
+                        center + egui::vec2(-4.0, 4.0),
+                    ],
                     egui::Stroke::new(1.2_f32, icon_color),
                 );
                 if btn_resp.clicked() {
@@ -991,13 +1061,7 @@ fn search_input_box(
     (inner_resp.inner, cleared)
 }
 
-fn morphology_box(
-    ui: &mut egui::Ui,
-    code: &str,
-    lemma: &str,
-    meaning: &str,
-    palette: &UiPalette,
-) {
+fn morphology_box(ui: &mut egui::Ui, code: &str, lemma: &str, meaning: &str, palette: &UiPalette) {
     let frame = egui::Frame::new()
         .fill(paint::color_alpha(palette.ui_link, 16))
         .inner_margin(egui::Margin {
@@ -1080,18 +1144,39 @@ fn draw_marked(
     let mut rest = marked;
     while let Some(start) = rest.find("<mark>") {
         let (head, tail) = rest.split_at(start);
-        append_snippet(&mut job, &paint::unescape(head), size, plain, false, palette);
+        append_snippet(
+            &mut job,
+            &paint::unescape(head),
+            size,
+            plain,
+            false,
+            palette,
+        );
         let tail = &tail["<mark>".len()..];
         if let Some(end) = tail.find("</mark>") {
             let mark_content = &tail[..end];
-            append_snippet(&mut job, &paint::unescape(mark_content), size, mark, true, palette);
+            append_snippet(
+                &mut job,
+                &paint::unescape(mark_content),
+                size,
+                mark,
+                true,
+                palette,
+            );
             rest = &tail[end + "</mark>".len()..];
         } else {
             rest = tail;
             break;
         }
     }
-    append_snippet(&mut job, &paint::unescape(rest), size, plain, false, palette);
+    append_snippet(
+        &mut job,
+        &paint::unescape(rest),
+        size,
+        plain,
+        false,
+        palette,
+    );
     ui.label(job);
 }
 

@@ -223,347 +223,370 @@ impl<'a> ModuleDropdown<'a> {
                     ui.available_width()
                 }
             });
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(trigger_width, height), egui::Sense::click());
+            let (rect, resp) =
+                ui.allocate_exact_size(egui::vec2(trigger_width, height), egui::Sense::click());
 
             let popup_id = resp.id.with("popup");
-        let is_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+            let is_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
 
-        if self.plain {
-            if resp.hovered() || is_open {
-                ui.painter().rect_filled(
+            if self.plain {
+                if resp.hovered() || is_open {
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
+                        paint::color_alpha(palette.ui_surface, if dark { 28 } else { 120 }),
+                    );
+                }
+            } else {
+                let (fill, stroke_color) = if resp.hovered() || is_open {
+                    (
+                        paint::color(palette.ui_surface),
+                        paint::color(palette.ui_border_strong),
+                    )
+                } else {
+                    (
+                        paint::color(palette.ui_surface),
+                        paint::color(palette.ui_border_soft),
+                    )
+                };
+                ui.painter().rect(
                     rect,
                     egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-                    paint::color_alpha(palette.ui_surface, if dark { 28 } else { 120 }),
-                );
-            }
-        } else {
-            let (fill, stroke_color) = if resp.hovered() || is_open {
-                (
-                    paint::color(palette.ui_surface),
-                    paint::color(palette.ui_border_strong),
-                )
-            } else {
-                (
-                    paint::color(palette.ui_surface),
-                    paint::color(palette.ui_border_soft),
-                )
-            };
-            ui.painter().rect(
-                rect,
-                egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-                fill,
-                egui::Stroke::new(1.0_f32, stroke_color),
-                egui::StrokeKind::Inside,
-            );
-        }
-
-        let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
-        let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
-            format!("{}…", trigger_text.chars().take(max_chars - 1).collect::<String>())
-        } else if trigger_text.chars().count() > self.truncate_length {
-            format!("{}…", trigger_text.chars().take(self.truncate_length).collect::<String>())
-        } else {
-            trigger_text
-        };
-
-        let galley = ui.painter().layout_no_wrap(
-            display_text,
-            egui::FontId::proportional(font_size),
-            paint::color(palette.ui_text),
-        );
-        let text_pos = egui::pos2(rect.left() + 8.0, rect.center().y - galley.rect.height() / 2.0);
-        ui.painter().galley(text_pos, galley, paint::color(palette.ui_text));
-
-        // Chevron down icon on right
-        let chevron_center = egui::pos2(rect.right() - 14.0, rect.center().y);
-        paint::draw_icon(
-            ui.painter(),
-            chevron_center,
-            paint::color(palette.ui_text_subtle),
-            paint::Icon::ChevronDown,
-        );
-
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-
-        let mut chosen = None;
-        let popup_width = rect.width().max(self.min_dropdown_width);
-
-        let popup_frame = egui::Frame::new()
-            .fill(paint::color(palette.ui_surface_elevated))
-            .stroke(egui::Stroke::new(
-                1.0_f32,
-                paint::color(if dark {
-                    palette.ui_border_strong
-                } else {
-                    palette.ui_border_soft
-                }),
-            ))
-            .corner_radius(egui::CornerRadius::same(theme::RADIUS_CONTROL as u8))
-            .shadow(egui::Shadow {
-                offset: [0, 4],
-                blur: 16,
-                spread: 0,
-                color: egui::Color32::from_black_alpha(if dark { 120 } else { 35 }),
-            })
-            .inner_margin(egui::Margin {
-                left: 0,
-                right: 0,
-                top: 6,
-                bottom: 6,
-            });
-
-        egui::Popup::from_toggle_button_response(&resp)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .frame(popup_frame)
-            .width(popup_width)
-            .show(|ui| {
-                ui.set_width(popup_width);
-                ui.set_max_width(popup_width);
-
-                let search_id = popup_id.with("search");
-                let mut search_query = ui
-                    .ctx()
-                    .data(|d| d.get_temp::<String>(search_id).unwrap_or_default());
-
-                let was_open_id = popup_id.with("was_open");
-                let was_open = ui
-                    .ctx()
-                    .data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
-                if !was_open {
-                    search_query.clear();
-                }
-                ui.ctx().data_mut(|d| d.insert_temp(was_open_id, true));
-
-                // 1. Search Box with rounded border and optional clear button
-                let search_h = 28.0_f32;
-                let (search_row_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(popup_width, search_h + 4.0),
-                    egui::Sense::hover(),
-                );
-                let box_margin_h = 6.0_f32;
-                let box_rect = egui::Rect::from_min_size(
-                    egui::pos2(search_row_rect.left() + box_margin_h, search_row_rect.top() + 2.0),
-                    egui::vec2(popup_width - 2.0 * box_margin_h, search_h),
-                );
-
-                ui.painter().rect(
-                    box_rect,
-                    egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-                    paint::color(palette.ui_surface),
-                    egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)),
+                    fill,
+                    egui::Stroke::new(1.0_f32, stroke_color),
                     egui::StrokeKind::Inside,
                 );
+            }
 
-                let is_empty = search_query.is_empty();
-                let text_w = if is_empty {
-                    box_rect.width() - 16.0
-                } else {
-                    box_rect.width() - 32.0
-                };
-                let text_edit_rect = egui::Rect::from_min_size(
-                    egui::pos2(box_rect.left() + 8.0, box_rect.top()),
-                    egui::vec2(text_w, box_rect.height()),
-                );
+            let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
+            let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
+                format!(
+                    "{}…",
+                    trigger_text.chars().take(max_chars - 1).collect::<String>()
+                )
+            } else if trigger_text.chars().count() > self.truncate_length {
+                format!(
+                    "{}…",
+                    trigger_text
+                        .chars()
+                        .take(self.truncate_length)
+                        .collect::<String>()
+                )
+            } else {
+                trigger_text
+            };
 
-                let text_resp = ui.put(
-                    text_edit_rect,
-                    egui::TextEdit::singleline(&mut search_query)
-                        .hint_text(i18n::t("searchPlaceholder"))
-                        .frame(false)
-                        .margin(egui::Margin::ZERO)
-                        .vertical_align(egui::Align::Center)
-                        .font(egui::FontId::proportional(13.0)),
-                );
+            let galley = ui.painter().layout_no_wrap(
+                display_text,
+                egui::FontId::proportional(font_size),
+                paint::color(palette.ui_text),
+            );
+            let text_pos = egui::pos2(
+                rect.left() + 8.0,
+                rect.center().y - galley.rect.height() / 2.0,
+            );
+            ui.painter()
+                .galley(text_pos, galley, paint::color(palette.ui_text));
 
-                if !was_open {
-                    text_resp.request_focus();
-                }
+            // Chevron down icon on right
+            let chevron_center = egui::pos2(rect.right() - 14.0, rect.center().y);
+            paint::draw_icon(
+                ui.painter(),
+                chevron_center,
+                paint::color(palette.ui_text_subtle),
+                paint::Icon::ChevronDown,
+            );
 
-                if !is_empty {
-                    let clear_rect = egui::Rect::from_center_size(
-                        egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
-                        egui::vec2(18.0, 18.0),
-                    );
-                    let clear_resp = ui.interact(clear_rect, popup_id.with("clear"), egui::Sense::click());
-                    if clear_resp.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    let clear_color = if clear_resp.hovered() {
-                        paint::color(palette.ui_text)
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+
+            let mut chosen = None;
+            let popup_width = rect.width().max(self.min_dropdown_width);
+
+            let popup_frame = egui::Frame::new()
+                .fill(paint::color(palette.ui_surface_elevated))
+                .stroke(egui::Stroke::new(
+                    1.0_f32,
+                    paint::color(if dark {
+                        palette.ui_border_strong
                     } else {
-                        paint::color(palette.ui_text_subtle)
-                    };
-                    let clear_galley = ui.painter().layout_no_wrap(
-                        "×".into(),
-                        egui::FontId::proportional(15.0),
-                        clear_color,
-                    );
-                    let clear_pos = egui::pos2(
-                        clear_rect.center().x - clear_galley.rect.width() / 2.0,
-                        clear_rect.center().y - clear_galley.rect.height() / 2.0,
-                    );
-                    ui.painter().galley(clear_pos, clear_galley, clear_color);
+                        palette.ui_border_soft
+                    }),
+                ))
+                .corner_radius(egui::CornerRadius::same(theme::RADIUS_CONTROL as u8))
+                .shadow(egui::Shadow {
+                    offset: [0, 4],
+                    blur: 16,
+                    spread: 0,
+                    color: egui::Color32::from_black_alpha(if dark { 120 } else { 35 }),
+                })
+                .inner_margin(egui::Margin {
+                    left: 0,
+                    right: 0,
+                    top: 6,
+                    bottom: 6,
+                });
 
-                    if clear_resp.clicked() {
+            egui::Popup::from_toggle_button_response(&resp)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .frame(popup_frame)
+                .width(popup_width)
+                .show(|ui| {
+                    ui.set_width(popup_width);
+                    ui.set_max_width(popup_width);
+
+                    let search_id = popup_id.with("search");
+                    let mut search_query = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+
+                    let was_open_id = popup_id.with("was_open");
+                    let was_open = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
+                    if !was_open {
                         search_query.clear();
+                    }
+                    ui.ctx().data_mut(|d| d.insert_temp(was_open_id, true));
+
+                    // 1. Search Box with rounded border and optional clear button
+                    let search_h = 28.0_f32;
+                    let (search_row_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(popup_width, search_h + 4.0),
+                        egui::Sense::hover(),
+                    );
+                    let box_margin_h = 6.0_f32;
+                    let box_rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            search_row_rect.left() + box_margin_h,
+                            search_row_rect.top() + 2.0,
+                        ),
+                        egui::vec2(popup_width - 2.0 * box_margin_h, search_h),
+                    );
+
+                    ui.painter().rect(
+                        box_rect,
+                        egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
+                        paint::color(palette.ui_surface),
+                        egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)),
+                        egui::StrokeKind::Inside,
+                    );
+
+                    let is_empty = search_query.is_empty();
+                    let text_w = if is_empty {
+                        box_rect.width() - 16.0
+                    } else {
+                        box_rect.width() - 32.0
+                    };
+                    let text_edit_rect = egui::Rect::from_min_size(
+                        egui::pos2(box_rect.left() + 8.0, box_rect.top()),
+                        egui::vec2(text_w, box_rect.height()),
+                    );
+
+                    let text_resp = ui.put(
+                        text_edit_rect,
+                        egui::TextEdit::singleline(&mut search_query)
+                            .hint_text(i18n::t("searchPlaceholder"))
+                            .frame(false)
+                            .margin(egui::Margin::ZERO)
+                            .vertical_align(egui::Align::Center)
+                            .font(egui::FontId::proportional(13.0)),
+                    );
+
+                    if !was_open {
                         text_resp.request_focus();
                     }
-                }
 
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(search_id, search_query.clone()));
+                    if !is_empty {
+                        let clear_rect = egui::Rect::from_center_size(
+                            egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
+                            egui::vec2(18.0, 18.0),
+                        );
+                        let clear_resp =
+                            ui.interact(clear_rect, popup_id.with("clear"), egui::Sense::click());
+                        if clear_resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        let clear_color = if clear_resp.hovered() {
+                            paint::color(palette.ui_text)
+                        } else {
+                            paint::color(palette.ui_text_subtle)
+                        };
+                        let clear_galley = ui.painter().layout_no_wrap(
+                            "×".into(),
+                            egui::FontId::proportional(15.0),
+                            clear_color,
+                        );
+                        let clear_pos = egui::pos2(
+                            clear_rect.center().x - clear_galley.rect.width() / 2.0,
+                            clear_rect.center().y - clear_galley.rect.height() / 2.0,
+                        );
+                        ui.painter().galley(clear_pos, clear_galley, clear_color);
 
-                ui.add_space(4.0);
-
-                // 2. Filter items and separate into favorites vs non-favorites
-                let query = search_query.trim().to_lowercase();
-                let fav_ids = if self.show_favorites {
-                    picker::favorites(store, self.module_type)
-                } else {
-                    Vec::new()
-                };
-
-                let mut matching_items = Vec::new();
-                if self.allow_none && (query.is_empty() || self.none_label.to_lowercase().contains(&query)) {
-                    matching_items.push(DropdownItem {
-                        id: String::new(),
-                        name: self.none_label.clone(),
-                        subtitle: None,
-                        tooltip: Some(self.none_label.clone()),
-                    });
-                }
-
-                for item in &self.items {
-                    if !query.is_empty()
-                        && !item.name.to_lowercase().contains(&query)
-                        && !item.id.to_lowercase().contains(&query)
-                        && !item
-                            .subtitle
-                            .as_deref()
-                            .unwrap_or("")
-                            .to_lowercase()
-                            .contains(&query)
-                    {
-                        continue;
+                        if clear_resp.clicked() {
+                            search_query.clear();
+                            text_resp.request_focus();
+                        }
                     }
-                    matching_items.push(item.clone());
-                }
 
-                let fav_items: Vec<_> = matching_items
-                    .iter()
-                    .filter(|item| !item.id.is_empty() && fav_ids.contains(&item.id))
-                    .cloned()
-                    .collect();
-                let non_fav_items: Vec<_> = matching_items
-                    .iter()
-                    .filter(|item| item.id.is_empty() || !fav_ids.contains(&item.id))
-                    .cloned()
-                    .collect();
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(search_id, search_query.clone()));
 
-                // Keyboard navigation
-                let hl_id = popup_id.with("hl");
-                let mut hl = ui.ctx().data(|d| d.get_temp::<i32>(hl_id).unwrap_or(-1));
-                let total_items = fav_items.len() + non_fav_items.len();
+                    ui.add_space(4.0);
 
-                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-                    hl = (hl + 1).min(total_items as i32 - 1);
-                }
-                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                    hl = (hl - 1).max(0);
-                }
+                    // 2. Filter items and separate into favorites vs non-favorites
+                    let query = search_query.trim().to_lowercase();
+                    let fav_ids = if self.show_favorites {
+                        picker::favorites(store, self.module_type)
+                    } else {
+                        Vec::new()
+                    };
 
-                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let mut matching_items = Vec::new();
+                    if self.allow_none
+                        && (query.is_empty() || self.none_label.to_lowercase().contains(&query))
+                    {
+                        matching_items.push(DropdownItem {
+                            id: String::new(),
+                            name: self.none_label.clone(),
+                            subtitle: None,
+                            tooltip: Some(self.none_label.clone()),
+                        });
+                    }
 
-                // 3. Scroll area containing the rows
-                egui::ScrollArea::vertical()
-                    .id_salt(popup_id.with("scroll"))
-                    .max_height(260.0)
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        if fav_items.is_empty() && non_fav_items.is_empty() {
-                            ui.add_space(14.0);
-                            ui.vertical_centered(|ui| {
-                                ui.label(
-                                    egui::RichText::new(i18n::t("searchNoResults"))
-                                        .size(12.0)
-                                        .color(paint::color(palette.ui_text_subtle)),
+                    for item in &self.items {
+                        if !query.is_empty()
+                            && !item.name.to_lowercase().contains(&query)
+                            && !item.id.to_lowercase().contains(&query)
+                            && !item
+                                .subtitle
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_lowercase()
+                                .contains(&query)
+                        {
+                            continue;
+                        }
+                        matching_items.push(item.clone());
+                    }
+
+                    let fav_items: Vec<_> = matching_items
+                        .iter()
+                        .filter(|item| !item.id.is_empty() && fav_ids.contains(&item.id))
+                        .cloned()
+                        .collect();
+                    let non_fav_items: Vec<_> = matching_items
+                        .iter()
+                        .filter(|item| item.id.is_empty() || !fav_ids.contains(&item.id))
+                        .cloned()
+                        .collect();
+
+                    // Keyboard navigation
+                    let hl_id = popup_id.with("hl");
+                    let mut hl = ui.ctx().data(|d| d.get_temp::<i32>(hl_id).unwrap_or(-1));
+                    let total_items = fav_items.len() + non_fav_items.len();
+
+                    if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                        hl = (hl + 1).min(total_items as i32 - 1);
+                    }
+                    if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                        hl = (hl - 1).max(0);
+                    }
+
+                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                    // 3. Scroll area containing the rows
+                    egui::ScrollArea::vertical()
+                        .id_salt(popup_id.with("scroll"))
+                        .max_height(260.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            if fav_items.is_empty() && non_fav_items.is_empty() {
+                                ui.add_space(14.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(i18n::t("searchNoResults"))
+                                            .size(12.0)
+                                            .color(paint::color(palette.ui_text_subtle)),
+                                    );
+                                });
+                                ui.add_space(14.0);
+                                return;
+                            }
+
+                            let mut current_idx = 0;
+
+                            // Favorite items
+                            for item in &fav_items {
+                                let is_highlighted = hl == current_idx;
+                                if let Some(selected_id) = self.render_row(
+                                    ui,
+                                    item,
+                                    true,
+                                    is_highlighted,
+                                    store,
+                                    palette,
+                                    popup_id,
+                                ) {
+                                    chosen = Some(selected_id);
+                                }
+                                if enter_pressed && is_highlighted {
+                                    chosen = Some(item.id.clone());
+                                    egui::Popup::close_id(ui.ctx(), popup_id);
+                                }
+                                current_idx += 1;
+                            }
+
+                            // Divider between favorites and non-favorites
+                            if !fav_items.is_empty() && !non_fav_items.is_empty() {
+                                ui.add_space(3.0);
+                                let (div_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), 1.0),
+                                    egui::Sense::hover(),
                                 );
-                            });
-                            ui.add_space(14.0);
-                            return;
-                        }
-
-                        let mut current_idx = 0;
-
-                        // Favorite items
-                        for item in &fav_items {
-                            let is_highlighted = hl == current_idx;
-                            if let Some(selected_id) = self.render_row(
-                                ui,
-                                item,
-                                true,
-                                is_highlighted,
-                                store,
-                                palette,
-                                popup_id,
-                            ) {
-                                chosen = Some(selected_id);
+                                ui.painter().line_segment(
+                                    [
+                                        egui::pos2(div_rect.left() + 8.0, div_rect.center().y),
+                                        egui::pos2(div_rect.right() - 8.0, div_rect.center().y),
+                                    ],
+                                    egui::Stroke::new(
+                                        1.0_f32,
+                                        paint::color(palette.ui_border_soft),
+                                    ),
+                                );
+                                ui.add_space(3.0);
                             }
-                            if enter_pressed && is_highlighted {
-                                chosen = Some(item.id.clone());
-                                egui::Popup::close_id(ui.ctx(), popup_id);
+
+                            // Non-favorite items
+                            for item in &non_fav_items {
+                                let is_highlighted = hl == current_idx;
+                                if let Some(selected_id) = self.render_row(
+                                    ui,
+                                    item,
+                                    false,
+                                    is_highlighted,
+                                    store,
+                                    palette,
+                                    popup_id,
+                                ) {
+                                    chosen = Some(selected_id);
+                                }
+                                if enter_pressed && is_highlighted {
+                                    chosen = Some(item.id.clone());
+                                    egui::Popup::close_id(ui.ctx(), popup_id);
+                                }
+                                current_idx += 1;
                             }
-                            current_idx += 1;
-                        }
+                        });
 
-                        // Divider between favorites and non-favorites
-                        if !fav_items.is_empty() && !non_fav_items.is_empty() {
-                            ui.add_space(3.0);
-                            let (div_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width(), 1.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().line_segment(
-                                [
-                                    egui::pos2(div_rect.left() + 8.0, div_rect.center().y),
-                                    egui::pos2(div_rect.right() - 8.0, div_rect.center().y),
-                                ],
-                                egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)),
-                            );
-                            ui.add_space(3.0);
-                        }
+                    ui.ctx().data_mut(|d| d.insert_temp(hl_id, hl));
+                });
 
-                        // Non-favorite items
-                        for item in &non_fav_items {
-                            let is_highlighted = hl == current_idx;
-                            if let Some(selected_id) = self.render_row(
-                                ui,
-                                item,
-                                false,
-                                is_highlighted,
-                                store,
-                                palette,
-                                popup_id,
-                            ) {
-                                chosen = Some(selected_id);
-                            }
-                            if enter_pressed && is_highlighted {
-                                chosen = Some(item.id.clone());
-                                egui::Popup::close_id(ui.ctx(), popup_id);
-                            }
-                            current_idx += 1;
-                        }
-                    });
-
-                ui.ctx().data_mut(|d| d.insert_temp(hl_id, hl));
-            });
-
-        if !is_open {
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(popup_id.with("was_open"), false));
-        }
+            if !is_open {
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(popup_id.with("was_open"), false));
+            }
 
             chosen
         })
@@ -637,8 +660,13 @@ impl<'a> ModuleDropdown<'a> {
             egui::Sense::click(),
         );
 
-        let is_sub_truncated = sub_layout.as_ref().map_or(false, |(_, truncated)| *truncated);
-        let has_subtitle = item.subtitle.as_ref().map_or(false, |s| !s.is_empty() && s != &item.name);
+        let is_sub_truncated = sub_layout
+            .as_ref()
+            .map_or(false, |(_, truncated)| *truncated);
+        let has_subtitle = item
+            .subtitle
+            .as_ref()
+            .map_or(false, |s| !s.is_empty() && s != &item.name);
         if is_title_truncated || is_sub_truncated || has_subtitle || item.tooltip.is_some() {
             let tooltip_text = item.tooltip.clone().unwrap_or_else(|| {
                 if has_subtitle {
@@ -663,11 +691,7 @@ impl<'a> ModuleDropdown<'a> {
         let painter = ui.painter().with_clip_rect(row_rect);
 
         if let Some(fill) = bg_fill {
-            painter.rect_filled(
-                row_rect,
-                egui::CornerRadius::same(2),
-                fill,
-            );
+            painter.rect_filled(row_rect, egui::CornerRadius::same(2), fill);
         }
 
         let mut star_clicked = false;
@@ -710,10 +734,7 @@ impl<'a> ModuleDropdown<'a> {
             let sub_pos = egui::pos2(text_left, title_pos.y + title_h + 2.0);
             painter.galley(sub_pos, sub_galley, paint::color(palette.ui_text_subtle));
         } else {
-            let text_pos = egui::pos2(
-                text_left,
-                row_rect.center().y - title_galley.size().y / 2.0,
-            );
+            let text_pos = egui::pos2(text_left, row_rect.center().y - title_galley.size().y / 2.0);
             painter.galley(text_pos, title_galley, name_color);
         }
 

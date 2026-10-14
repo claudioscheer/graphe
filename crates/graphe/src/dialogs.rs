@@ -137,16 +137,12 @@ impl GrapheApp {
             self.session.xref_modules.first().cloned()
         };
         let salt = format!("settings-{kind}");
-        let dropdown = ModuleDropdown::from_installed(
-            &salt,
-            kind,
-            current.as_deref(),
-            &self.modules,
-        )
-        .allow_none(true)
-        .none_label(i18n::t("coverageNone"))
-        .show_favorites(false)
-        .width(ui.available_width().min(420.0));
+        let dropdown =
+            ModuleDropdown::from_installed(&salt, kind, current.as_deref(), &self.modules)
+                .allow_none(true)
+                .none_label(i18n::t("coverageNone"))
+                .show_favorites(false)
+                .width(ui.available_width().min(420.0));
 
         if let Some(chosen_id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
             let val = if chosen_id.is_empty() {
@@ -354,10 +350,8 @@ impl GrapheApp {
                     ..
                 } => {
                     ui.horizontal(|ui| {
-                        let (star_rect, star_resp) = ui.allocate_exact_size(
-                            egui::vec2(20.0, 24.0),
-                            egui::Sense::click(),
-                        );
+                        let (star_rect, star_resp) =
+                            ui.allocate_exact_size(egui::vec2(20.0, 24.0), egui::Sense::click());
                         let star_color = if *is_fav || star_resp.hovered() {
                             paint::color(palette.ui_warn)
                         } else {
@@ -404,16 +398,16 @@ impl GrapheApp {
             self.editor_path = self.modules.first().map(|module| module.path.clone());
         }
         let current_id = self.editor_path.as_ref().and_then(|path| {
-            self.modules.iter().find(|m| &m.path == path).map(|m| m.id.as_str())
+            self.modules
+                .iter()
+                .find(|m| &m.path == path)
+                .map(|m| m.id.as_str())
         });
         let palette = graphe_domain::theme::palette(self.session.dark);
-        let dropdown = ModuleDropdown::from_all_installed(
-            "editor-module",
-            current_id,
-            &self.modules,
-        )
-        .show_favorites(false)
-        .width(ui.available_width().min(420.0));
+        let dropdown =
+            ModuleDropdown::from_all_installed("editor-module", current_id, &self.modules)
+                .show_favorites(false)
+                .width(ui.available_width().min(420.0));
 
         if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
             if let Some(module) = self.modules.iter().find(|m| m.id == id) {
@@ -505,6 +499,7 @@ impl GrapheApp {
                     sqlite::write_verse_text(&path, book, chapter, verse, &self.editor_text)
                         .err()
                         .unwrap_or_default();
+                self.reading.clear();
                 self.loaded_key.clear();
             }
         }
@@ -518,6 +513,7 @@ impl GrapheApp {
                     sqlite::write_commentary_text(&path, book, chapter, verse, &self.editor_text)
                         .err()
                         .unwrap_or_default();
+                self.reading.clear();
             }
         }
         let delete_label = if self.editor_armed {

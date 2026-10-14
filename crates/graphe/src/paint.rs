@@ -195,19 +195,31 @@ pub(crate) fn draw_icon(
             // Ribbon at top
             let rx = rect.center().x;
             painter.line_segment(
-                [egui::pos2(rx - 2.5, rect.top()), egui::pos2(rx - 2.5, rect.top() + 6.0)],
+                [
+                    egui::pos2(rx - 2.5, rect.top()),
+                    egui::pos2(rx - 2.5, rect.top() + 6.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(rx + 2.5, rect.top()), egui::pos2(rx + 2.5, rect.top() + 6.0)],
+                [
+                    egui::pos2(rx + 2.5, rect.top()),
+                    egui::pos2(rx + 2.5, rect.top() + 6.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(rx - 2.5, rect.top() + 6.0), egui::pos2(rx, rect.top() + 4.5)],
+                [
+                    egui::pos2(rx - 2.5, rect.top() + 6.0),
+                    egui::pos2(rx, rect.top() + 4.5),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(rx + 2.5, rect.top() + 6.0), egui::pos2(rx, rect.top() + 4.5)],
+                [
+                    egui::pos2(rx + 2.5, rect.top() + 6.0),
+                    egui::pos2(rx, rect.top() + 4.5),
+                ],
                 stroke,
             );
         }
@@ -233,56 +245,76 @@ pub(crate) fn draw_icon(
             let y_bot = center.y + 7.0;
             // Book 1
             painter.line_segment(
-                [egui::pos2(center.x - 6.0, y_top), egui::pos2(center.x - 6.0, y_bot)],
+                [
+                    egui::pos2(center.x - 6.0, y_top),
+                    egui::pos2(center.x - 6.0, y_bot),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(center.x - 3.0, y_top), egui::pos2(center.x - 3.0, y_bot)],
+                [
+                    egui::pos2(center.x - 3.0, y_top),
+                    egui::pos2(center.x - 3.0, y_bot),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(center.x - 6.0, y_top), egui::pos2(center.x - 3.0, y_top)],
+                [
+                    egui::pos2(center.x - 6.0, y_top),
+                    egui::pos2(center.x - 3.0, y_top),
+                ],
                 stroke,
             );
             // Book 2
             painter.line_segment(
-                [egui::pos2(center.x - 1.0, y_top), egui::pos2(center.x - 1.0, y_bot)],
+                [
+                    egui::pos2(center.x - 1.0, y_top),
+                    egui::pos2(center.x - 1.0, y_bot),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(center.x + 2.0, y_top), egui::pos2(center.x + 2.0, y_bot)],
+                [
+                    egui::pos2(center.x + 2.0, y_top),
+                    egui::pos2(center.x + 2.0, y_bot),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(center.x - 1.0, y_top), egui::pos2(center.x + 2.0, y_top)],
+                [
+                    egui::pos2(center.x - 1.0, y_top),
+                    egui::pos2(center.x + 2.0, y_top),
+                ],
                 stroke,
             );
             // Book 3 (leaning right)
             painter.line_segment(
-                [egui::pos2(center.x + 3.5, y_top + 1.0), egui::pos2(center.x + 7.5, y_bot)],
+                [
+                    egui::pos2(center.x + 3.5, y_top + 1.0),
+                    egui::pos2(center.x + 7.5, y_bot),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(center.x + 5.5, y_top + 0.0), egui::pos2(center.x + 9.5, y_bot - 1.0)],
+                [
+                    egui::pos2(center.x + 5.5, y_top + 0.0),
+                    egui::pos2(center.x + 9.5, y_bot - 1.0),
+                ],
                 stroke,
             );
         }
         Icon::Files => {
             // Lucide files: overlapping documents
-            let back_rect = egui::Rect::from_min_size(
-                center + egui::vec2(-2.0, -7.0),
-                egui::vec2(9.0, 11.0),
-            );
+            let back_rect =
+                egui::Rect::from_min_size(center + egui::vec2(-2.0, -7.0), egui::vec2(9.0, 11.0));
             painter.rect_stroke(
                 back_rect,
                 egui::CornerRadius::same(2),
                 stroke,
                 egui::StrokeKind::Outside,
             );
-            let front_rect = egui::Rect::from_min_size(
-                center + egui::vec2(-7.0, -3.0),
-                egui::vec2(9.0, 11.0),
-            );
+            let front_rect =
+                egui::Rect::from_min_size(center + egui::vec2(-7.0, -3.0), egui::vec2(9.0, 11.0));
             painter.rect_filled(
                 front_rect,
                 egui::CornerRadius::same(2),
@@ -315,7 +347,10 @@ pub(crate) fn draw_icon(
             // Right divider
             let div_x = rect.right() - 4.5;
             painter.line_segment(
-                [egui::pos2(div_x, rect.top()), egui::pos2(div_x, rect.bottom())],
+                [
+                    egui::pos2(div_x, rect.top()),
+                    egui::pos2(div_x, rect.bottom()),
+                ],
                 stroke,
             );
             // Left arrow inside
@@ -333,31 +368,49 @@ pub(crate) fn draw_icon(
         }
         Icon::ChevronDown => {
             painter.line_segment(
-                [center + egui::vec2(-4.0, -2.0), center + egui::vec2(0.0, 2.0)],
+                [
+                    center + egui::vec2(-4.0, -2.0),
+                    center + egui::vec2(0.0, 2.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(0.0, 2.0), center + egui::vec2(4.0, -2.0)],
+                [
+                    center + egui::vec2(0.0, 2.0),
+                    center + egui::vec2(4.0, -2.0),
+                ],
                 stroke,
             );
         }
         Icon::ChevronLeft => {
             painter.line_segment(
-                [center + egui::vec2(2.0, -4.0), center + egui::vec2(-2.0, 0.0)],
+                [
+                    center + egui::vec2(2.0, -4.0),
+                    center + egui::vec2(-2.0, 0.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(-2.0, 0.0), center + egui::vec2(2.0, 4.0)],
+                [
+                    center + egui::vec2(-2.0, 0.0),
+                    center + egui::vec2(2.0, 4.0),
+                ],
                 stroke,
             );
         }
         Icon::ChevronRight => {
             painter.line_segment(
-                [center + egui::vec2(-2.0, -4.0), center + egui::vec2(2.0, 0.0)],
+                [
+                    center + egui::vec2(-2.0, -4.0),
+                    center + egui::vec2(2.0, 0.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(2.0, 0.0), center + egui::vec2(-2.0, 4.0)],
+                [
+                    center + egui::vec2(2.0, 0.0),
+                    center + egui::vec2(-2.0, 4.0),
+                ],
                 stroke,
             );
         }
@@ -365,27 +418,42 @@ pub(crate) fn draw_icon(
             painter.circle_stroke(center, 6.0, stroke);
             painter.circle_filled(center + egui::vec2(0.0, -2.5), 0.9, ink);
             painter.line_segment(
-                [center + egui::vec2(0.0, -0.5), center + egui::vec2(0.0, 3.5)],
+                [
+                    center + egui::vec2(0.0, -0.5),
+                    center + egui::vec2(0.0, 3.5),
+                ],
                 stroke,
             );
         }
         Icon::Plus => {
             painter.line_segment(
-                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(5.0, 0.0)],
+                [
+                    center + egui::vec2(-5.0, 0.0),
+                    center + egui::vec2(5.0, 0.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(0.0, -5.0), center + egui::vec2(0.0, 5.0)],
+                [
+                    center + egui::vec2(0.0, -5.0),
+                    center + egui::vec2(0.0, 5.0),
+                ],
                 stroke,
             );
         }
         Icon::Close => {
             painter.line_segment(
-                [center + egui::vec2(-4.0, -4.0), center + egui::vec2(4.0, 4.0)],
+                [
+                    center + egui::vec2(-4.0, -4.0),
+                    center + egui::vec2(4.0, 4.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(4.0, -4.0), center + egui::vec2(-4.0, 4.0)],
+                [
+                    center + egui::vec2(4.0, -4.0),
+                    center + egui::vec2(-4.0, 4.0),
+                ],
                 stroke,
             );
         }
@@ -396,25 +464,40 @@ pub(crate) fn draw_icon(
         }
         Icon::ArrowLeft => {
             painter.line_segment(
-                [center + egui::vec2(5.0, 0.0), center + egui::vec2(-5.0, 0.0)],
+                [
+                    center + egui::vec2(5.0, 0.0),
+                    center + egui::vec2(-5.0, 0.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(-1.0, -3.5)],
+                [
+                    center + egui::vec2(-5.0, 0.0),
+                    center + egui::vec2(-1.0, -3.5),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(-1.0, 3.5)],
+                [
+                    center + egui::vec2(-5.0, 0.0),
+                    center + egui::vec2(-1.0, 3.5),
+                ],
                 stroke,
             );
         }
         Icon::ArrowRight => {
             painter.line_segment(
-                [center + egui::vec2(-5.0, 0.0), center + egui::vec2(5.0, 0.0)],
+                [
+                    center + egui::vec2(-5.0, 0.0),
+                    center + egui::vec2(5.0, 0.0),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(5.0, 0.0), center + egui::vec2(1.0, -3.5)],
+                [
+                    center + egui::vec2(5.0, 0.0),
+                    center + egui::vec2(1.0, -3.5),
+                ],
                 stroke,
             );
             painter.line_segment(
@@ -429,7 +512,10 @@ pub(crate) fn draw_icon(
                 stroke,
             );
             painter.line_segment(
-                [center + egui::vec2(-3.0, 3.0), center + egui::vec2(3.0, 3.0)],
+                [
+                    center + egui::vec2(-3.0, 3.0),
+                    center + egui::vec2(3.0, 3.0),
+                ],
                 stroke,
             );
         }
