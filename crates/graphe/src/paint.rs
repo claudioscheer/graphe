@@ -38,7 +38,14 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     // that widening sits on the divider, and egui then prefers whichever of the
     // bar and the divider is thinner, so hover flips every frame and the line flashes.
     style.spacing.scroll.floating_width = style.spacing.scroll.bar_width;
+    // Menus and panels otherwise ease open. A click should show the surface at once.
+    style.animation_time = 0.0;
     ctx.set_style(style);
+    // A mouse notch is one line of 40 points, then eased for a fraction of a
+    // second. Dragging the text moves 1:1, so the wheel felt slow.
+    ctx.options_mut(|options| {
+        options.input_options.line_scroll_speed = 100.0;
+    });
     install_fonts(ctx);
 }
 

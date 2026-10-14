@@ -945,6 +945,30 @@ mod tests {
     }
 
     #[test]
+    fn settings_card_is_fully_visible_on_the_frame_after_it_opens() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::Settings;
+        let screen = egui::vec2(1200.0, 800.0);
+        let show = |ctx: &egui::Context, app: &mut GrapheApp| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
+            ctx.run(raw, |ctx| app.dialogs(ctx))
+        };
+        let _ = show(&ctx, &mut app);
+        let output = show(&ctx, &mut app);
+        let paper = paint::color("#fefdf9");
+        let painted = output
+            .shapes
+            .iter()
+            .any(|clipped| shape_has_paper(&clipped.shape, paper));
+        assert!(
+            painted,
+            "the settings card is at full strength, not fading in"
+        );
+    }
+
+    #[test]
     fn settings_opens_as_a_paper_card_and_the_theme_button_flips_the_theme() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -2028,6 +2052,12 @@ mod tests {
             menu.iter().any(|(key, _)| key == &other_key),
             "the badge lists the other Bible view: {menu:?}"
         );
+        let none = *mark(&menu, &format!("sync-none:{commentary}"));
+        assert!(
+            none[2] < 140.0,
+            "the sync menu hugs the labels, width {}",
+            none[2]
+        );
         click_mark(&ctx, &mut app, 0.5, &menu, &other_key);
         assert_eq!(
             app.session.panes[&commentary].synced_to_pane_id.as_deref(),
@@ -2380,6 +2410,89 @@ mod tests {
             clip_top + 0.5 >= bar[1] + bar[3],
             "scrolled chapter paints over the toolbar: clip {clip_top}, bar bottom {}",
             bar[1] + bar[3]
+        );
+    }
+
+    #[test]
+    fn scrolling_reuses_shaped_bible_rows_and_the_commentary_galley() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.loaded_key = ":10:1:pane-1".into();
+        let line = "No princípio criou Deus os céus e a terra <S>7225</S>.";
+        app.session.chapter_text = (1..=80).map(|verse| (verse, line.to_string())).collect();
+        app.session.show_strongs = true;
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(12);
+        let mut pieces = Vec::new();
+        for verse in 1..=24 {
+            if verse > 1 {
+                pieces.push(crate::study::CommentaryPiece::Break);
+                pieces.push(crate::study::CommentaryPiece::Break);
+            }
+            pieces.push(crate::study::CommentaryPiece::Heading(verse.to_string()));
+            pieces.push(crate::study::CommentaryPiece::Break);
+            pieces.push(crate::study::CommentaryPiece::Text(paragraph.clone()));
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let warmed = study_frame(&ctx, &mut app, 0.2, egui::Modifiers::default(), Vec::new());
+        let shaped = app.reading.verse_layouts_built;
+        let wrapped = app.reading.commentary_layouts;
+        assert!(shaped > 0, "the chapter is shaped once");
+        assert_eq!(wrapped, 1, "the commentary is wrapped once, got {wrapped}");
+        let body = *mark(&warmed, "body:pane-1");
+        let before = *mark(&warmed, "verse:pane-1:1");
+        let pointer = egui::pos2(body[0] + body[2] * 0.5, body[1] + body[3] * 0.5);
+        for frame in 0..4 {
+            let _ = study_frame(
+                &ctx,
+                &mut app,
+                0.3 + frame as f64 * 0.05,
+                egui::Modifiers::default(),
+                vec![
+                    egui::Event::PointerMoved(pointer),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, -160.0),
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        let after = study_frame(&ctx, &mut app, 0.6, egui::Modifiers::default(), Vec::new());
+        assert_eq!(
+            app.reading.verse_layouts_built, shaped,
+            "scrolling reshaped bible rows"
+        );
+        assert_eq!(
+            app.reading.commentary_layouts, wrapped,
+            "scrolling rewrapped the commentary"
+        );
+        assert!(
+            after.iter().all(|(key, _)| key != "verse:pane-1:1"),
+            "the wheel left verse 1, which started at y {}",
+            before[1]
+        );
+        assert!(
+            after
+                .iter()
+                .any(|(key, _)| key.starts_with("verse:pane-1:")),
+            "later verses are still painted"
         );
     }
 

@@ -188,94 +188,107 @@ impl GrapheApp {
         // 3. Results List
         let terms = extract_search_terms(&self.session.query);
         let hits = self.session.hits.clone();
+        // A fixed row keeps the bar 1:1 with the pointer. Building every hit
+        // on each drag was what made the search list feel sticky.
+        const SEARCH_ROW: f32 = 100.0;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
+            .animated(false)
+            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
             .max_height(ui.available_height())
-            .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin {
-                        left: 8,
-                        right: 8,
-                        top: 6,
-                        bottom: 8,
-                    })
-                    .show(ui, |ui| {
-                        for (index, hit) in hits.into_iter().enumerate() {
-                            let snippet = search_preview_rich_snippet(
-                                &hit.text,
-                                &terms,
-                                &parsed.strongs,
-                                160,
+            .show_viewport(ui, |ui, viewport| {
+                let width = ui.available_width();
+                ui.set_min_height((hits.len() as f32 * SEARCH_ROW).max(1.0));
+                if hits.is_empty() {
+                    return;
+                }
+                let first = (viewport.min.y / SEARCH_ROW).floor().max(0.0) as usize;
+                let mut last = (viewport.max.y / SEARCH_ROW).ceil() as usize + 1;
+                if last > hits.len() {
+                    last = hits.len();
+                }
+                let first = first.min(last);
+                let top = ui.max_rect().top();
+                for (offset, hit) in hits[first..last].iter().enumerate() {
+                    let index = first + offset;
+                    let rect = egui::Rect::from_min_size(
+                        egui::pos2(ui.max_rect().left() + 8.0, top + index as f32 * SEARCH_ROW),
+                        egui::vec2((width - 16.0).max(32.0), SEARCH_ROW - 6.0),
+                    );
+                    let mut row_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    row_ui.set_clip_rect(rect);
+                    let snippet =
+                        search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
+                    let label = format!(
+                        "{} {}:{}",
+                        i18n::book_name(hit.book_number).short,
+                        hit.chapter,
+                        hit.verse
+                    );
+                    let hit_id = row_ui.id().with((
+                        "search-hit",
+                        index,
+                        hit.book_number,
+                        hit.chapter,
+                        hit.verse,
+                    ));
+                    let hovered = row_ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
+                    let (fill, stroke_color) = if hovered {
+                        (
+                            paint::color(palette.ui_accent_bg_soft),
+                            paint::color(palette.ui_border),
+                        )
+                    } else {
+                        (
+                            paint::color(palette.ui_surface),
+                            paint::color(palette.ui_border_soft),
+                        )
+                    };
+                    let row = egui::Frame::new()
+                        .fill(fill)
+                        .stroke(egui::Stroke::new(1.0_f32, stroke_color))
+                        .inner_margin(egui::Margin::symmetric(8, 7))
+                        .corner_radius(egui::CornerRadius::same(2))
+                        .show(&mut row_ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.spacing_mut().item_spacing.y = 3.0;
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .strong()
+                                    .size(12.0)
+                                    .color(paint::color(palette.ui_link)),
                             );
-                            let label = format!(
-                                "{} {}:{}",
-                                i18n::book_name(hit.book_number).short,
-                                hit.chapter,
-                                hit.verse
+                            draw_marked(
+                                ui,
+                                &snippet,
+                                12.0,
+                                paint::color(palette.ui_text_muted),
+                                paint::color(palette.ui_text),
+                                palette,
                             );
-                            let hit_id = ui.id().with((
-                                "search-hit",
-                                index,
-                                hit.book_number,
-                                hit.chapter,
-                                hit.verse,
-                            ));
-                            let hovered = ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
-                            let (fill, stroke_color) = if hovered {
-                                (
-                                    paint::color(palette.ui_accent_bg_soft),
-                                    paint::color(palette.ui_border),
-                                )
-                            } else {
-                                (
-                                    paint::color(palette.ui_surface),
-                                    paint::color(palette.ui_border_soft),
-                                )
-                            };
-                            let row = egui::Frame::new()
-                                .fill(fill)
-                                .stroke(egui::Stroke::new(1.0_f32, stroke_color))
-                                .inner_margin(egui::Margin::symmetric(8, 7))
-                                .corner_radius(egui::CornerRadius::same(2))
-                                .show(ui, |ui| {
-                                    ui.set_min_width(ui.available_width());
-                                    ui.spacing_mut().item_spacing.y = 3.0;
-                                    ui.label(
-                                        egui::RichText::new(label)
-                                            .strong()
-                                            .size(12.0)
-                                            .color(paint::color(palette.ui_link)),
-                                    );
-                                    draw_marked(
-                                        ui,
-                                        &snippet,
-                                        12.0,
-                                        paint::color(palette.ui_text_muted),
-                                        paint::color(palette.ui_text),
-                                        palette,
-                                    );
-                                });
-                            let response =
-                                ui.interact(row.response.rect, hit_id, egui::Sense::click());
-                            let hovered = response.hovered();
-                            let clicked = response.clicked();
-                            response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                            ui.data_mut(|data| data.insert_temp(hit_id, hovered));
-                            if clicked {
-                                let primary = ui
-                                    .input(|input| input.modifiers.command || input.modifiers.ctrl);
-                                if primary {
-                                    self.session.open_search_hit_in_new_study(&hit);
-                                    self.note_workspaces();
-                                } else {
-                                    self.session.open_search_hit(&hit);
-                                }
-                                self.loaded_key.clear();
-                                self.sync_active_chapter();
-                            }
-                            ui.add_space(3.0);
+                        });
+                    let response = row_ui.interact(row.response.rect, hit_id, egui::Sense::click());
+                    let hovered = response.hovered();
+                    let clicked = response.clicked();
+                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    row_ui.data_mut(|data| data.insert_temp(hit_id, hovered));
+                    if clicked {
+                        let primary =
+                            row_ui.input(|input| input.modifiers.command || input.modifiers.ctrl);
+                        if primary {
+                            self.session.open_search_hit_in_new_study(hit);
+                            self.note_workspaces();
+                        } else {
+                            self.session.open_search_hit(hit);
                         }
-                    });
+                        self.loaded_key.clear();
+                        self.sync_active_chapter();
+                    }
+                }
             });
     }
 

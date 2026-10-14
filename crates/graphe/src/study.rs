@@ -250,6 +250,8 @@ impl GrapheApp {
         egui::ScrollArea::vertical()
             .id_salt(("chapter", pane_id))
             .auto_shrink([false, false])
+            .animated(false)
+            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
             .max_height(ui.available_height())
             .show_viewport(ui, |ui, viewport| {
                 let full = ui.available_width();
@@ -281,7 +283,7 @@ impl GrapheApp {
                         .enumerate()
                         .map(|(index, spans)| {
                             let verse = paint.verses[index].0;
-                            measure_verse_height(
+                            self.measure_verse_height(
                                 ui,
                                 spans,
                                 text_width,
@@ -509,6 +511,8 @@ impl GrapheApp {
         let _output = egui::ScrollArea::vertical()
             .id_salt(("commentary", pane_id))
             .auto_shrink([false, false])
+            .animated(false)
+            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
             .max_height(ui.available_height())
             .show(ui, |ui| {
                 let width = ui.available_width();
@@ -736,6 +740,44 @@ impl GrapheApp {
         paint
     }
 
+    fn verse_row_layout(
+        &mut self,
+        ui: &egui::Ui,
+        spans: &[VerseSpan],
+        text_width: f32,
+        font: f32,
+        palette: &UiPalette,
+    ) -> VerseLayout {
+        let key = verse_layout_key(spans, text_width, font, palette);
+        if let Some(hit) = self.reading.verse_layouts.get(&key) {
+            return hit.clone();
+        }
+        #[cfg(test)]
+        {
+            self.reading.verse_layouts_built += 1;
+        }
+        let layout = verse_layout(ui, spans, text_width, font, palette);
+        if self.reading.verse_layouts.len() >= 180 && !self.reading.verse_layouts.contains_key(&key)
+        {
+            self.reading.verse_layouts.clear();
+        }
+        self.reading.verse_layouts.insert(key, layout.clone());
+        layout
+    }
+
+    fn measure_verse_height(
+        &mut self,
+        ui: &egui::Ui,
+        spans: &[VerseSpan],
+        text_width: f32,
+        font: f32,
+        palette: &UiPalette,
+        has_refs: bool,
+    ) -> f32 {
+        let layout = self.verse_row_layout(ui, spans, text_width, font, palette);
+        row_height_from_galley(layout.galley.rect.height(), font, has_refs)
+    }
+
     fn paint_verse_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -751,7 +793,7 @@ impl GrapheApp {
         active_bible: bool,
         palette: &UiPalette,
     ) {
-        let layout = verse_layout(ui, spans, text_width, font, palette);
+        let layout = self.verse_row_layout(ui, spans, text_width, font, palette);
         let row_height = layout.galley.rect.height().max(font * 0.8) + 8.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), row_height),
@@ -1199,6 +1241,7 @@ struct StrongHit {
     lemma: Option<String>,
 }
 
+#[derive(Clone)]
 struct VerseLayout {
     galley: Arc<egui::Galley>,
     strongs: Vec<StrongHit>,
@@ -1223,8 +1266,12 @@ pub(crate) struct ReadingCache {
     heights: HashMap<(u64, i32), Vec<f32>>,
     pane_heights: HashMap<String, PaneHeightState>,
     verse_text: HashMap<String, Vec<(i64, String)>>,
+    /// Shaped verse lines. Scrolling paints these again instead of wrapping the words.
+    verse_layouts: HashMap<u64, VerseLayout>,
     #[cfg(test)]
     pub(crate) rows_painted: usize,
+    #[cfg(test)]
+    pub(crate) verse_layouts_built: u32,
     #[cfg(test)]
     pub(crate) commentary_layouts: u32,
     #[cfg(test)]
@@ -1243,8 +1290,11 @@ impl ReadingCache {
             heights: HashMap::new(),
             pane_heights: HashMap::new(),
             verse_text: HashMap::new(),
+            verse_layouts: HashMap::new(),
             #[cfg(test)]
             rows_painted: 0,
+            #[cfg(test)]
+            verse_layouts_built: 0,
             #[cfg(test)]
             commentary_layouts: 0,
             #[cfg(test)]
@@ -1262,6 +1312,7 @@ impl ReadingCache {
         self.heights.clear();
         self.pane_heights.clear();
         self.verse_text.clear();
+        self.verse_layouts.clear();
     }
 
     pub(crate) fn cached_verse_text(&self, key: &str) -> Option<Vec<(i64, String)>> {
@@ -1770,6 +1821,52 @@ fn push_chars_leading(
     job.append(shown.as_ref(), leading, format);
 }
 
+fn verse_layout_key(spans: &[VerseSpan], text_width: f32, font: f32, palette: &UiPalette) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (text_width.round() as i32).hash(&mut hasher);
+    font.to_bits().hash(&mut hasher);
+    palette.ui_text.hash(&mut hasher);
+    palette.ui_text_subtle.hash(&mut hasher);
+    palette.ui_text_muted.hash(&mut hasher);
+    for span in spans {
+        match span {
+            VerseSpan::Text(text) => {
+                0u8.hash(&mut hasher);
+                text.hash(&mut hasher);
+            }
+            VerseSpan::Strong {
+                display,
+                morph,
+                lemma,
+            } => {
+                1u8.hash(&mut hasher);
+                display.hash(&mut hasher);
+                morph.hash(&mut hasher);
+                lemma.hash(&mut hasher);
+            }
+            VerseSpan::Annotation {
+                original,
+                transliteration,
+                pronunciation,
+                glosses,
+                references,
+            } => {
+                2u8.hash(&mut hasher);
+                original.hash(&mut hasher);
+                transliteration.hash(&mut hasher);
+                pronunciation.hash(&mut hasher);
+                glosses.hash(&mut hasher);
+                references.hash(&mut hasher);
+            }
+            VerseSpan::Footnote(note) => {
+                3u8.hash(&mut hasher);
+                note.hash(&mut hasher);
+            }
+        }
+    }
+    hasher.finish()
+}
+
 fn verse_layout(
     ui: &egui::Ui,
     spans: &[VerseSpan],
@@ -1861,16 +1958,8 @@ fn gap_after_strong(next: Option<&VerseSpan>) -> bool {
     }
 }
 
-fn measure_verse_height(
-    ui: &egui::Ui,
-    spans: &[VerseSpan],
-    text_width: f32,
-    font: f32,
-    palette: &UiPalette,
-    has_refs: bool,
-) -> f32 {
-    let layout = verse_layout(ui, spans, text_width, font, palette);
-    let text = layout.galley.rect.height().max(font * 0.8) + 8.0;
+fn row_height_from_galley(layout_height: f32, font: f32, has_refs: bool) -> f32 {
+    let text = layout_height.max(font * 0.8) + 8.0;
     let refs = if has_refs {
         (font * 0.7).max(14.0)
     } else {

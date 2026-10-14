@@ -39,7 +39,11 @@ impl GrapheApp {
         }
         let dark = self.session.dark;
         let mut dismiss = false;
-        let modal = egui::Modal::new(egui::Id::new("graphe-modal"))
+        let modal_id = egui::Id::new("graphe-modal");
+        // The stock modal fades in. That leaves the card half-visible for a
+        // moment after the click. Show it at full strength on the first painted frame.
+        let modal = egui::Modal::new(modal_id)
+            .area(egui::Modal::default_area(modal_id).fade_in(false))
             .backdrop_color(egui::Color32::from_black_alpha(128))
             .frame(modal_frame(dark))
             .show(ctx, |ui| {

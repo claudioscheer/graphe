@@ -669,7 +669,17 @@ impl GrapheApp {
                 }))
                 .collect();
         let mut picked = None;
+        let ink = paint::color(palette.ui_text);
+        let text_width = options.iter().fold(0.0_f32, |widest, (_, label)| {
+            let galley =
+                ui.painter()
+                    .layout_no_wrap(label.clone(), egui::FontId::proportional(12.0), ink);
+            widest.max(galley.rect.width())
+        });
+        // Hug the labels. 12px sits before the text and 10px after it.
+        let inner_width = (text_width + 22.0).clamp(88.0, 132.0);
         egui::Popup::from_toggle_button_response(&response)
+            .width(inner_width + 8.0)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .frame(
                 egui::Frame::new()
@@ -689,7 +699,8 @@ impl GrapheApp {
                     }),
             )
             .show(|ui| {
-                ui.set_min_width(160.0);
+                ui.set_min_width(inner_width);
+                ui.set_max_width(inner_width);
                 for (value, label) in &options {
                     let selected = current.as_ref() == value.as_ref();
                     let (clicked, choice_rect) = sync_choice(ui, label, selected, palette);
@@ -1228,7 +1239,7 @@ fn sync_choice(
     selected: bool,
     palette: &UiPalette,
 ) -> (bool, egui::Rect) {
-    let width = ui.available_width().max(160.0);
+    let width = ui.available_width().max(1.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
     if selected || response.hovered() {
         ui.painter().rect_filled(
