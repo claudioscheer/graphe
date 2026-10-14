@@ -1,9 +1,9 @@
 [package]
 name = "graphe-domain"
-version = "1.0.11"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Pure Bible-study logic shared by the Graphe app and its tests"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [dependencies]

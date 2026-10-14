@@ -1,3 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/graphe-domain", "crates/graphe-store", "crates/graphe"]
+
+[workspace.package]
+version = "1.0.12"
+edition = "2021"
+license = "MIT"

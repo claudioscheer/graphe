@@ -1,9 +1,9 @@
 [package]
 name = "graphe"
-version = "1.0.11"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Graphe Bible study app"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [[bin]]

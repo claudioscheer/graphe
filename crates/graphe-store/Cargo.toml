@@ -1,9 +1,9 @@
 [package]
 name = "graphe-store"
-version = "1.0.11"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "SQLite modules, converters, and ~/.graphe state for Graphe"
-license = "MIT"
+license.workspace = true
 publish = false
 
 [dependencies]
