@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Graphe
+Comment=Bible study app with split panes and Strong's numbers
+Exec=graphe
+Icon=graphe
+Terminal=false
+Type=Application
+Categories=Education;Religion;Utility;
+StartupWMClass=graphe

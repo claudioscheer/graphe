@@ -10,74 +10,226 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: target/x86_64-pc-windows-msvc/release/graphe.exe
-            archive: graphe-windows-x64.zip
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary: target/x86_64-unknown-linux-gnu/release/graphe
-            archive: graphe-linux-x64.tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            binary: target/aarch64-apple-darwin/release/graphe
-            archive: graphe-macos-arm64.tar.gz
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            binary: target/x86_64-apple-darwin/release/graphe
-            archive: graphe-macos-x64.tar.gz
+  build-windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-x64
+
+      - name: Build release binary
+        run: cargo build --release -p graphe
+
+      - name: Install Inno Setup
+        run: winget install --id JRSoftware.InnoSetup --source winget --accept-package-agreements --accept-source-agreements --silent
+
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="1.0.11"
+          fi
+
+          ISCC_PATH=""
+          if [ -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
+            ISCC_PATH="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          elif [ -f "/c/Program Files/Inno Setup 6/ISCC.exe" ]; then
+            ISCC_PATH="/c/Program Files/Inno Setup 6/ISCC.exe"
+          elif [ -f "/c/Users/runneradmin/AppData/Local/Programs/Inno Setup 6/ISCC.exe" ]; then
+            ISCC_PATH="/c/Users/runneradmin/AppData/Local/Programs/Inno Setup 6/ISCC.exe"
+          else
+            ISCC_PATH="$(command -v iscc.exe || command -v iscc || echo 'ISCC.exe')"
+          fi
+
+          mkdir -p dist
+          "$ISCC_PATH" //DMyAppVersion="$VERSION" packaging/windows/setup.iss
+
+      - name: Package portable Windows zip
+        shell: bash
+        run: |
+          mkdir -p dist/portable
+          cp target/release/graphe.exe dist/portable/
+          cp LICENSE README.md dist/portable/
+          cd dist/portable
+          7z a ../graphe-windows.zip *
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            dist/graphe-windows-installer.exe
+            dist/graphe-windows.zip
+
+  build-linux:
+    name: Linux
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: linux-x64
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p graphe
+        run: cargo build --release -p graphe
 
-      - name: Package archive
-        shell: bash
+      - name: Package Debian (.deb)
         run: |
-          mkdir -p dist
-          cp "${{ matrix.binary }}" dist/
-          cp LICENSE README.md dist/
-          cd dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "../${{ matrix.archive }}" *
-          else
-            tar -czvf "../${{ matrix.archive }}" *
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="1.0.11"
           fi
+          mkdir -p deb-pkg/DEBIAN
+          mkdir -p deb-pkg/usr/bin
+          mkdir -p deb-pkg/usr/share/applications
+          mkdir -p deb-pkg/usr/share/icons/hicolor/256x256/apps
+          mkdir -p deb-pkg/usr/share/doc/graphe
 
-      - name: Upload build artifact
+          cp target/release/graphe deb-pkg/usr/bin/
+          cp assets/graphe.png deb-pkg/usr/share/icons/hicolor/256x256/apps/graphe.png
+          cp packaging/linux/graphe.desktop deb-pkg/usr/share/applications/graphe.desktop
+          cp LICENSE deb-pkg/usr/share/doc/graphe/copyright
+
+          cat << EOF > deb-pkg/DEBIAN/control
+Package: graphe
+Version: ${VERSION}
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Claudio Scheer
+Description: Bible study app with split panes and Strong's numbers
+EOF
+
+          mkdir -p dist
+          dpkg-deb --build deb-pkg dist/graphe-linux.deb
+
+      - name: Package AppImage (.AppImage)
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp target/release/graphe AppDir/usr/bin/
+          cp assets/graphe.png AppDir/graphe.png
+          cp assets/graphe.png AppDir/usr/share/icons/hicolor/256x256/apps/graphe.png
+          cp packaging/linux/graphe.desktop AppDir/graphe.desktop
+
+          cat << 'EOF' > AppDir/AppRun
+#!/bin/sh
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+export PATH="${HERE}/usr/bin:${PATH}"
+exec "${HERE}/usr/bin/graphe" "$@"
+EOF
+          chmod +x AppDir/AppRun
+
+          curl -L -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run AppDir dist/graphe-linux.AppImage
+
+      - name: Package portable Linux tar.gz
+        run: |
+          mkdir -p dist/portable
+          cp target/release/graphe dist/portable/
+          cp LICENSE README.md dist/portable/
+          cd dist/portable
+          tar -czvf ../graphe-linux.tar.gz *
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.archive }}
-          path: ${{ matrix.archive }}
+          name: release-linux
+          path: |
+            dist/graphe-linux.deb
+            dist/graphe-linux.AppImage
+            dist/graphe-linux.tar.gz
+
+  build-macos:
+    name: macOS (Universal)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-universal
+
+      - name: Build Apple Silicon binary
+        run: cargo build --release --target aarch64-apple-darwin -p graphe
+
+      - name: Build Intel binary
+        run: cargo build --release --target x86_64-apple-darwin -p graphe
+
+      - name: Create Universal App Bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="1.0.11"
+          fi
+
+          mkdir -p Graphe.app/Contents/MacOS
+          mkdir -p Graphe.app/Contents/Resources
+          mkdir -p dist
+
+          # Merge both architectures with lipo
+          lipo -create -output Graphe.app/Contents/MacOS/graphe \
+            target/aarch64-apple-darwin/release/graphe \
+            target/x86_64-apple-darwin/release/graphe
+
+          chmod +x Graphe.app/Contents/MacOS/graphe
+          cp assets/graphe.icns Graphe.app/Contents/Resources/graphe.icns
+          cp packaging/macos/Info.plist Graphe.app/Contents/Info.plist
+
+          # Update version in Info.plist
+          sed -i '' "s/1.0.11/${VERSION}/g" Graphe.app/Contents/Info.plist
+
+      - name: Package macOS DMG
+        run: |
+          mkdir -p dmg-staging
+          cp -r Graphe.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "Graphe" -srcfolder dmg-staging -ov -format UDZO dist/graphe-macos.dmg
+
+      - name: Package macOS Zip
+        run: |
+          zip -r -y dist/graphe-macos.zip Graphe.app
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            dist/graphe-macos.dmg
+            dist/graphe-macos.zip
 
   publish:
     name: Publish Release
-    needs: build
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
