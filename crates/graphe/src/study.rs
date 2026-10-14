@@ -39,7 +39,7 @@ impl GrapheApp {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 self.workspace_tabs(ui, palette);
                 let tree = self.session.tree.clone();
-                self.draw_node(ui, &tree, palette);
+                self.draw_node(ui, &tree, palette, "");
                 if self.session.chapter_text.is_empty()
                     && self.modules.iter().all(|module| module.kind != "bible")
                 {
@@ -48,7 +48,7 @@ impl GrapheApp {
             });
     }
 
-    fn draw_node(&mut self, ui: &mut egui::Ui, node: &PaneNode, palette: &UiPalette) {
+    fn draw_node(&mut self, ui: &mut egui::Ui, node: &PaneNode, palette: &UiPalette, path: &str) {
         let width = ui.available_width().max(0.0);
         let height = ui.available_height().max(0.0);
         match node {
@@ -64,12 +64,21 @@ impl GrapheApp {
                 ratio,
                 children,
             } => {
-                let ratio = (*ratio as f32).clamp(0.2, 0.8);
+                let vertical = direction == "v";
+                let span = if vertical { height } else { width };
+                let min_px = if vertical {
+                    SPLIT_MIN_HEIGHT
+                } else {
+                    SPLIT_MIN_WIDTH
+                };
+                let shown = clamp_split_ratio(*ratio as f32, span, min_px);
                 let spacing = ui.spacing().item_spacing;
+                let left_path = child_path(path, 0);
+                let right_path = child_path(path, 1);
                 // No gutter: the toolbar color runs across the split and the close
-                // control stays inside the pane. A hairline still separates the views.
-                if direction == "v" {
-                    let top_h = (height * ratio).max(0.0);
+                // control stays inside the pane. The hairline is the drag handle.
+                let gesture = if vertical {
+                    let top_h = (height * shown).max(0.0);
                     let bottom_h = (height - top_h).max(0.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(width, height),
@@ -78,16 +87,17 @@ impl GrapheApp {
                             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                             let origin = ui.max_rect().min;
                             self.fit_region(ui, width, top_h, spacing, |app, ui| {
-                                app.draw_node(ui, &children.0, palette);
+                                app.draw_node(ui, &children.0, palette, &left_path);
                             });
                             self.fit_region(ui, width, bottom_h, spacing, |app, ui| {
-                                app.draw_node(ui, &children.1, palette);
+                                app.draw_node(ui, &children.1, palette, &right_path);
                             });
-                            split_rule(ui, origin, width, top_h, false, palette);
+                            split_handle(ui, origin, width, top_h, false, palette, path)
                         },
-                    );
+                    )
+                    .inner
                 } else {
-                    let left_w = (width * ratio).max(0.0);
+                    let left_w = (width * shown).max(0.0);
                     let right_w = (width - left_w).max(0.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(width, height),
@@ -96,16 +106,36 @@ impl GrapheApp {
                             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                             let origin = ui.max_rect().min;
                             self.fit_region(ui, left_w, height, spacing, |app, ui| {
-                                app.draw_node(ui, &children.0, palette);
+                                app.draw_node(ui, &children.0, palette, &left_path);
                             });
                             self.fit_region(ui, right_w, height, spacing, |app, ui| {
-                                app.draw_node(ui, &children.1, palette);
+                                app.draw_node(ui, &children.1, palette, &right_path);
                             });
-                            split_rule(ui, origin, height, left_w, true, palette);
+                            split_handle(ui, origin, height, left_w, true, palette, path)
                         },
-                    );
-                }
+                    )
+                    .inner
+                };
+                self.apply_split_gesture(path, shown, gesture, span, min_px);
             }
+        }
+    }
+
+    fn apply_split_gesture(
+        &mut self,
+        path: &str,
+        shown: f32,
+        gesture: SplitGesture,
+        span: f32,
+        min_px: f32,
+    ) {
+        if gesture.delta.abs() > 0.0 && span > 1.0 {
+            let (min_ratio, max_ratio) = split_ratio_limits(span, min_px);
+            let next = (shown + gesture.delta / span).clamp(min_ratio, max_ratio);
+            self.session.set_split_ratio(path, next as f64);
+        }
+        if gesture.stopped {
+            self.note_workspaces();
         }
     }
 
@@ -214,6 +244,9 @@ impl GrapheApp {
         let scroll_verse = active_bible.then_some(self.session.scroll_verse).flatten();
         let scroll_center = self.session.scroll_center;
         let xref_key = xref_ids.join(",");
+        // Keep the vertical bar off the side-by-side divider. The grab strip owns that edge.
+        let scroll_width = (ui.available_width() - SPLIT_HIT).max(32.0);
+        ui.set_max_width(scroll_width);
         egui::ScrollArea::vertical()
             .id_salt(("chapter", pane_id))
             .auto_shrink([false, false])
@@ -222,8 +255,26 @@ impl GrapheApp {
                 let full = ui.available_width();
                 let row_width = (full - BIBLE_PAD_LEFT - BIBLE_PAD_RIGHT).max(48.0);
                 let text_width = (row_width - VERSE_NUM_W).max(32.0);
-                let height_key = layout_key(paint.fingerprint, font, text_width, &xref_key);
-                if self.reading.heights(pane_id, height_key).is_none() {
+                let width_px = text_width.round() as i32;
+                let content_key = content_layout_key(paint.fingerprint, font, &xref_key);
+                // Measuring every verse on every pixel stalls a drag once several
+                // chapters are open. Reuse the last heights while the pointer is down
+                // or the width just changed, then measure once it stays put.
+                let pointer_down = ui.input(|input| input.pointer.primary_down());
+                let held = self.reading.prepare_heights(
+                    pane_id,
+                    content_key,
+                    width_px,
+                    paint.spans.len(),
+                    pointer_down,
+                );
+                let (heights, provisional) = if let Some(held) = held {
+                    (held.heights, held.provisional)
+                } else {
+                    #[cfg(test)]
+                    {
+                        self.reading.chapter_measures += 1;
+                    }
                     let heights: Vec<f32> = paint
                         .spans
                         .iter()
@@ -240,14 +291,12 @@ impl GrapheApp {
                             )
                         })
                         .collect();
-                    self.reading.set_heights(pane_id, height_key, heights);
-                }
-                let heights = self
-                    .reading
-                    .heights(pane_id, height_key)
-                    .unwrap_or_default();
+                    self.reading
+                        .set_heights(pane_id, content_key, width_px, heights.clone());
+                    (heights, false)
+                };
                 let total = BIBLE_PAD_TOP + rows_prefix(&heights, heights.len()) + BIBLE_PAD_BOTTOM;
-                ui.set_min_width(full);
+                ui.set_width(full);
                 ui.set_min_height(total);
                 if let Some(verse) = scroll_verse {
                     if let Some(index) = paint.verses.iter().position(|(item, _)| *item == verse) {
@@ -267,7 +316,12 @@ impl GrapheApp {
                     return;
                 }
                 let y0 = ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, start);
-                let y1 = ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, end);
+                let mut y1 = ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, end);
+                if provisional {
+                    // The old row heights may be short for the new width. Let the
+                    // visible rows use their real height down through the viewport.
+                    y1 = y1.max(ui.max_rect().top() + viewport.max.y);
+                }
                 let band = egui::Rect::from_min_max(
                     egui::pos2(ui.max_rect().left() + BIBLE_PAD_LEFT, y0),
                     egui::pos2(
@@ -449,26 +503,22 @@ impl GrapheApp {
         let font = self.session.font_size;
         let text_color = paint::color(palette.ui_text);
         let link_color = paint::color(palette.ui_link);
+        let scroll_width = (ui.available_width() - SPLIT_HIT).max(32.0);
+        ui.set_max_width(scroll_width);
         let _output = egui::ScrollArea::vertical()
             .id_salt(("commentary", pane_id))
             .auto_shrink([false, false])
             .max_height(ui.available_height())
             .show(ui, |ui| {
                 let width = ui.available_width();
-                ui.set_min_width(width);
+                ui.set_width(width);
                 let _frame = egui::Frame::new()
                     .inner_margin(COMMENTARY_MARGIN)
                     .show(ui, |ui| {
                         let inner = ui.available_width().max(32.0);
                         ui.set_min_width(inner);
                         self.paint_commentary_body(
-                            ui,
-                            pane_id,
-                            &paint.pieces,
-                            inner,
-                            font,
-                            text_color,
-                            link_color,
+                            ui, pane_id, &paint, inner, font, text_color, link_color,
                         );
                     });
                 #[cfg(test)]
@@ -676,8 +726,8 @@ impl GrapheApp {
         } else {
             Arc::new(pieces_from_entries(&entries, self.matcher()))
         };
-        let paint = CommentaryPaint { pieces };
-        if self.reading.commentary.len() >= 8 {
+        let paint = CommentaryPaint::new(pieces);
+        if self.reading.commentary.len() >= 24 {
             self.reading.commentary.clear();
         }
         self.reading.commentary.insert(key, paint.clone());
@@ -817,13 +867,44 @@ impl GrapheApp {
         &mut self,
         ui: &mut egui::Ui,
         pane_id: &str,
-        pieces: &[CommentaryPiece],
+        paint: &CommentaryPaint,
         width: f32,
         font: f32,
         text_color: egui::Color32,
         link_color: egui::Color32,
     ) {
-        let (galley, links) = commentary_layout(ui, pieces, width, font, text_color, link_color);
+        let width_px = width.round() as i32;
+        // Reflowing a whole commentary on every pixel of a sidebar or split drag
+        // stalls the frame. Keep the last wrap until the pointer is up and the
+        // width has stayed put for a frame.
+        let pointer_down = ui.input(|input| input.pointer.primary_down());
+        let cached = self.reading.commentary_galley(
+            pane_id,
+            paint.fingerprint,
+            width_px,
+            font,
+            text_color,
+            link_color,
+            pointer_down,
+        );
+        let (galley, links) = if let Some(cached) = cached {
+            cached
+        } else {
+            #[cfg(test)]
+            {
+                self.reading.commentary_layouts += 1;
+            }
+            let (galley, links) =
+                commentary_layout(ui, &paint.pieces, width, font, text_color, link_color);
+            let links = Arc::new(links);
+            self.reading.store_commentary_galley(
+                pane_id,
+                GalleyKey::new(paint.fingerprint, width_px, font, text_color, link_color),
+                Arc::clone(&galley),
+                Arc::clone(&links),
+            );
+            (galley, links)
+        };
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(width, galley.rect.height().max(1.0)),
             egui::Sense::click(),
@@ -831,6 +912,7 @@ impl GrapheApp {
         #[cfg(test)]
         crate::chrome::mark_layout(ui, &format!("commentary-text:{pane_id}"), rect);
         ui.painter()
+            .with_clip_rect(rect)
             .galley(rect.min, Arc::clone(&galley), text_color);
         let pointer = response
             .hover_pos()
@@ -847,16 +929,23 @@ impl GrapheApp {
     }
 }
 
-/// One-pixel divider on the shared edge. It does not reserve a gutter.
-fn split_rule(
+struct SplitGesture {
+    delta: f32,
+    stopped: bool,
+}
+
+/// Hairline on the shared edge, with a grab strip that does not reserve a gutter.
+/// `vertical` is a left/right divider. The returned delta is in pixels along the drag.
+fn split_handle(
     ui: &egui::Ui,
     origin: egui::Pos2,
     span: f32,
     at: f32,
     vertical: bool,
     palette: &UiPalette,
-) {
-    let rect = if vertical {
+    path: &str,
+) -> SplitGesture {
+    let line = if vertical {
         egui::Rect::from_min_size(
             egui::pos2(origin.x + at - 0.5, origin.y),
             egui::vec2(1.0, span),
@@ -867,17 +956,83 @@ fn split_rule(
             egui::vec2(span, 1.0),
         )
     };
-    let mid = if vertical {
-        [rect.center_top(), rect.center_bottom()]
+    let hit = if vertical {
+        line.expand2(egui::vec2(SPLIT_HIT * 0.5, 0.0))
     } else {
-        [rect.left_center(), rect.right_center()]
+        line.expand2(egui::vec2(0.0, SPLIT_HIT * 0.5))
     };
-    ui.painter().line_segment(
-        mid,
-        egui::Stroke::new(1.0_f32, paint::color(palette.ui_border)),
+    let response = ui.interact(
+        hit,
+        egui::Id::new(("split-handle", path)),
+        egui::Sense::drag(),
     );
+    let cursor = if vertical {
+        egui::CursorIcon::ResizeHorizontal
+    } else {
+        egui::CursorIcon::ResizeVertical
+    };
+    if response.hovered() || response.dragged() {
+        ui.ctx().set_cursor_icon(cursor);
+    }
+    let color = if response.hovered() || response.dragged() {
+        palette.ui_text_subtle
+    } else {
+        palette.ui_border
+    };
+    let mid = if vertical {
+        [line.center_top(), line.center_bottom()]
+    } else {
+        [line.left_center(), line.right_center()]
+    };
+    ui.painter()
+        .line_segment(mid, egui::Stroke::new(1.0_f32, paint::color(color)));
     #[cfg(test)]
-    crate::chrome::mark_layout(ui, "split-rule", rect);
+    {
+        crate::chrome::mark_layout(ui, "split-rule", line);
+        let axis = if vertical { "x" } else { "y" };
+        crate::chrome::mark_layout(ui, &format!("split-handle:{axis}:{path}"), hit);
+    }
+    let delta = if response.dragged() {
+        if vertical {
+            response.drag_delta().x
+        } else {
+            response.drag_delta().y
+        }
+    } else {
+        0.0
+    };
+    SplitGesture {
+        delta,
+        stopped: response.drag_stopped(),
+    }
+}
+
+fn child_path(path: &str, index: usize) -> String {
+    if path.is_empty() {
+        index.to_string()
+    } else {
+        format!("{path}/{index}")
+    }
+}
+
+/// Each side keeps enough room for a toolbar. The saved ratio stays inside 0.1–0.9.
+fn split_ratio_limits(span: f32, min_px: f32) -> (f32, f32) {
+    if !span.is_finite() || span <= 1.0 {
+        return (0.5, 0.5);
+    }
+    let min_ratio = (min_px / span).clamp(0.1, 0.5);
+    let max_ratio = (1.0 - min_px / span).clamp(0.5, 0.9);
+    if min_ratio > max_ratio {
+        (0.5, 0.5)
+    } else {
+        (min_ratio, max_ratio)
+    }
+}
+
+fn clamp_split_ratio(ratio: f32, span: f32, min_px: f32) -> f32 {
+    let ratio = if ratio.is_finite() { ratio } else { 0.5 };
+    let (min_ratio, max_ratio) = split_ratio_limits(span, min_px);
+    ratio.clamp(min_ratio, max_ratio)
 }
 
 fn verse_selected_fill(dark: bool, palette: &UiPalette) -> egui::Color32 {
@@ -909,6 +1064,11 @@ fn slice_between(text: &str, start: usize, end: usize) -> &str {
     }
 }
 
+/// Grab strip centered on the hairline. It overlaps both panes and does not open a gap.
+const SPLIT_HIT: f32 = 6.0;
+const SPLIT_MIN_WIDTH: f32 = 168.0;
+const SPLIT_MIN_HEIGHT: f32 = 88.0;
+
 /// Space around the bible list so the first and last verse can scroll clear of the pane edge.
 const BIBLE_PAD_LEFT: f32 = 8.0;
 const BIBLE_PAD_RIGHT: f32 = 14.0;
@@ -935,6 +1095,74 @@ pub(crate) struct ChapterPaint {
 #[derive(Clone)]
 pub(crate) struct CommentaryPaint {
     pub(crate) pieces: Arc<Vec<CommentaryPiece>>,
+    fingerprint: u64,
+}
+
+impl CommentaryPaint {
+    pub(crate) fn new(pieces: impl Into<Arc<Vec<CommentaryPiece>>>) -> Self {
+        let pieces = pieces.into();
+        let fingerprint = pieces_fingerprint(&pieces);
+        Self {
+            pieces,
+            fingerprint,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GalleyKey {
+    fingerprint: u64,
+    width: i32,
+    font_bits: u32,
+    text: u32,
+    link: u32,
+}
+
+impl GalleyKey {
+    fn new(
+        fingerprint: u64,
+        width: i32,
+        font: f32,
+        text: egui::Color32,
+        link: egui::Color32,
+    ) -> Self {
+        Self {
+            fingerprint,
+            width,
+            font_bits: font.to_bits(),
+            text: color_key(text),
+            link: color_key(link),
+        }
+    }
+
+    fn same_style(self, other: Self) -> bool {
+        self.fingerprint == other.fingerprint
+            && self.font_bits == other.font_bits
+            && self.text == other.text
+            && self.link == other.link
+    }
+}
+
+fn color_key(color: egui::Color32) -> u32 {
+    u32::from_le_bytes(color.to_array())
+}
+
+struct CommentaryGalley {
+    galley: Arc<egui::Galley>,
+    links: Arc<Vec<LinkHit>>,
+}
+
+#[derive(Clone, Copy)]
+struct PaneGalleyState {
+    key: GalleyKey,
+    seen_width: i32,
+}
+
+#[derive(Clone, Copy)]
+struct PaneHeightState {
+    key: u64,
+    painted_width: i32,
+    seen_width: i32,
 }
 
 #[derive(Clone)]
@@ -979,10 +1207,19 @@ pub(crate) struct ReadingCache {
     chapters: HashMap<String, ChapterSlot>,
     xrefs: HashMap<String, Arc<HashMap<i64, Vec<CrossReference>>>>,
     pub(crate) commentary: HashMap<String, CommentaryPaint>,
+    commentary_galleys: HashMap<GalleyKey, CommentaryGalley>,
+    pane_galleys: HashMap<String, PaneGalleyState>,
     coverage: HashMap<PathBuf, Arc<HashMap<i64, Vec<i64>>>>,
-    heights: HashMap<String, (u64, Vec<f32>)>,
+    /// Row heights kept by chapter and width, so switching studies does not measure again.
+    heights: HashMap<(u64, i32), Vec<f32>>,
+    pane_heights: HashMap<String, PaneHeightState>,
+    verse_text: HashMap<String, Vec<(i64, String)>>,
     #[cfg(test)]
     pub(crate) rows_painted: usize,
+    #[cfg(test)]
+    pub(crate) commentary_layouts: u32,
+    #[cfg(test)]
+    pub(crate) chapter_measures: u32,
 }
 
 impl ReadingCache {
@@ -991,10 +1228,18 @@ impl ReadingCache {
             chapters: HashMap::new(),
             xrefs: HashMap::new(),
             commentary: HashMap::new(),
+            commentary_galleys: HashMap::new(),
+            pane_galleys: HashMap::new(),
             coverage: HashMap::new(),
             heights: HashMap::new(),
+            pane_heights: HashMap::new(),
+            verse_text: HashMap::new(),
             #[cfg(test)]
             rows_painted: 0,
+            #[cfg(test)]
+            commentary_layouts: 0,
+            #[cfg(test)]
+            chapter_measures: 0,
         }
     }
 
@@ -1002,8 +1247,89 @@ impl ReadingCache {
         self.chapters.clear();
         self.xrefs.clear();
         self.commentary.clear();
+        self.commentary_galleys.clear();
+        self.pane_galleys.clear();
         self.coverage.clear();
         self.heights.clear();
+        self.pane_heights.clear();
+        self.verse_text.clear();
+    }
+
+    pub(crate) fn cached_verse_text(&self, key: &str) -> Option<Vec<(i64, String)>> {
+        self.verse_text.get(key).cloned()
+    }
+
+    pub(crate) fn remember_verse_text(&mut self, key: String, verses: Vec<(i64, String)>) {
+        if self.verse_text.len() >= 32 && !self.verse_text.contains_key(&key) {
+            self.verse_text.clear();
+        }
+        self.verse_text.insert(key, verses);
+    }
+
+    /// A galley already wrapped for this commentary. Other studies stay in the map,
+    /// and a drag reuses the last wrap until the button is up and the width has settled.
+    fn commentary_galley(
+        &mut self,
+        pane_id: &str,
+        fingerprint: u64,
+        width: i32,
+        font: f32,
+        text: egui::Color32,
+        link: egui::Color32,
+        pointer_down: bool,
+    ) -> Option<(Arc<egui::Galley>, Arc<Vec<LinkHit>>)> {
+        let want = GalleyKey::new(fingerprint, width, font, text, link);
+        let state = self.pane_galleys.get(pane_id).copied();
+        let width_changed =
+            state.is_some_and(|state| state.key.same_style(want) && state.seen_width != width);
+        if let Some(hit) = self.commentary_galleys.get(&want) {
+            self.pane_galleys.insert(
+                pane_id.to_string(),
+                PaneGalleyState {
+                    key: want,
+                    seen_width: width,
+                },
+            );
+            return Some((Arc::clone(&hit.galley), Arc::clone(&hit.links)));
+        }
+        if pointer_down || width_changed {
+            if let Some(state) = state.filter(|state| state.key.same_style(want)) {
+                if let Some(hit) = self.commentary_galleys.get(&state.key) {
+                    self.pane_galleys.insert(
+                        pane_id.to_string(),
+                        PaneGalleyState {
+                            key: state.key,
+                            seen_width: width,
+                        },
+                    );
+                    return Some((Arc::clone(&hit.galley), Arc::clone(&hit.links)));
+                }
+            }
+        }
+        None
+    }
+
+    fn store_commentary_galley(
+        &mut self,
+        pane_id: &str,
+        key: GalleyKey,
+        galley: Arc<egui::Galley>,
+        links: Arc<Vec<LinkHit>>,
+    ) {
+        if self.commentary_galleys.len() >= 12 && !self.commentary_galleys.contains_key(&key) {
+            if let Some(old) = self.commentary_galleys.keys().next().copied() {
+                self.commentary_galleys.remove(&old);
+            }
+        }
+        self.commentary_galleys
+            .insert(key, CommentaryGalley { galley, links });
+        self.pane_galleys.insert(
+            pane_id.to_string(),
+            PaneGalleyState {
+                key,
+                seen_width: key.width,
+            },
+        );
     }
 
     fn cached_chapter(&self, key: &str, fingerprint: Option<u64>) -> Option<ChapterPaint> {
@@ -1033,7 +1359,7 @@ impl ReadingCache {
             verses: Arc::new(verses),
             spans,
         };
-        if self.chapters.len() >= 8 {
+        if self.chapters.len() >= 32 {
             self.chapters.clear();
         }
         self.chapters.insert(
@@ -1078,7 +1404,7 @@ impl ReadingCache {
             }
         }
         let grouped = Arc::new(grouped);
-        if self.xrefs.len() >= 6 {
+        if self.xrefs.len() >= 16 {
             self.xrefs.clear();
         }
         self.xrefs.insert(key, Arc::clone(&grouped));
@@ -1098,30 +1424,99 @@ impl ReadingCache {
         map
     }
 
-    fn heights(&self, pane_id: &str, key: u64) -> Option<Vec<f32>> {
-        self.heights
-            .get(pane_id)
-            .filter(|(stored, _)| *stored == key)
-            .map(|(_, heights)| heights.clone())
+    fn prepare_heights(
+        &mut self,
+        pane_id: &str,
+        key: u64,
+        width: i32,
+        len: usize,
+        pointer_down: bool,
+    ) -> Option<HeldRows> {
+        let state = self.pane_heights.get(pane_id).copied();
+        let width_changed =
+            state.is_some_and(|state| state.key == key && state.seen_width != width);
+        if let Some(heights) = self
+            .heights
+            .get(&(key, width))
+            .filter(|heights| heights.len() == len)
+            .cloned()
+        {
+            self.pane_heights.insert(
+                pane_id.to_string(),
+                PaneHeightState {
+                    key,
+                    painted_width: width,
+                    seen_width: width,
+                },
+            );
+            return Some(HeldRows {
+                heights,
+                provisional: false,
+            });
+        }
+        if pointer_down || width_changed {
+            let fallback = self
+                .heights
+                .iter()
+                .find(|((stored, _), heights)| *stored == key && heights.len() == len)
+                .map(|((_, painted), heights)| (*painted, heights.clone()));
+            if let Some((painted_width, heights)) = fallback {
+                self.pane_heights.insert(
+                    pane_id.to_string(),
+                    PaneHeightState {
+                        key,
+                        painted_width,
+                        seen_width: width,
+                    },
+                );
+                return Some(HeldRows {
+                    heights,
+                    provisional: true,
+                });
+            }
+        }
+        None
     }
 
-    fn set_heights(&mut self, pane_id: &str, key: u64, heights: Vec<f32>) {
-        self.heights.insert(pane_id.to_string(), (key, heights));
+    fn set_heights(&mut self, pane_id: &str, key: u64, width: i32, heights: Vec<f32>) {
+        if self.heights.len() >= 24 && !self.heights.contains_key(&(key, width)) {
+            if let Some(old) = self.heights.keys().next().copied() {
+                self.heights.remove(&old);
+            }
+        }
+        self.heights.insert((key, width), heights);
+        self.pane_heights.insert(
+            pane_id.to_string(),
+            PaneHeightState {
+                key,
+                painted_width: width,
+                seen_width: width,
+            },
+        );
     }
 
     fn update_height(&mut self, pane_id: &str, index: usize, height: f32) -> bool {
-        let Some((_, heights)) = self.heights.get_mut(pane_id) else {
+        let Some(state) = self.pane_heights.get(pane_id).copied() else {
             return false;
         };
-        let Some(slot) = heights.get_mut(index) else {
+        let Some(row) = self
+            .heights
+            .get_mut(&(state.key, state.painted_width))
+            .and_then(|heights| heights.get_mut(index))
+        else {
             return false;
         };
-        if (*slot - height).abs() <= 1.0 {
+        if (*row - height).abs() <= 1.0 {
             return false;
         }
-        *slot = height;
+        *row = height;
         true
     }
+}
+
+struct HeldRows {
+    heights: Vec<f32>,
+    provisional: bool,
 }
 
 pub(crate) fn commentary_key(path: &Path, book: i64, chapter: i64, lang: &str) -> String {
@@ -1158,11 +1553,10 @@ fn order_cross_refs(refs: &mut Vec<CrossReference>) {
     });
 }
 
-fn layout_key(fingerprint: u64, font: f32, text_width: f32, xref_key: &str) -> u64 {
+fn content_layout_key(fingerprint: u64, font: f32, xref_key: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     fingerprint.hash(&mut hasher);
     font.to_bits().hash(&mut hasher);
-    (text_width.round() as i32).hash(&mut hasher);
     xref_key.hash(&mut hasher);
     hasher.finish()
 }
@@ -1201,6 +1595,32 @@ pub(crate) fn visible_row_span(
         return (heights.len() - 1, heights.len());
     };
     (first.saturating_sub(1), (last + 2).min(heights.len()))
+}
+
+fn pieces_fingerprint(pieces: &[CommentaryPiece]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    pieces.len().hash(&mut hasher);
+    for piece in pieces {
+        match piece {
+            CommentaryPiece::Text(text) => {
+                0u8.hash(&mut hasher);
+                text.hash(&mut hasher);
+            }
+            CommentaryPiece::Link {
+                label,
+                book,
+                chapter,
+                verse,
+            } => {
+                1u8.hash(&mut hasher);
+                label.hash(&mut hasher);
+                book.hash(&mut hasher);
+                chapter.hash(&mut hasher);
+                verse.hash(&mut hasher);
+            }
+        }
+    }
+    hasher.finish()
 }
 
 fn commentary_plain(text: &str) -> String {
@@ -1478,6 +1898,34 @@ fn link_at<'a>(
 #[cfg(test)]
 mod tests {
     use super::{rows_prefix, verse_layout, visible_row_span, VerseSpan};
+
+    #[test]
+    fn switching_back_to_a_chapter_reuses_its_row_heights() {
+        let mut cache = super::ReadingCache::new();
+        cache.set_heights("pane-1", 11, 400, vec![10.0, 20.0]);
+        cache.set_heights("pane-1", 22, 400, vec![30.0]);
+        let first = cache
+            .prepare_heights("pane-1", 11, 400, 2, false)
+            .expect("the first study is still measured");
+        assert!(!first.provisional);
+        assert_eq!(first.heights, vec![10.0, 20.0]);
+        let second = cache
+            .prepare_heights("pane-1", 22, 400, 1, false)
+            .expect("the second study is still measured");
+        assert_eq!(second.heights, vec![30.0]);
+    }
+
+    #[test]
+    fn split_limits_keep_a_readable_pane_inside_the_saved_range() {
+        let (min_ratio, max_ratio) = super::split_ratio_limits(1000.0, 160.0);
+        assert!((min_ratio - 0.16).abs() < 1e-4);
+        assert!((max_ratio - 0.84).abs() < 1e-4);
+        let (tight_min, tight_max) = super::split_ratio_limits(200.0, 160.0);
+        assert!((tight_min - 0.5).abs() < 1e-4);
+        assert!((tight_max - 0.5).abs() < 1e-4);
+        assert!((super::clamp_split_ratio(0.02, 1000.0, 160.0) - 0.16).abs() < 1e-4);
+        assert!((super::clamp_split_ratio(0.95, 1000.0, 160.0) - 0.84).abs() < 1e-4);
+    }
 
     #[test]
     fn row_prefix_sums_only_the_rows_above() {

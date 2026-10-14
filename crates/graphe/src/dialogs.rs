@@ -448,21 +448,13 @@ impl GrapheApp {
                     .show(ui, |ui| match screen {
                         Some(NavScreen::Books { ot, nt }) => {
                             if !ot.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(i18n::t("oldTestament"))
-                                        .small()
-                                        .strong(),
-                                );
-                                self.nav_grid(ui, &ot, 5, true);
+                                self.nav_section(ui, &i18n::t("oldTestament"));
+                                self.nav_grid(ui, &ot, 5);
                             }
                             if !nt.is_empty() {
                                 ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new(i18n::t("newTestament"))
-                                        .small()
-                                        .strong(),
-                                );
-                                self.nav_grid(ui, &nt, 5, true);
+                                self.nav_section(ui, &i18n::t("newTestament"));
+                                self.nav_grid(ui, &nt, 5);
                             }
                         }
                         Some(NavScreen::Chapters {
@@ -470,14 +462,14 @@ impl GrapheApp {
                             title,
                             count,
                         }) => {
-                            ui.label(egui::RichText::new(title).strong());
+                            self.nav_heading(ui, &title);
                             let numbers: Vec<i64> = (1..=count).collect();
                             self.number_grid(ui, &numbers, 8, |nav, number| {
                                 nav.select_chapter(book_number, number);
                             });
                         }
                         Some(NavScreen::Verses { title, verses, .. }) => {
-                            ui.label(egui::RichText::new(title).strong());
+                            self.nav_heading(ui, &title);
                             self.number_grid(ui, &verses, 8, |nav, number| {
                                 nav.select_verse(number)
                             });
@@ -490,18 +482,14 @@ impl GrapheApp {
             let back_visible = self.nav.as_ref().is_some_and(|nav| nav.back_visible);
             let mut dismiss = false;
             ui.horizontal(|ui| {
-                if back_visible
-                    && self
-                        .paper_button(ui, &i18n::t("back"), PaperButton::Quiet)
-                        .clicked()
-                {
+                if back_visible && self.nav_footer_button(ui, &i18n::t("back"), true).clicked() {
                     if let Some(nav) = self.nav.as_mut() {
                         nav.back();
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if self
-                        .paper_button(ui, &i18n::t("close"), PaperButton::Quiet)
+                        .nav_footer_button(ui, &i18n::t("close"), false)
                         .clicked()
                     {
                         dismiss = true;
@@ -529,15 +517,47 @@ impl GrapheApp {
                     .as_ref()
                     .map(|nav| nav.input.clone())
                     .unwrap_or_default();
-                let submitted = ui
-                    .add(
-                        egui::TextEdit::singleline(&mut input)
-                            .hint_text(i18n::t("navPlaceholder"))
-                            .desired_width(ui.available_width())
-                            .font(egui::FontId::proportional(18.0))
-                            .margin(egui::Margin::symmetric(12, 10)),
-                    )
-                    .lost_focus()
+                let hint = paint::color(palette.ui_text_dim);
+                let response = ui
+                    .scope(|ui| {
+                        let visuals = &mut ui.style_mut().visuals;
+                        visuals.weak_text_color = Some(hint);
+                        visuals.extreme_bg_color = paint::color(if self.session.dark {
+                            palette.ui_surface
+                        } else {
+                            palette.ui_bg
+                        });
+                        let border = egui::Stroke::new(1.0_f32, hint);
+                        let focus =
+                            egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_strong));
+                        visuals.widgets.inactive.bg_stroke = border;
+                        visuals.widgets.hovered.bg_stroke = focus;
+                        visuals.widgets.active.bg_stroke = focus;
+                        let radius = egui::CornerRadius::same(2);
+                        visuals.widgets.inactive.corner_radius = radius;
+                        visuals.widgets.hovered.corner_radius = radius;
+                        visuals.widgets.active.corner_radius = radius;
+                        ui.add(
+                            egui::TextEdit::singleline(&mut input)
+                                .id(ui.id().with("nav-input"))
+                                .hint_text(
+                                    egui::RichText::new(i18n::t("navPlaceholder"))
+                                        .color(hint)
+                                        .size(18.0),
+                                )
+                                .desired_width(ui.available_width())
+                                .font(egui::FontId::proportional(18.0))
+                                .margin(egui::Margin::symmetric(16, 12)),
+                        )
+                    })
+                    .inner;
+                #[cfg(test)]
+                crate::chrome::mark_layout(ui, "nav-input", response.rect);
+                if self.nav_focus {
+                    response.request_focus();
+                    self.nav_focus = false;
+                }
+                let submitted = response.lost_focus()
                     && ui.input(|input_state| input_state.key_pressed(egui::Key::Enter));
                 if let Some(nav) = self.nav.as_mut() {
                     nav.input = input;
@@ -554,29 +574,47 @@ impl GrapheApp {
         );
     }
 
-    fn nav_grid(&mut self, ui: &mut egui::Ui, books: &[i64], columns: usize, _books: bool) {
-        let width = ui.available_width().max(80.0);
-        let cell = (width / columns as f32).max(72.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-            for number in books {
+    fn nav_section(&self, ui: &mut egui::Ui, title: &str) {
+        let palette = theme::palette(self.session.dark);
+        let color = paint::color(if self.session.dark {
+            palette.ui_text_subtle
+        } else {
+            palette.ui_border_stronger
+        });
+        ui.label(
+            egui::RichText::new(title.to_uppercase())
+                .size(12.0)
+                .strong()
+                .color(color),
+        );
+        ui.add_space(8.0);
+    }
+
+    fn nav_heading(&self, ui: &mut egui::Ui, title: &str) {
+        let palette = theme::palette(self.session.dark);
+        let color = paint::color(if self.session.dark {
+            palette.ui_text
+        } else {
+            palette.ui_text_muted
+        });
+        ui.label(egui::RichText::new(title).size(14.0).strong().color(color));
+        ui.add_space(12.0);
+    }
+
+    fn nav_grid(&mut self, ui: &mut egui::Ui, books: &[i64], columns: usize) {
+        let labels: Vec<(String, i64, String)> = books
+            .iter()
+            .map(|number| {
                 let label = self
                     .nav
                     .as_ref()
                     .map(|nav| nav.book_button_label(*number))
                     .unwrap_or_else(|| number.to_string());
-                let title = i18n::book_name(*number).long;
-                if paint::hover_tip(
-                    ui.add_sized([cell - 6.0, 40.0], egui::Button::new(label).truncate()),
-                    title,
-                )
-                .clicked()
-                {
-                    if let Some(nav) = self.nav.as_mut() {
-                        nav.select_book(*number);
-                    }
-                }
-            }
+                (label, *number, i18n::book_name(*number).long)
+            })
+            .collect();
+        self.nav_tiles(ui, &labels, columns, 14.0, |nav, number| {
+            nav.select_book(number);
         });
     }
 
@@ -587,61 +625,214 @@ impl GrapheApp {
         columns: usize,
         mut select: impl FnMut(&mut crate::app::LiveNav, i64),
     ) {
+        let labels: Vec<(String, i64, String)> = numbers
+            .iter()
+            .map(|number| (number.to_string(), *number, String::new()))
+            .collect();
+        self.nav_tiles(ui, &labels, columns, 16.0, |nav, number| {
+            select(nav, number);
+        });
+    }
+
+    /// Cream tiles in a fixed column count, matching the Electron book and chapter grids.
+    fn nav_tiles(
+        &mut self,
+        ui: &mut egui::Ui,
+        items: &[(String, i64, String)],
+        columns: usize,
+        font: f32,
+        mut select: impl FnMut(&mut crate::app::LiveNav, i64),
+    ) {
+        let columns = columns.max(1);
+        let gap = 6.0;
         let width = ui.available_width().max(80.0);
-        let cell = (width / columns as f32).max(44.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-            for number in numbers {
-                if ui
-                    .add_sized([cell - 6.0, 40.0], egui::Button::new(number.to_string()))
-                    .clicked()
-                {
-                    if let Some(nav) = self.nav.as_mut() {
-                        select(nav, *number);
+        let cell_w = ((width - gap * (columns as f32 - 1.0)) / columns as f32).max(36.0);
+        ui.spacing_mut().item_spacing.y = gap;
+        for row in items.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (label, number, tip) in row {
+                    let response = self.nav_tile(ui, label, cell_w, 44.0, font);
+                    let response = if tip.is_empty() {
+                        response
+                    } else {
+                        paint::hover_tip(response, tip)
+                    };
+                    if response.clicked() {
+                        if let Some(nav) = self.nav.as_mut() {
+                            select(nav, *number);
+                        }
                     }
                 }
-            }
+            });
+        }
+    }
+
+    fn nav_tile(
+        &self,
+        ui: &mut egui::Ui,
+        label: &str,
+        width: f32,
+        height: f32,
+        font: f32,
+    ) -> egui::Response {
+        let palette = theme::palette(self.session.dark);
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+        let fill = if self.session.dark {
+            paint::color(if response.hovered() {
+                "#454545"
+            } else {
+                "#333333"
+            })
+        } else {
+            paint::color(if response.hovered() {
+                palette.ui_accent_bg
+            } else {
+                palette.ui_surface_muted
+            })
+        };
+        let ink = paint::color(if self.session.dark {
+            palette.ui_text
+        } else {
+            palette.ui_link_strong
         });
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(2), fill);
+        let galley = egui::WidgetText::from(egui::RichText::new(label).size(font).color(ink))
+            .into_galley(
+                ui,
+                Some(egui::TextWrapMode::Truncate),
+                (width - 12.0).max(8.0),
+                egui::FontSelection::default(),
+            );
+        ui.painter().galley(
+            egui::pos2(
+                rect.center().x - galley.rect.width() / 2.0,
+                rect.center().y - galley.rect.height() / 2.0,
+            ),
+            galley,
+            ink,
+        );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, &format!("nav-cell:{label}"), rect);
+        response
+    }
+
+    fn nav_footer_button(&self, ui: &mut egui::Ui, label: &str, arrow: bool) -> egui::Response {
+        let palette = theme::palette(self.session.dark);
+        let dark = self.session.dark;
+        let ink = paint::color(if dark {
+            palette.ui_text
+        } else {
+            palette.ui_link_strong
+        });
+        let galley =
+            ui.painter()
+                .layout_no_wrap(label.to_string(), egui::FontId::proportional(14.0), ink);
+        let icon_w = if arrow { 20.0 } else { 0.0 };
+        let width = (galley.rect.width() + 32.0 + icon_w).max(72.0);
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::click());
+        let fill = paint::color(if dark {
+            if response.hovered() {
+                "#454545"
+            } else {
+                "#333333"
+            }
+        } else if response.hovered() {
+            palette.ui_border
+        } else {
+            palette.ui_accent_bg
+        });
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(2), fill);
+        let content_w = galley.rect.width() + icon_w;
+        let mut x = rect.center().x - content_w / 2.0;
+        if arrow {
+            paint::draw_icon(
+                ui.painter(),
+                egui::pos2(x + 8.0, rect.center().y),
+                ink,
+                paint::Icon::ArrowLeft,
+            );
+            x += icon_w;
+        }
+        ui.painter().galley(
+            egui::pos2(x, rect.center().y - galley.rect.height() / 2.0),
+            galley,
+            ink,
+        );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        response
     }
 
     fn convert_card(&mut self, ui: &mut egui::Ui) -> bool {
         let dismiss = self.header_bar(ui, &i18n::t("convertModules"), true);
-        let max_h = max_body(ui, 130.0);
         let status = self.session.status.clone();
+        let dark = self.session.dark;
+        // Cap a long result list. The empty state is one paragraph, so the
+        // scroll area shrinks to that instead of reserving most of the screen.
+        let max_h = commentary_body_limit(
+            ui.ctx().content_rect().height(),
+            ui.min_rect().height() + 72.0,
+        );
         modal_scroll(ui, "convert", max_h, |ui| {
             let palette = theme::palette(self.session.dark);
+            // Electron uses text-sm text-brand-600 (light) / night-300 (dark).
             let hint = paint::color(if self.session.dark {
                 palette.ui_text_subtle
             } else {
-                palette.ui_text_muted
+                palette.ui_border_stronger
             });
-            ui.label(
+            let desc = ui.label(
                 egui::RichText::new(i18n::t("convertModulesDesc"))
                     .size(14.0)
                     .color(hint),
             );
+            #[cfg(test)]
+            crate::chrome::mark_layout(ui, "convert-desc", desc.rect);
             if !status.is_empty() {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new(status).size(12.0).color(hint));
             }
         });
-        let dark = self.session.dark;
         let clicked = footer_shell(ui, dark, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                let folder = self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
-                let files = self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
-                if folder.clicked() {
-                    if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                        self.convert_paths(convertible_in_folder(&dir));
+            // `with_layout` claims every pixel left in the modal. After a taller
+            // dialog the shared area is still tall, so the buttons float in the
+            // middle of that leftover. Ask only for the button row.
+            let row_width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                egui::vec2(row_width, 36.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let folder =
+                        self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
+                    let files =
+                        self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
+                    #[cfg(test)]
+                    {
+                        crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
+                        crate::chrome::mark_layout(ui, "convert-files", files.rect);
                     }
-                }
-                if files.clicked() {
-                    if let Some(paths) = rfd::FileDialog::new().pick_files() {
-                        self.convert_paths(paths);
+                    if folder.clicked() {
+                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                            self.convert_paths(convertible_in_folder(&dir));
+                        }
                     }
-                }
-            });
+                    if files.clicked() {
+                        if let Some(paths) = rfd::FileDialog::new().pick_files() {
+                            self.convert_paths(paths);
+                        }
+                    }
+                },
+            );
             false
         });
         dismiss || clicked
@@ -1926,64 +2117,167 @@ impl GrapheApp {
         let muted = paint::color(if self.session.dark {
             palette.ui_text_subtle
         } else {
-            palette.ui_text_muted
+            palette.ui_border_stronger
         });
         let mut dismiss = false;
-        egui::Frame::new()
-            .inner_margin(egui::Margin::same(32))
+        let framed = egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 28,
+                right: 28,
+                top: 28,
+                bottom: 28,
+            })
             .show(ui, |ui| {
+                let width = ui.available_width();
                 ui.vertical_centered(|ui| {
-                    ui.add(
-                        egui::Image::from_bytes(
-                            "bytes://graphe-full.png",
-                            include_bytes!("../../../assets/graphe-full.png").as_slice(),
-                        )
-                        .max_height(80.0),
-                    );
-                    ui.add_space(12.0);
+                    ui.set_width(width);
+                    self.about_wordmark(ui);
+                    ui.add_space(16.0);
                     ui.label(
-                        egui::RichText::new(crate::update::VERSION)
+                        egui::RichText::new(format!("v{}", crate::update::VERSION))
                             .size(14.0)
                             .color(muted),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(2.0);
                     ui.label(
                         egui::RichText::new("Claudio Scheer")
                             .size(14.0)
                             .color(muted),
                     );
                     ui.add_space(12.0);
-                    ui.label(
-                        egui::RichText::new(i18n::t("aboutOpenSource"))
-                            .size(14.0)
-                            .color(muted),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(i18n::t("aboutOpenSource"))
+                                .size(14.0)
+                                .color(muted),
+                        )
+                        .wrap_mode(egui::TextWrapMode::Wrap)
+                        .halign(egui::Align::Center),
                     );
-                    ui.add_space(16.0);
+                    ui.add_space(20.0);
+                    let github = "GitHub";
+                    let report = i18n::t("reportIssue");
+                    let gap = 16.0;
+                    let pair =
+                        quiet_button_width(ui, github) + gap + quiet_button_width(ui, &report);
+                    let spare = (ui.available_width() - pair).max(0.0) / 2.0;
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 16.0;
-                        if self
-                            .paper_button(ui, "GitHub", PaperButton::Quiet)
-                            .clicked()
-                        {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(spare);
+                        let repo = self.paper_button(ui, github, PaperButton::Quiet);
+                        #[cfg(test)]
+                        crate::chrome::mark_layout(ui, "about-github", repo.rect);
+                        if repo.clicked() {
                             let _ = open::that("https://github.com/claudioscheer/graphe");
                         }
-                        if self
-                            .paper_button(ui, &i18n::t("reportIssue"), PaperButton::Quiet)
-                            .clicked()
-                        {
+                        ui.add_space(gap);
+                        let issues = self.paper_button(ui, &report, PaperButton::Quiet);
+                        #[cfg(test)]
+                        crate::chrome::mark_layout(ui, "about-issues", issues.rect);
+                        if issues.clicked() {
                             let _ = open::that(crate::update::ISSUES_URL);
                         }
                     });
-                    ui.add_space(16.0);
-                    if self
-                        .paper_button(ui, &i18n::t("close"), PaperButton::Quiet)
-                        .clicked()
-                    {
-                        dismiss = true;
-                    }
                 });
             });
+        let card = framed.response.rect;
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "about-card", card);
+        if self.about_close(ui, card) {
+            dismiss = true;
+        }
         dismiss
+    }
+
+    /// Quiet corner icon. Top and right insets match, and hover only enlarges the mark.
+    fn about_close(&self, ui: &mut egui::Ui, card: egui::Rect) -> bool {
+        let palette = theme::palette(self.session.dark);
+        let inset = 12.0;
+        let reach = 3.5;
+        let stroke_w = 1.15_f32;
+        let visual = reach + stroke_w / 2.0;
+        let center = egui::pos2(card.right() - inset - visual, card.top() + inset + visual);
+        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+        let response = ui.interact(hit, ui.id().with("about-close"), egui::Sense::click());
+        let shown = if response.hovered() {
+            reach * 1.25
+        } else {
+            reach
+        };
+        let ink = paint::color(palette.ui_text_dim);
+        let stroke = egui::Stroke::new(stroke_w, ink);
+        ui.painter().line_segment(
+            [
+                center + egui::vec2(-shown, -shown),
+                center + egui::vec2(shown, shown),
+            ],
+            stroke,
+        );
+        ui.painter().line_segment(
+            [
+                center + egui::vec2(shown, -shown),
+                center + egui::vec2(-shown, shown),
+            ],
+            stroke,
+        );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        #[cfg(test)]
+        {
+            let mark = egui::Rect::from_center_size(center, egui::vec2(visual * 2.0, visual * 2.0));
+            crate::chrome::mark_layout(ui, "about-close", mark);
+        }
+        response.clicked()
+    }
+
+    /// The wordmark PNG. `Image::from_bytes` has no loader here, so decode it like the navbar mark.
+    fn about_wordmark(&self, ui: &mut egui::Ui) {
+        let bytes = include_bytes!("../../../assets/graphe-full.png");
+        let Ok(icon) = eframe::icon_data::from_png_bytes(bytes) else {
+            ui.label(
+                egui::RichText::new("Graphe")
+                    .strong()
+                    .size(28.0)
+                    .color(paint::color(theme::palette(self.session.dark).ui_text)),
+            );
+            return;
+        };
+        let texture_id = egui::Id::new("graphe-wordmark");
+        let existing = ui
+            .ctx()
+            .data(|data| data.get_temp::<egui::TextureHandle>(texture_id));
+        let handle = if let Some(handle) = existing {
+            handle
+        } else {
+            let image = egui::ColorImage::from_rgba_unmultiplied(
+                [icon.width as usize, icon.height as usize],
+                &icon.rgba,
+            );
+            let handle =
+                ui.ctx()
+                    .load_texture("graphe-wordmark", image, egui::TextureOptions::LINEAR);
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(texture_id, handle.clone()));
+            handle
+        };
+        let aspect = icon.width as f32 / icon.height.max(1) as f32;
+        let max_w = ui.available_width().min(280.0);
+        let mut height = 80.0;
+        let mut width = height * aspect;
+        if width > max_w {
+            width = max_w;
+            height = width / aspect.max(0.01);
+        }
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        ui.painter().image(
+            handle.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "about-logo", rect);
     }
 
     fn commentaries_body(&mut self, ui: &mut egui::Ui) {
@@ -2505,6 +2799,15 @@ fn footer_shell(
             contents(ui)
         })
         .inner
+}
+
+fn quiet_button_width(ui: &egui::Ui, label: &str) -> f32 {
+    let probe = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(14.0),
+        egui::Color32::PLACEHOLDER,
+    );
+    (probe.rect.width() + 32.0).max(64.0)
 }
 
 fn px_label(size: f32) -> String {

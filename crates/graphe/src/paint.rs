@@ -34,6 +34,10 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     style
         .text_styles
         .insert(egui::TextStyle::Button, egui::FontId::proportional(font));
+    // A floating bar normally widens under the pointer. On a side-by-side split
+    // that widening sits on the divider, and egui then prefers whichever of the
+    // bar and the divider is thinner, so hover flips every frame and the line flashes.
+    style.spacing.scroll.floating_width = style.spacing.scroll.bar_width;
     ctx.set_style(style);
 }
 
@@ -244,6 +248,25 @@ pub(crate) fn icon_button(
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Magnifying glass. `scale` 1 is the sidebar mark; the reference field uses a smaller one.
+pub(crate) fn draw_search_icon(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    ink: egui::Color32,
+    scale: f32,
+) {
+    let scale = scale.max(0.5);
+    let stroke = egui::Stroke::new(1.5 * scale, ink);
+    painter.circle_stroke(center + egui::vec2(-2.0, -2.0) * scale, 5.5 * scale, stroke);
+    painter.line_segment(
+        [
+            center + egui::vec2(2.5, 2.5) * scale,
+            center + egui::vec2(7.5, 7.5) * scale,
+        ],
+        stroke,
+    );
+}
+
 pub(crate) fn draw_icon(
     painter: &egui::Painter,
     center: egui::Pos2,
@@ -252,13 +275,7 @@ pub(crate) fn draw_icon(
 ) {
     let stroke = egui::Stroke::new(1.5_f32, ink);
     match icon {
-        Icon::Search => {
-            painter.circle_stroke(center + egui::vec2(-2.0, -2.0), 5.5, stroke);
-            painter.line_segment(
-                [center + egui::vec2(2.5, 2.5), center + egui::vec2(7.5, 7.5)],
-                stroke,
-            );
-        }
+        Icon::Search => draw_search_icon(painter, center, ink, 1.0),
         Icon::Book => {
             // Lucide book-marked: closed book with bookmark tab
             let rect = egui::Rect::from_center_size(center, egui::vec2(14.0, 17.0));

@@ -78,6 +78,7 @@ pub fn run() -> eframe::Result {
                 persisted: running.persisted.clone(),
                 store,
                 nav: None,
+                nav_focus: false,
                 picker: None,
                 morphs: HashMap::new(),
                 matcher: None,
@@ -108,6 +109,7 @@ pub(crate) struct GrapheApp {
     pub(crate) persisted: Value,
     pub(crate) store: AppStateStore,
     pub(crate) nav: Option<LiveNav>,
+    pub(crate) nav_focus: bool,
     pub(crate) picker: Option<ModulePicker>,
     pub(crate) morphs: HashMap<PathBuf, LoadedMorph>,
     matcher: Option<ReferenceMatcher>,
@@ -359,15 +361,25 @@ impl GrapheApp {
         }
         self.loaded_key = key;
         let path = self.bible_path(module_id.as_deref());
-        let verses = path
-            .map(|path| sqlite::chapter_in_file(path, book, chapter))
+        let cache_key = path
+            .map(|path| format!("{}|{book}|{chapter}", path.display()))
             .unwrap_or_default();
-        self.session.show_chapter(
-            verses
-                .into_iter()
-                .map(|verse| (verse.verse, verse.text))
-                .collect(),
-        );
+        if !cache_key.is_empty() {
+            if let Some(verses) = self.reading.cached_verse_text(&cache_key) {
+                self.session.show_chapter(verses);
+                return;
+            }
+        }
+        let verses: Vec<(i64, String)> = path
+            .map(|path| sqlite::chapter_in_file(path, book, chapter))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|verse| (verse.verse, verse.text))
+            .collect();
+        if !cache_key.is_empty() {
+            self.reading.remember_verse_text(cache_key, verses.clone());
+        }
+        self.session.show_chapter(verses);
     }
 
     pub(crate) fn bible_path(&self, module_id: Option<&str>) -> Option<&Path> {
@@ -415,6 +427,7 @@ impl GrapheApp {
         nav.open_for(&self.session.active_pane_id, books);
         nav.input = self.session.nav_input.clone();
         self.nav = Some(nav);
+        self.nav_focus = true;
         self.session.dialog = Dialog::Navigation;
     }
 
@@ -708,6 +721,7 @@ mod tests {
             persisted: json!({}),
             store: AppStateStore::new(),
             nav: None,
+            nav_focus: false,
             picker: None,
             morphs: HashMap::new(),
             matcher: None,
@@ -802,6 +816,135 @@ mod tests {
     }
 
     #[test]
+    fn about_dialog_shows_the_wordmark_and_centers_the_links() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::About;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, marks) = dialog_frame(&ctx, &mut app);
+        let card = *mark(&marks, "about-card");
+        let logo = *mark(&marks, "about-logo");
+        let close = *mark(&marks, "about-close");
+        let github = *mark(&marks, "about-github");
+        let issues = *mark(&marks, "about-issues");
+        assert!(
+            logo[3] > 24.0 && logo[2] > logo[3],
+            "the wordmark is a wide image, not the broken icon: {logo:?}"
+        );
+        assert!(
+            (logo[0] + logo[2] / 2.0 - (card[0] + card[2] / 2.0)).abs() < 24.0,
+            "the wordmark is centered: logo {logo:?} card {card:?}"
+        );
+        let top_gap = close[1] - card[1];
+        let right_gap = (card[0] + card[2]) - (close[0] + close[2]);
+        assert!(
+            (top_gap - right_gap).abs() < 0.6,
+            "top and right insets differ: top {top_gap} right {right_gap}"
+        );
+        assert!(
+            (top_gap - 12.0).abs() < 0.6,
+            "close inset is 12px: top {top_gap} right {right_gap}"
+        );
+        assert!(
+            (github[1] - issues[1]).abs() < 1.0,
+            "the two links share a row: {github:?} {issues:?}"
+        );
+        let pair_mid = (github[0] + issues[0] + issues[2]) / 2.0;
+        let card_mid = card[0] + card[2] / 2.0;
+        assert!(
+            (pair_mid - card_mid).abs() < 12.0,
+            "GitHub and Report sit in the middle: pair {pair_mid} card {card_mid}"
+        );
+        assert!(
+            !marks.iter().any(|(key, _)| key == "about-footer-close"),
+            "the footer close button is gone"
+        );
+    }
+
+    #[test]
+    fn navigation_picker_uses_the_electron_book_grid() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        i18n::set_lang("pt");
+        app.open_navigation();
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_output, marks) = dialog_frame(&ctx, &mut app);
+        let input = *mark(&marks, "nav-input");
+        assert!(
+            input[3] >= 40.0,
+            "the reference field is a full input: {input:?}"
+        );
+        let books: Vec<_> = marks
+            .iter()
+            .filter(|(key, _)| key.starts_with("nav-cell:"))
+            .take(5)
+            .collect();
+        assert_eq!(books.len(), 5, "five books on the first row: {marks:?}");
+        let row = books[0].1[1];
+        for (key, rect) in &books {
+            assert!(
+                (rect[1] - row).abs() < 1.0,
+                "{key} left the first row: {rect:?}"
+            );
+            assert!(
+                (rect[3] - 44.0).abs() < 1.0,
+                "{key} is not a 44px tile: {rect:?}"
+            );
+        }
+        for pair in books.windows(2) {
+            let gap = pair[1].1[0] - (pair[0].1[0] + pair[0].1[2]);
+            assert!(
+                (gap - 6.0).abs() < 1.5,
+                "book tiles are not 6px apart: {gap}"
+            );
+        }
+        let genesis = *mark(&marks, "nav-cell:Gn");
+        let at = egui::pos2(genesis[0] + genesis[2] * 0.5, genesis[1] + genesis[3] * 0.5);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.events = vec![
+            egui::Event::PointerMoved(at),
+            egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ];
+        let _ = ctx.run(raw, |ctx| {
+            app.dialogs(ctx);
+        });
+        let (_, chapter_marks) = dialog_frame(&ctx, &mut app);
+        let chapters: Vec<_> = chapter_marks
+            .iter()
+            .filter(|(key, _)| key.starts_with("nav-cell:"))
+            .take(8)
+            .collect();
+        assert_eq!(
+            chapters.len(),
+            8,
+            "chapters sit eight across: {chapter_marks:?}"
+        );
+        let chapter_row = chapters[0].1[1];
+        for (key, rect) in &chapters {
+            assert!(
+                (rect[1] - chapter_row).abs() < 1.0,
+                "{key} left the first chapter row"
+            );
+            assert!((rect[3] - 44.0).abs() < 1.0, "{key} is not a 44px tile");
+        }
+    }
+
+    #[test]
     fn settings_opens_as_a_paper_card_and_the_theme_button_flips_the_theme() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -851,6 +994,63 @@ mod tests {
         });
         assert!(app.session.dark, "the theme control toggles light and dark");
         assert_eq!(app.store.settings()["theme"], "dark");
+    }
+
+    #[test]
+    fn convert_dialog_hugs_the_description_like_electron() {
+        i18n::set_lang("pt");
+        let screen = egui::vec2(1400.0, 1000.0);
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: std::path::PathBuf::from("missing.commentaries.SQLite3"),
+            short_title: None,
+            description: None,
+        });
+        app.session.coverage_module_id = Some("notes".into());
+        app.session.dialog = Dialog::Coverage;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, coverage_marks) = dialog_frame_in(&ctx, &mut app, screen);
+        let coverage = *mark(&coverage_marks, "modal-card");
+        assert!(
+            coverage[3] > 300.0,
+            "coverage has to be tall so a stuck modal would show, got {coverage:?}"
+        );
+
+        app.session.dialog = Dialog::Convert;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, marks) = dialog_frame_in(&ctx, &mut app, screen);
+        let card = *mark(&marks, "modal-card");
+        let desc = *mark(&marks, "convert-desc");
+        let files = *mark(&marks, "convert-files");
+        let folder = *mark(&marks, "convert-folder");
+        assert!(
+            (card[2] - 520.0).abs() < 2.0,
+            "convert card is 520px wide, got {card:?}"
+        );
+        assert!(
+            card[3] < 260.0,
+            "convert hugs the description after a tall dialog, coverage {coverage:?} card {card:?}"
+        );
+        assert!(folder[0] > files[0], "files then folder, left to right");
+        let right_gap = (card[0] + card[2]) - (folder[0] + folder[2]);
+        assert!(
+            (right_gap - 16.0).abs() < 4.0,
+            "the folder button sits on the right padding, gap {right_gap}"
+        );
+        let below = (card[1] + card[3]) - (folder[1] + folder[3]);
+        assert!(
+            (8.0..24.0).contains(&below),
+            "the buttons sit on the footer, not in the middle of the card, below {below}"
+        );
+        let gap = files[1] - (desc[1] + desc[3]);
+        assert!(
+            gap < 48.0,
+            "the buttons follow the description, gap {gap} desc {desc:?} files {files:?}"
+        );
     }
 
     #[test]
@@ -942,6 +1142,360 @@ mod tests {
                 body.1[3]
             );
         }
+    }
+
+    #[test]
+    fn side_by_side_divider_stays_still_while_the_pointer_rests_on_it() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.split(false);
+        app.session.active_pane_id = "pane-1".into();
+        app.loaded_key = ":10:1:pane-1".into();
+        app.session.chapter_text = (1..=80)
+            .map(|verse| {
+                (
+                    verse,
+                    "In the beginning God created the heaven and the earth.".into(),
+                )
+            })
+            .collect();
+        let mut time = 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        time += 0.05;
+        let mut marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let handle = *mark(&marks, "split-handle:x:");
+        let at = egui::pos2(handle[0] + handle[2] * 0.5, handle[1] + handle[3] * 0.5);
+        let mut widths = Vec::new();
+        let mut handle_x = Vec::new();
+        for _ in 0..8 {
+            time += 0.05;
+            marks = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                vec![egui::Event::PointerMoved(at)],
+            );
+            widths.push(mark(&marks, "toolbar:pane-1")[2]);
+            handle_x.push(mark(&marks, "split-handle:x:")[0]);
+        }
+        let span = |values: &[f32]| {
+            let min = values.iter().copied().fold(f32::MAX, f32::min);
+            let max = values.iter().copied().fold(f32::MIN, f32::max);
+            max - min
+        };
+        assert!(
+            span(&widths) < 1.0,
+            "the left bible jumps while the pointer rests on the divider: {widths:?}"
+        );
+        assert!(
+            span(&handle_x) < 1.0,
+            "the divider itself jumps under the pointer: {handle_x:?}"
+        );
+    }
+
+    #[test]
+    fn splits_resize_side_by_side_and_the_commentary_edge() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let below = app.session.split(true);
+        app.session.panes.get_mut(&below).unwrap().pane_type =
+            graphe_domain::model::PaneType::Commentary;
+        app.session.active_pane_id = "pane-1".into();
+        let right = app.session.split(false);
+        let palette = theme::palette(false);
+        let marks = |app: &mut GrapheApp, time: f64, events: Vec<egui::Event>| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            ));
+            raw.time = Some(time);
+            raw.events = events;
+            let mut marks = Vec::new();
+            let _ = ctx.run(raw, |ctx| {
+                app.editor(ctx, palette);
+                marks = ctx.data(|data| {
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                        .unwrap_or_default()
+                });
+            });
+            marks
+        };
+        let settled = marks(&mut app, 0.1, Vec::new());
+        let left = *mark(&settled, "toolbar:pane-1");
+        let lower = *mark(&settled, &format!("toolbar:{below}"));
+        let column = *mark(&settled, "split-handle:x:0");
+        let edge = *mark(&settled, "split-handle:y:");
+        assert!(
+            column[2] >= 5.0 && column[3] > 40.0,
+            "the side-by-side divider can be grabbed: {column:?}"
+        );
+        assert!(
+            edge[3] >= 5.0 && edge[2] > 40.0,
+            "the commentary's top edge can be grabbed: {edge:?}"
+        );
+        let column_at = egui::pos2(column[0] + column[2] * 0.5, column[1] + column[3] * 0.5);
+        let _ = marks(&mut app, 0.2, vec![egui::Event::PointerMoved(column_at)]);
+        let _ = marks(
+            &mut app,
+            0.3,
+            vec![egui::Event::PointerButton {
+                pos: column_at,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        let pulled = column_at + egui::vec2(90.0, 0.0);
+        let _ = marks(&mut app, 0.4, vec![egui::Event::PointerMoved(pulled)]);
+        let widened = marks(&mut app, 0.5, Vec::new());
+        let left_after = *mark(&widened, "toolbar:pane-1");
+        let right_after = *mark(&widened, &format!("toolbar:{right}"));
+        assert!(
+            left_after[2] > left[2] + 40.0,
+            "dragging the left divider widens that bible: {left:?} -> {left_after:?}"
+        );
+        assert!(
+            right_after[0] > left[0] + left[2] + 40.0,
+            "the bible beside it moves with the divider"
+        );
+        let _ = marks(
+            &mut app,
+            0.6,
+            vec![egui::Event::PointerButton {
+                pos: pulled,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        let edge = *mark(&widened, "split-handle:y:");
+        let edge_at = egui::pos2(edge[0] + edge[2] * 0.5, edge[1] + edge[3] * 0.5);
+        let _ = marks(&mut app, 0.7, vec![egui::Event::PointerMoved(edge_at)]);
+        let _ = marks(
+            &mut app,
+            0.8,
+            vec![egui::Event::PointerButton {
+                pos: edge_at,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        let dropped = edge_at + egui::vec2(0.0, 80.0);
+        let _ = marks(&mut app, 0.9, vec![egui::Event::PointerMoved(dropped)]);
+        let lowered = marks(&mut app, 1.0, Vec::new());
+        let lower_after = *mark(&lowered, &format!("toolbar:{below}"));
+        assert!(
+            lower_after[1] > lower[1] + 40.0,
+            "dragging the commentary edge downward gives the bibles more height: {lower:?} -> {lower_after:?}"
+        );
+        assert!(
+            lower_after[3] > 40.0 && lower_after[1] + lower_after[3] < 800.0,
+            "the commentary keeps its toolbar on screen: {lower_after:?}"
+        );
+    }
+
+    #[test]
+    fn commentary_reflow_waits_until_the_pane_width_settles() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let below = app.session.split(true);
+        app.session.panes.get_mut(&below).unwrap().pane_type =
+            graphe_domain::model::PaneType::Commentary;
+        app.session.active_pane_id = "pane-1".into();
+        let right = app.session.split(false);
+        app.loaded_key = format!(":10:1:{right}");
+        app.session.chapter_text = (1..=80)
+            .map(|verse| {
+                (
+                    verse,
+                    "No princípio criou Deus os céus e a terra e viu que era bom.".into(),
+                )
+            })
+            .collect();
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&below) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(30);
+        let pieces = vec![crate::study::CommentaryPiece::Text(paragraph)];
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+        let frame = |app: &mut GrapheApp, time: f64, width: f32, events: Vec<egui::Event>| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            ));
+            raw.time = Some(time);
+            raw.events = events;
+            let _ = ctx.run(raw, |ctx| {
+                app.editor(ctx, theme::palette(false));
+            });
+        };
+        frame(&mut app, 0.1, 1200.0, Vec::new());
+        let layouts = app.reading.commentary_layouts;
+        let measures = app.reading.chapter_measures;
+        assert_eq!(
+            layouts, 1,
+            "the commentary lays out once when the width is new"
+        );
+        assert!(
+            measures >= 1,
+            "the open chapters are measured once before the drag"
+        );
+        for (step, width) in [1100.0, 1000.0, 900.0, 800.0].into_iter().enumerate() {
+            frame(&mut app, 0.2 + step as f64 * 0.05, width, Vec::new());
+            assert_eq!(
+                app.reading.commentary_layouts, layouts,
+                "width {width} must not reflow the commentary while it is still changing"
+            );
+            assert_eq!(
+                app.reading.chapter_measures, measures,
+                "width {width} must not remeasure every verse in the open chapters"
+            );
+        }
+        frame(&mut app, 0.5, 800.0, Vec::new());
+        assert_eq!(
+            app.reading.commentary_layouts,
+            layouts + 1,
+            "one commentary reflow after the width settles"
+        );
+        assert_eq!(
+            app.reading.chapter_measures,
+            measures + 2,
+            "each bible pane measures once after the width settles"
+        );
+        frame(&mut app, 0.6, 800.0, Vec::new());
+        assert_eq!(
+            app.reading.commentary_layouts,
+            layouts + 1,
+            "a stable width reuses the commentary galley"
+        );
+        assert_eq!(
+            app.reading.chapter_measures,
+            measures + 2,
+            "a stable width reuses the chapter row heights"
+        );
+        let held = egui::pos2(240.0, 240.0);
+        frame(
+            &mut app,
+            0.7,
+            800.0,
+            vec![egui::Event::PointerButton {
+                pos: held,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        frame(
+            &mut app,
+            0.8,
+            760.0,
+            vec![egui::Event::PointerMoved(held + egui::vec2(-40.0, 0.0))],
+        );
+        frame(&mut app, 0.9, 760.0, Vec::new());
+        frame(&mut app, 1.0, 760.0, Vec::new());
+        assert_eq!(
+            app.reading.commentary_layouts,
+            layouts + 1,
+            "holding the pointer on one width must not reflow the commentary"
+        );
+        assert_eq!(
+            app.reading.chapter_measures,
+            measures + 2,
+            "holding the pointer on one width must not remeasure the chapters"
+        );
+        frame(
+            &mut app,
+            1.1,
+            760.0,
+            vec![egui::Event::PointerButton {
+                pos: held + egui::vec2(-40.0, 0.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        assert_eq!(
+            app.reading.commentary_layouts,
+            layouts + 2,
+            "releasing the pointer reflows the commentary once"
+        );
+        assert_eq!(
+            app.reading.chapter_measures,
+            measures + 4,
+            "releasing the pointer measures each bible pane once"
+        );
+    }
+
+    #[test]
+    fn switching_back_to_a_commentary_does_not_lay_it_out_again() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        let paint = |text: &str| {
+            crate::study::CommentaryPaint::new(vec![crate::study::CommentaryPiece::Text(
+                text.into(),
+            )])
+        };
+        app.reading.commentary.insert(
+            key.clone(),
+            paint("A graça e a verdade vieram por Jesus Cristo."),
+        );
+        let frame = |app: &mut GrapheApp, time: f64| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            ));
+            raw.time = Some(time);
+            let _ = ctx.run(raw, |ctx| {
+                app.editor(ctx, theme::palette(false));
+            });
+        };
+        frame(&mut app, 0.1);
+        assert_eq!(app.reading.commentary_layouts, 1);
+        app.reading.commentary.insert(
+            key.clone(),
+            paint("Outro estudo, com outro comentário mais longo sobre o capítulo."),
+        );
+        frame(&mut app, 0.2);
+        assert_eq!(app.reading.commentary_layouts, 2);
+        app.reading
+            .commentary
+            .insert(key, paint("A graça e a verdade vieram por Jesus Cristo."));
+        frame(&mut app, 0.3);
+        assert_eq!(
+            app.reading.commentary_layouts, 2,
+            "returning to the first study reuses its commentary galley"
+        );
     }
 
     #[test]
@@ -1039,10 +1593,10 @@ mod tests {
             "the bible toolbar keeps the options menu: {marks:?}"
         );
         assert!(
-            !marks
+            marks
                 .iter()
                 .any(|(key, _)| key == &format!("options:{below}")),
-            "the commentary toolbar has no options menu: {marks:?}"
+            "the commentary toolbar can split too: {marks:?}"
         );
         let nav = *mark(&marks, "nav:pane-1");
         let expected_nav = if left[2] < 420.0 {
@@ -1262,6 +1816,167 @@ mod tests {
         }
     }
 
+    #[test]
+    fn each_split_direction_offers_a_bible_and_a_commentary() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let shown = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let menu = open_pane_menu(&ctx, &mut app, 0.2, mark(&shown, "options:pane-1"));
+        for key in [
+            "split-h-bible:pane-1",
+            "split-h-commentary:pane-1",
+            "split-v-bible:pane-1",
+            "split-v-commentary:pane-1",
+        ] {
+            assert!(
+                menu.iter().any(|(name, _)| name == key),
+                "missing {key} in {menu:?}"
+            );
+        }
+        click_mark(&ctx, &mut app, 0.6, &menu, "split-v-commentary:pane-1");
+        let commentary = app
+            .session
+            .panes
+            .iter()
+            .find(|(_, pane)| pane.pane_type == graphe_domain::model::PaneType::Commentary)
+            .map(|(id, _)| id.clone())
+            .expect("vertical split opens a commentary");
+        match &app.session.tree {
+            graphe_domain::model::PaneNode::Split { direction, .. } => {
+                assert_eq!(direction, "v", "the commentary stacks under the bible");
+            }
+            graphe_domain::model::PaneNode::Leaf { .. } => panic!("expected a vertical split"),
+        }
+        let shown = study_frame(&ctx, &mut app, 1.0, egui::Modifiers::default(), Vec::new());
+        let menu = open_pane_menu(
+            &ctx,
+            &mut app,
+            1.1,
+            mark(&shown, &format!("options:{commentary}")),
+        );
+        let bible_key = format!("split-h-bible:{commentary}");
+        assert!(
+            menu.iter().any(|(name, _)| name == &bible_key),
+            "a commentary pane can split horizontally into a bible: {menu:?}"
+        );
+        let commentary_key = format!("split-v-commentary:{commentary}");
+        assert!(
+            menu.iter().any(|(name, _)| name == &commentary_key),
+            "a commentary pane can split vertically into a commentary: {menu:?}"
+        );
+        click_mark(&ctx, &mut app, 1.5, &menu, &bible_key);
+        match split_holding(&app.session.tree, &commentary) {
+            Some((direction, sibling)) => {
+                assert_eq!(direction, "h");
+                assert_eq!(
+                    app.session.panes[&sibling].pane_type,
+                    graphe_domain::model::PaneType::Bible
+                );
+            }
+            None => panic!("commentary was not split: {:?}", app.session.tree),
+        }
+    }
+
+    fn open_pane_menu(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        time: f64,
+        options: &[f32; 4],
+    ) -> Vec<(String, [f32; 4])> {
+        let at = egui::pos2(options[0] + options[2] * 0.5, options[1] + options[3] * 0.5);
+        let _ = study_frame(
+            ctx,
+            app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(at)],
+        );
+        let _opened = study_frame(ctx, app, time + 0.05, egui::Modifiers::default(), click(at));
+        // The popup learns its size on the click frame and may move on the next one.
+        let settled = study_frame(ctx, app, time + 0.1, egui::Modifiers::default(), Vec::new());
+        if settled
+            .iter()
+            .any(|(key, _)| key.starts_with("split-h-bible:"))
+        {
+            return settled;
+        }
+        study_frame(
+            ctx,
+            app,
+            time + 0.15,
+            egui::Modifiers::default(),
+            Vec::new(),
+        )
+    }
+
+    fn click_mark(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        time: f64,
+        marks: &[(String, [f32; 4])],
+        key: &str,
+    ) {
+        let rect = mark(marks, key);
+        let mut at = egui::pos2(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        let hovered = study_frame(
+            ctx,
+            app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(at)],
+        );
+        if let Some((_, rect)) = hovered.iter().find(|(name, _)| name == key) {
+            at = egui::pos2(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        }
+        let _ = study_frame(ctx, app, time + 0.05, egui::Modifiers::default(), click(at));
+    }
+
+    fn click(at: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ]
+    }
+
+    fn split_holding(
+        node: &graphe_domain::model::PaneNode,
+        pane_id: &str,
+    ) -> Option<(String, String)> {
+        let graphe_domain::model::PaneNode::Split {
+            direction,
+            children,
+            ..
+        } = node
+        else {
+            return None;
+        };
+        let leaf = |child: &graphe_domain::model::PaneNode| match child {
+            graphe_domain::model::PaneNode::Leaf { pane_id } => Some(pane_id.clone()),
+            graphe_domain::model::PaneNode::Split { .. } => None,
+        };
+        if leaf(&children.0).as_deref() == Some(pane_id) {
+            if let Some(sibling) = leaf(&children.1) {
+                return Some((direction.clone(), sibling));
+            }
+        }
+        if leaf(&children.1).as_deref() == Some(pane_id) {
+            if let Some(sibling) = leaf(&children.0) {
+                return Some((direction.clone(), sibling));
+            }
+        }
+        split_holding(&children.0, pane_id).or_else(|| split_holding(&children.1, pane_id))
+    }
+
     fn study_frame(
         ctx: &egui::Context,
         app: &mut GrapheApp,
@@ -1331,12 +2046,9 @@ mod tests {
             });
         }
         let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
-        app.reading.commentary.insert(
-            key,
-            crate::study::CommentaryPaint {
-                pieces: std::sync::Arc::new(pieces),
-            },
-        );
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
         let settled = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
         let view = *mark(&settled, &format!("commentary-view:{pane}"));
         let text = *mark(&settled, &format!("commentary-text:{pane}"));

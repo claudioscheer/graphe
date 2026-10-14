@@ -144,11 +144,11 @@ impl GrapheApp {
         if !response.hovered() {
             ui.painter().rect_filled(search.shrink(1.0), 3.0, fill);
         }
-        paint::draw_icon(
+        paint::draw_search_icon(
             ui.painter(),
             egui::pos2(search.left() + 16.0, search.center().y),
             paint::color(palette.ui_text_subtle),
-            Icon::Search,
+            0.72,
         );
         let galley = egui::WidgetText::from(
             egui::RichText::new(i18n::t("navPlaceholder"))
@@ -424,7 +424,6 @@ impl GrapheApp {
             self.rename_focus = true;
         } else if let Some(id) = activate {
             if self.session.open_workspace(&id) {
-                self.loaded_key.clear();
                 self.sync_active_chapter();
                 self.note_workspaces();
             }
@@ -467,18 +466,18 @@ impl GrapheApp {
                     self.place_label(ui, pane_id, book, chapter, palette);
                 }
                 // Icon slots, the gap egui inserts before each one, and 8px before the pane edge.
-                let actions = if bible { 76.0 } else { 108.0 };
+                // Commentary adds the book and coverage icons beside the same options menu.
+                let actions = if bible { 76.0 } else { 140.0 };
                 let pad = (ui.available_width() - actions).max(0.0);
                 let (_, pad_response) =
                     ui.allocate_exact_size(egui::vec2(pad, 28.0), egui::Sense::click());
                 if pad_response.clicked() {
                     self.activate_pane(pane_id);
                 }
-                if bible {
-                    self.pane_options(ui, pane_id, palette);
-                } else {
+                if !bible {
                     self.commentary_toolbar_actions(ui, pane_id, book, chapter, verse, palette);
                 }
+                self.pane_options(ui, pane_id, palette);
                 self.pane_close(ui, pane_id, palette);
                 #[cfg(test)]
                 mark_layout(ui, &format!("toolbar:{pane_id}"), rect);
@@ -875,7 +874,7 @@ impl GrapheApp {
                     }),
             )
             .show(|ui| {
-                ui.set_min_width(210.0);
+                ui.set_min_width(228.0);
                 if menu_item(
                     ui,
                     Icon::ArrowLeft,
@@ -918,26 +917,53 @@ impl GrapheApp {
                     egui::Popup::close_id(ui.ctx(), popup_id);
                 }
                 ui.separator();
-                if menu_item(ui, Icon::Plus, "Split Horizontal", true, palette) {
-                    self.activate_pane(pane_id);
-                    self.session.split(false);
-                    self.after_toolbar_change();
-                    egui::Popup::close_id(ui.ctx(), popup_id);
-                }
-                if menu_item(ui, Icon::Plus, "Split Vertical", true, palette) {
-                    self.activate_pane(pane_id);
-                    self.session.split(true);
-                    self.after_toolbar_change();
-                    egui::Popup::close_id(ui.ctx(), popup_id);
-                }
-                if menu_item(ui, Icon::BookOpen, &i18n::t("commentary"), true, palette) {
-                    self.activate_pane(pane_id);
-                    self.session.split_commentary(false);
-                    self.after_toolbar_change();
-                    egui::Popup::close_id(ui.ctx(), popup_id);
-                }
+                // Same choices as the Electron View menu: each direction can open
+                // a Bible view or a commentary view.
+                self.split_direction(ui, pane_id, false, palette, popup_id);
+                self.split_direction(ui, pane_id, true, palette, popup_id);
             });
         paint::hover_tip(response, i18n::t("paneOptions"));
+    }
+
+    fn split_direction(
+        &mut self,
+        ui: &mut egui::Ui,
+        pane_id: &str,
+        vertical: bool,
+        palette: &UiPalette,
+        popup_id: egui::Id,
+    ) {
+        let heading = if vertical {
+            i18n::t("splitVertical")
+        } else {
+            i18n::t("splitHorizontal")
+        };
+        menu_heading(ui, &heading, palette);
+        let axis = if vertical { "v" } else { "h" };
+        if menu_choice(
+            ui,
+            Icon::Book,
+            &i18n::t("bibleView"),
+            palette,
+            &format!("split-{axis}-bible:{pane_id}"),
+        ) {
+            self.activate_pane(pane_id);
+            self.session.split(vertical);
+            self.after_toolbar_change();
+            egui::Popup::close_id(ui.ctx(), popup_id);
+        }
+        if menu_choice(
+            ui,
+            Icon::BookOpen,
+            &i18n::t("commentaryView"),
+            palette,
+            &format!("split-{axis}-commentary:{pane_id}"),
+        ) {
+            self.activate_pane(pane_id);
+            self.session.split_commentary(vertical);
+            self.after_toolbar_change();
+            egui::Popup::close_id(ui.ctx(), popup_id);
+        }
     }
 
     fn pane_close(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
@@ -1041,6 +1067,62 @@ pub(crate) fn toolbar_picker_width(pane_width: f32, screen_width: f32) -> f32 {
     } else {
         (screen_width * 0.20).clamp(112.0, 192.0)
     }
+}
+
+fn menu_heading(ui: &mut egui::Ui, label: &str, palette: &UiPalette) {
+    let width = ui.available_width().max(200.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::hover());
+    let ink = paint::color(palette.ui_text_subtle);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(11.0), ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + 12.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+}
+
+fn menu_choice(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    palette: &UiPalette,
+    mark: &str,
+) -> bool {
+    let width = ui.available_width().max(200.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 4.0, paint::color_alpha(palette.ui_text, 16));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let ink = paint::color(palette.ui_text_muted);
+    paint::draw_icon(
+        ui.painter(),
+        egui::pos2(rect.left() + 28.0, rect.center().y),
+        ink,
+        icon,
+    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + 44.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    #[cfg(test)]
+    mark_layout(ui, mark, rect);
+    #[cfg(not(test))]
+    let _ = mark;
+    response.clicked()
 }
 
 fn menu_item(

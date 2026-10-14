@@ -334,7 +334,8 @@ impl Session {
         let label =
             allocate_pane_label(&self.panes, PaneType::Bible, None).unwrap_or_else(|| "A".into());
         let mut pane = bible_pane(&id, &label);
-        if let Some(active) = self.panes.get(&self.active_pane_id) {
+        let source_id = self.bible_target(&self.active_pane_id);
+        if let Some(active) = self.panes.get(&source_id) {
             pane.module_id = active.module_id.clone();
             pane.book_number = active.book_number;
             pane.chapter = active.chapter;
@@ -614,6 +615,12 @@ impl Session {
             .filter_map(|id| id.strip_prefix("pane-")?.parse::<i64>().ok())
             .max()
             .unwrap_or(1);
+    }
+
+    /// `path` is empty for the root split and `0/1` for a nested one.
+    /// The value is clamped to the range the layout file already stores.
+    pub fn set_split_ratio(&mut self, path: &str, ratio: f64) -> bool {
+        set_ratio(&mut self.tree, path, panes::clamp_ratio(ratio))
     }
 
     pub fn remember_layout(&mut self) {
@@ -908,6 +915,28 @@ fn bible_pane(id: &str, label: &str) -> PaneRecord {
     }
 }
 
+fn set_ratio(node: &mut PaneNode, path: &str, ratio: f64) -> bool {
+    if path.is_empty() {
+        return match node {
+            PaneNode::Split { ratio: slot, .. } => {
+                *slot = ratio;
+                true
+            }
+            PaneNode::Leaf { .. } => false,
+        };
+    }
+    let (head, tail) = path.split_once('/').unwrap_or((path, ""));
+    let PaneNode::Split { children, .. } = node else {
+        return false;
+    };
+    let child = match head {
+        "0" => &mut children.0,
+        "1" => &mut children.1,
+        _ => return false,
+    };
+    set_ratio(child, tail, ratio)
+}
+
 fn replace_leaf(node: &PaneNode, pane_id: &str, replacement: &PaneNode) -> PaneNode {
     match node {
         PaneNode::Leaf { pane_id: id } if id == pane_id => clone_tree(replacement),
@@ -956,6 +985,42 @@ mod tests {
         assert_eq!(session.workspaces.get_state().unwrap().items.len(), 1);
         assert_eq!(session.sidebar_views(), ["search", "dictionary", "modules"]);
         assert!(matches!(session.tree, PaneNode::Leaf { .. }));
+    }
+
+    #[test]
+    fn dragging_a_split_changes_only_that_divider() {
+        let mut session = Session::new();
+        session.split(true);
+        session.active_pane_id = "pane-1".into();
+        session.split(false);
+        assert!(session.set_split_ratio("0", 0.7));
+        assert!(session.set_split_ratio("", 0.35));
+        assert!(!session.set_split_ratio("1", 0.2));
+        match &session.tree {
+            PaneNode::Split {
+                direction,
+                ratio,
+                children,
+            } => {
+                assert_eq!(direction, "v");
+                assert!((*ratio - 0.35).abs() < 1e-9);
+                match &children.0 {
+                    PaneNode::Split {
+                        direction, ratio, ..
+                    } => {
+                        assert_eq!(direction, "h");
+                        assert!((*ratio - 0.7).abs() < 1e-9);
+                    }
+                    PaneNode::Leaf { .. } => panic!("the upper half is the side-by-side split"),
+                }
+            }
+            PaneNode::Leaf { .. } => panic!("expected a split tree"),
+        }
+        assert!(session.set_split_ratio("", f64::NAN));
+        match &session.tree {
+            PaneNode::Split { ratio, .. } => assert!((*ratio - 0.5).abs() < 1e-9),
+            PaneNode::Leaf { .. } => panic!("expected a split tree"),
+        }
     }
 
     #[test]
