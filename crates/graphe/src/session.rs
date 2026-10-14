@@ -14,6 +14,13 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+/// Commentary text for one module inside the all-commentaries dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommentarySection {
+    pub name: String,
+    pub body: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dialog {
     None,
@@ -24,6 +31,7 @@ pub enum Dialog {
     ModuleEditor,
     Preview,
     AllCommentaries,
+    Coverage,
     Picker,
 }
 
@@ -56,7 +64,14 @@ pub struct Session {
     pub show_strongs: bool,
     pub nav_input: String,
     pub preview_body: String,
-    pub commentary_overview: String,
+    pub preview_title: String,
+    /// One collapsed row per commentary module in the all-commentaries dialog.
+    pub commentary_sections: Vec<CommentarySection>,
+    pub commentary_open: Vec<bool>,
+    /// Short reference shown in the all-commentaries title, such as `Hb 10:2`.
+    pub commentary_ref: String,
+    /// Commentary module opened in the coverage grid.
+    pub coverage_module_id: Option<String>,
     pub dict_query: String,
     pub dict_body: String,
     pub dict_entry: Option<BTreeMap<String, String>>,
@@ -109,7 +124,11 @@ impl Session {
             show_strongs: true,
             nav_input: String::new(),
             preview_body: String::new(),
-            commentary_overview: String::new(),
+            preview_title: String::new(),
+            commentary_sections: Vec::new(),
+            commentary_open: Vec::new(),
+            commentary_ref: String::new(),
+            coverage_module_id: None,
             dict_query: String::new(),
             dict_body: String::new(),
             dict_entry: None,

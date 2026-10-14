@@ -84,7 +84,7 @@ impl GrapheApp {
                     self.session.sidebar_collapsed = true;
                     self.note_workspaces();
                 }
-                toggle_resp.on_hover_text(i18n::t("workbenchToggleSidebar"));
+                paint::hover_tip(toggle_resp, i18n::t("workbenchToggleSidebar"));
                 separator_line(ui, palette.ui_border);
 
                 match self.session.sidebar.as_str() {
@@ -360,7 +360,7 @@ impl GrapheApp {
                         if i_resp.clicked() {
                             self.session.dialog = Dialog::About;
                         }
-                        i_resp.on_hover_text(i18n::t("dictInfoTitle"));
+                        paint::hover_tip(i_resp, i18n::t("dictInfoTitle"));
 
                         let has_fwd = self.session.dict_history_index > 0;
                         let fwd_color = if has_fwd {

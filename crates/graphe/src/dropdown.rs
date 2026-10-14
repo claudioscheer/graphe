@@ -234,7 +234,7 @@ impl<'a> ModuleDropdown<'a> {
                     ui.painter().rect_filled(
                         rect,
                         egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-                        paint::color_alpha(palette.ui_surface, if dark { 28 } else { 120 }),
+                        paint::color_alpha(palette.ui_surface, if dark { 26 } else { 72 }),
                     );
                 }
             } else {
@@ -258,38 +258,59 @@ impl<'a> ModuleDropdown<'a> {
                 );
             }
 
-            let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
-            let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
-                format!(
-                    "{}…",
-                    trigger_text.chars().take(max_chars - 1).collect::<String>()
-                )
-            } else if trigger_text.chars().count() > self.truncate_length {
-                format!(
-                    "{}…",
-                    trigger_text
-                        .chars()
-                        .take(self.truncate_length)
-                        .collect::<String>()
-                )
+            let ink = paint::color(if self.plain {
+                palette.ui_accent_ink
             } else {
-                trigger_text
+                palette.ui_text
+            });
+            let galley = if self.plain {
+                let text_width = (rect.width() - 26.0).max(8.0);
+                egui::WidgetText::from(egui::RichText::new(trigger_text).size(font_size).color(ink))
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Truncate),
+                        text_width,
+                        egui::FontSelection::default(),
+                    )
+            } else {
+                let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
+                let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
+                    format!(
+                        "{}…",
+                        trigger_text.chars().take(max_chars - 1).collect::<String>()
+                    )
+                } else if trigger_text.chars().count() > self.truncate_length {
+                    format!(
+                        "{}…",
+                        trigger_text
+                            .chars()
+                            .take(self.truncate_length)
+                            .collect::<String>()
+                    )
+                } else {
+                    trigger_text
+                };
+                ui.painter().layout_no_wrap(
+                    display_text,
+                    egui::FontId::proportional(font_size),
+                    ink,
+                )
             };
-
-            let galley = ui.painter().layout_no_wrap(
-                display_text,
-                egui::FontId::proportional(font_size),
-                paint::color(palette.ui_text),
-            );
             let text_pos = egui::pos2(
                 rect.left() + 8.0,
                 rect.center().y - galley.rect.height() / 2.0,
             );
-            ui.painter()
-                .galley(text_pos, galley, paint::color(palette.ui_text));
+            ui.painter().galley(text_pos, galley, ink);
+            #[cfg(test)]
+            if self.plain {
+                crate::chrome::mark_layout(ui, &format!("picker:{}", self.salt), rect);
+            }
 
-            // Chevron down icon on right
-            let chevron_center = egui::pos2(rect.right() - 14.0, rect.center().y);
+            // Chevron sits at the right edge of the trigger, away from a short name.
+            let chevron_center = egui::pos2(
+                rect.right() - if self.plain { 11.0 } else { 14.0 },
+                rect.center().y,
+            );
             paint::draw_icon(
                 ui.painter(),
                 chevron_center,
@@ -676,7 +697,7 @@ impl<'a> ModuleDropdown<'a> {
                     item.name.clone()
                 }
             });
-            row_resp = row_resp.on_hover_text_at_pointer(tooltip_text);
+            row_resp = paint::hover_tip_at_pointer(row_resp, tooltip_text);
         }
 
         // Row background

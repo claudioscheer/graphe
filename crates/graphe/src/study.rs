@@ -3,9 +3,8 @@
 use crate::app::GrapheApp;
 use crate::dropdown::ModuleDropdown;
 use crate::paint;
-use crate::session::Dialog;
-use graphe_domain::books::GRAPHE_BOOK_NUMBERS;
-use graphe_domain::coverage::{build_coverage_cell, CoverageClass};
+use crate::session::{CommentarySection, Dialog};
+
 use graphe_domain::i18n;
 use graphe_domain::markup::{self, VerseSpan};
 use graphe_domain::model::PaneNode;
@@ -36,6 +35,8 @@ impl GrapheApp {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
+                // The tab row sits on the toolbar. A gap here shows the paper fill as a white line.
+                ui.spacing_mut().item_spacing.y = 0.0;
                 self.workspace_tabs(ui, palette);
                 let tree = self.session.tree.clone();
                 self.draw_node(ui, &tree, palette);
@@ -53,7 +54,8 @@ impl GrapheApp {
         match node {
             PaneNode::Leaf { pane_id } => {
                 let pane_id = pane_id.clone();
-                self.fit_region(ui, width, height, |app, ui| {
+                let spacing = ui.spacing().item_spacing;
+                self.fit_region(ui, width, height, spacing, |app, ui| {
                     app.draw_pane(ui, &pane_id, palette);
                 });
             }
@@ -63,37 +65,43 @@ impl GrapheApp {
                 children,
             } => {
                 let ratio = (*ratio as f32).clamp(0.2, 0.8);
-                let gap = 5.0;
+                let spacing = ui.spacing().item_spacing;
+                // No gutter: the toolbar color runs across the split and the close
+                // control stays inside the pane. A hairline still separates the views.
                 if direction == "v" {
-                    let top_h = ((height - gap) * ratio).max(0.0);
-                    let bottom_h = (height - gap - top_h).max(0.0);
+                    let top_h = (height * ratio).max(0.0);
+                    let bottom_h = (height - top_h).max(0.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(width, height),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            self.fit_region(ui, width, top_h, |app, ui| {
+                            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                            let origin = ui.max_rect().min;
+                            self.fit_region(ui, width, top_h, spacing, |app, ui| {
                                 app.draw_node(ui, &children.0, palette);
                             });
-                            split_rule(ui, width, gap, false, palette);
-                            self.fit_region(ui, width, bottom_h, |app, ui| {
+                            self.fit_region(ui, width, bottom_h, spacing, |app, ui| {
                                 app.draw_node(ui, &children.1, palette);
                             });
+                            split_rule(ui, origin, width, top_h, false, palette);
                         },
                     );
                 } else {
-                    let left_w = ((width - gap) * ratio).max(0.0);
-                    let right_w = (width - gap - left_w).max(0.0);
+                    let left_w = (width * ratio).max(0.0);
+                    let right_w = (width - left_w).max(0.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(width, height),
                         egui::Layout::left_to_right(egui::Align::Min),
                         |ui| {
-                            self.fit_region(ui, left_w, height, |app, ui| {
+                            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                            let origin = ui.max_rect().min;
+                            self.fit_region(ui, left_w, height, spacing, |app, ui| {
                                 app.draw_node(ui, &children.0, palette);
                             });
-                            split_rule(ui, height, gap, true, palette);
-                            self.fit_region(ui, right_w, height, |app, ui| {
+                            self.fit_region(ui, right_w, height, spacing, |app, ui| {
                                 app.draw_node(ui, &children.1, palette);
                             });
+                            split_rule(ui, origin, height, left_w, true, palette);
                         },
                     );
                 }
@@ -106,12 +114,14 @@ impl GrapheApp {
         ui: &mut egui::Ui,
         width: f32,
         height: f32,
+        spacing: egui::Vec2,
         draw: impl FnOnce(&mut Self, &mut egui::Ui),
     ) {
         ui.allocate_ui_with_layout(
             egui::vec2(width, height),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
+                ui.spacing_mut().item_spacing = spacing;
                 ui.set_min_size(egui::vec2(width, height));
                 draw(self, ui);
             },
@@ -122,7 +132,7 @@ impl GrapheApp {
         let Some(pane) = self.session.panes.get(pane_id).cloned() else {
             return;
         };
-        let (book, chapter, verse) = self.session.reading_location(pane_id);
+        let (book, chapter, _) = self.session.reading_location(pane_id);
         ui.push_id(pane_id, |ui| {
             self.pane_toolbar(ui, pane_id, palette);
             let body = egui::vec2(ui.available_width(), ui.available_height().max(0.0));
@@ -130,11 +140,8 @@ impl GrapheApp {
                 ui.set_min_size(body);
                 #[cfg(test)]
                 crate::chrome::mark_layout(ui, &format!("body:{pane_id}"), ui.max_rect());
-                if pane.pane_type == graphe_domain::model::PaneType::Bible {
-                    self.draw_favorite_quick_bar(ui, pane_id, palette);
-                }
                 if pane.pane_type == graphe_domain::model::PaneType::Commentary {
-                    self.draw_commentary(ui, pane_id, book, chapter, verse, palette);
+                    self.draw_commentary(ui, pane_id, book, chapter, palette);
                 } else {
                     self.draw_bible(ui, pane_id, book, chapter, palette);
                 }
@@ -347,7 +354,6 @@ impl GrapheApp {
         pane_id: &str,
         book: i64,
         chapter: i64,
-        verse: Option<i64>,
         palette: &UiPalette,
     ) {
         let module_id = self
@@ -369,14 +375,6 @@ impl GrapheApp {
                     .find(|module| module.kind == "commentary")
                     .cloned()
             });
-        ui.horizontal(|ui| {
-            if ui.button(i18n::t("allCommentaries")).clicked() {
-                self.load_all_commentaries(book, chapter, verse);
-            }
-            if ui.button(i18n::t("commentaryCoverage")).clicked() {
-                self.session.dialog = Dialog::None;
-            }
-        });
         let Some(module) = module else {
             ui.label(i18n::t("commentaryUnavailable"));
             return;
@@ -393,12 +391,6 @@ impl GrapheApp {
             }
         }
         let paint = self.load_commentary(&module, book, chapter);
-        let coverage_color = match paint.coverage_class {
-            CoverageClass::Full => palette.ui_link,
-            CoverageClass::Partial => palette.ui_warn,
-            CoverageClass::None => palette.ui_text_muted,
-        };
-        ui.label(egui::RichText::new(&paint.coverage_text).color(paint::color(coverage_color)));
         if paint.pieces.is_empty() {
             ui.label(i18n::t("commentaryUnavailable"));
             return;
@@ -436,31 +428,45 @@ impl GrapheApp {
                 );
             });
         #[cfg(test)]
-        crate::chrome::mark_layout(ui, &format!("commentary-view:{pane_id}"), _output.inner_rect);
+        crate::chrome::mark_layout(
+            ui,
+            &format!("commentary-view:{pane_id}"),
+            _output.inner_rect,
+        );
     }
 
-    fn load_all_commentaries(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
+    pub(crate) fn load_all_commentaries(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
         let verse = verse.unwrap_or(1);
-        let mut parts = Vec::new();
+        let mut sections = Vec::new();
         for module in self
             .modules
             .iter()
             .filter(|module| module.kind == "commentary")
             .cloned()
         {
+            let mut bodies = Vec::new();
             for entry in sqlite::commentary_in_file(&module.path, book, chapter) {
                 let end = entry.verse_to.unwrap_or(entry.verse_from);
                 if verse < entry.verse_from || verse > end {
                     continue;
                 }
-                parts.push(format!("{}\n{}", module.name, entry.text));
+                let plain = commentary_plain(&entry.text);
+                if !plain.is_empty() {
+                    bodies.push(plain);
+                }
             }
+            if bodies.is_empty() {
+                continue;
+            }
+            sections.push(CommentarySection {
+                name: module.name,
+                body: bodies.join("\n\n"),
+            });
         }
-        self.session.commentary_overview = if parts.is_empty() {
-            i18n::t("allCommentariesNoResults")
-        } else {
-            parts.join("\n\n")
-        };
+        self.session.commentary_open = vec![false; sections.len()];
+        self.session.commentary_sections = sections;
+        let name = i18n::book_name(book);
+        self.session.commentary_ref = format!("{} {chapter}:{verse}", name.short);
         self.session.dialog = Dialog::AllCommentaries;
     }
 
@@ -472,6 +478,11 @@ impl GrapheApp {
         verse: Option<i64>,
     ) {
         if self.session.follow_link(pane_id, book, chapter, verse) {
+            let name = i18n::book_name(book);
+            self.session.preview_title = match verse {
+                Some(value) => format!("{} {chapter}:{value}", name.short),
+                None => format!("{} {chapter}", name.short),
+            };
             self.session.preview_body = self.verse_preview(book, chapter, verse);
             self.session.dialog = Dialog::Preview;
             return;
@@ -485,6 +496,7 @@ impl GrapheApp {
         ui: &mut egui::Ui,
         pane_id: &str,
         kind: &graphe_domain::model::PaneType,
+        pane_width: f32,
     ) {
         let wanted = match kind {
             graphe_domain::model::PaneType::Commentary => "commentary",
@@ -496,9 +508,12 @@ impl GrapheApp {
             .get(pane_id)
             .and_then(|pane| pane.module_id.clone());
         let palette = graphe_domain::theme::palette(self.session.dark);
+        let width =
+            crate::chrome::toolbar_picker_width(pane_width, ui.ctx().content_rect().width());
         let dropdown =
             ModuleDropdown::from_installed(pane_id, wanted, current.as_deref(), &self.modules)
-                .plain();
+                .plain()
+                .width(width);
 
         if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
             if let Some(pane) = self.session.panes.get_mut(pane_id) {
@@ -509,70 +524,7 @@ impl GrapheApp {
         }
     }
 
-    fn draw_favorite_quick_bar(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
-        let favs = graphe_domain::picker::favorites(&self.store, "bible");
-        if favs.is_empty() {
-            return;
-        }
-        let current_mod = self
-            .session
-            .panes
-            .get(pane_id)
-            .and_then(|p| p.module_id.clone());
-
-        let mut switch_to = None;
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
-            for fav_id in &favs {
-                let Some(module) = self.modules.iter().find(|m| &m.id == fav_id) else {
-                    continue;
-                };
-                let is_active = current_mod.as_deref() == Some(fav_id.as_str());
-                let label = module.short_title.as_deref().unwrap_or(&module.name);
-
-                let text = egui::RichText::new(label).size(11.0).color(if is_active {
-                    paint::color(palette.ui_accent_ink)
-                } else {
-                    paint::color(palette.ui_text_muted)
-                });
-                let stroke = egui::Stroke::new(
-                    1.0_f32,
-                    paint::color(if is_active {
-                        palette.ui_border_strong
-                    } else {
-                        palette.ui_border_soft
-                    }),
-                );
-                let fill = paint::color(if is_active {
-                    palette.ui_accent_bg
-                } else {
-                    palette.ui_surface
-                });
-
-                let button = egui::Button::new(text)
-                    .corner_radius(egui::CornerRadius::same(12))
-                    .stroke(stroke)
-                    .fill(fill)
-                    .min_size(egui::vec2(0.0, 20.0));
-
-                let response = ui.add(button);
-                if response.clicked() && !is_active {
-                    switch_to = Some(fav_id.clone());
-                }
-            }
-        });
-
-        if let Some(new_id) = switch_to {
-            if let Some(pane) = self.session.panes.get_mut(pane_id) {
-                pane.module_id = Some(new_id);
-            }
-            self.loaded_key.clear();
-            self.sync_active_chapter();
-        }
-    }
-
     fn verse_preview(&self, book: i64, chapter: i64, verse: Option<i64>) -> String {
-        let name = i18n::book_name(book);
         let text = self
             .bible_path(None)
             .and_then(|path| {
@@ -591,7 +543,7 @@ impl GrapheApp {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        format!("{} {}:{} {plain}", name.short, chapter, verse.unwrap_or(1))
+        plain
     }
 
     pub(crate) fn morph_text(&mut self, path: &Path, code: &str) -> String {
@@ -667,23 +619,13 @@ impl GrapheApp {
         if let Some(paint) = self.reading.commentary.get(&key) {
             return paint.clone();
         }
-        let coverage = self.reading.coverage_map(&module.path);
-        let index = GRAPHE_BOOK_NUMBERS
-            .iter()
-            .position(|number| i64::from(*number) == book)
-            .unwrap_or(0);
-        let cell = build_coverage_cell(book, index, &coverage);
         let entries = sqlite::commentary_in_file(&module.path, book, chapter);
         let pieces = if entries.is_empty() {
             Arc::new(Vec::new())
         } else {
             Arc::new(pieces_from_entries(&entries, self.matcher()))
         };
-        let paint = CommentaryPaint {
-            coverage_text: format!("{} — {}", cell.text, cell.title),
-            coverage_class: cell.class_name,
-            pieces,
-        };
+        let paint = CommentaryPaint { pieces };
         if self.reading.commentary.len() >= 8 {
             self.reading.commentary.clear();
         }
@@ -765,7 +707,7 @@ impl GrapheApp {
             if let Some(path) = module_path {
                 let meaning = self.morph_text(path, &code);
                 if !meaning.is_empty() {
-                    response.clone().on_hover_text(format!("{code}: {meaning}"));
+                    paint::hover_tip(response.clone(), format!("{code}: {meaning}"));
                 }
             }
         }
@@ -854,15 +796,26 @@ impl GrapheApp {
     }
 }
 
-fn split_rule(ui: &mut egui::Ui, span: f32, gap: f32, vertical: bool, palette: &UiPalette) {
-    let (rect, _) = ui.allocate_exact_size(
-        if vertical {
-            egui::vec2(gap, span)
-        } else {
-            egui::vec2(span, gap)
-        },
-        egui::Sense::hover(),
-    );
+/// One-pixel divider on the shared edge. It does not reserve a gutter.
+fn split_rule(
+    ui: &egui::Ui,
+    origin: egui::Pos2,
+    span: f32,
+    at: f32,
+    vertical: bool,
+    palette: &UiPalette,
+) {
+    let rect = if vertical {
+        egui::Rect::from_min_size(
+            egui::pos2(origin.x + at - 0.5, origin.y),
+            egui::vec2(1.0, span),
+        )
+    } else {
+        egui::Rect::from_min_size(
+            egui::pos2(origin.x, origin.y + at - 0.5),
+            egui::vec2(span, 1.0),
+        )
+    };
     let mid = if vertical {
         [rect.center_top(), rect.center_bottom()]
     } else {
@@ -872,6 +825,8 @@ fn split_rule(ui: &mut egui::Ui, span: f32, gap: f32, vertical: bool, palette: &
         mid,
         egui::Stroke::new(1.0_f32, paint::color(palette.ui_border)),
     );
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, "split-rule", rect);
 }
 
 fn verse_selected_fill(dark: bool, palette: &UiPalette) -> egui::Color32 {
@@ -928,8 +883,6 @@ pub(crate) struct ChapterPaint {
 
 #[derive(Clone)]
 pub(crate) struct CommentaryPaint {
-    pub(crate) coverage_text: String,
-    pub(crate) coverage_class: CoverageClass,
     pub(crate) pieces: Arc<Vec<CommentaryPiece>>,
 }
 
@@ -1069,7 +1022,7 @@ impl ReadingCache {
         grouped
     }
 
-    fn coverage_map(&mut self, path: &Path) -> Arc<HashMap<i64, Vec<i64>>> {
+    pub(crate) fn coverage_map(&mut self, path: &Path) -> Arc<HashMap<i64, Vec<i64>>> {
         if let Some(hit) = self.coverage.get(path) {
             return Arc::clone(hit);
         }
@@ -1167,6 +1120,22 @@ pub(crate) fn visible_row_span(
         return (heights.len() - 1, heights.len());
     };
     (first.saturating_sub(1), (last + 2).min(heights.len()))
+}
+
+fn commentary_plain(text: &str) -> String {
+    let broken = text
+        .replace("<br />", "\n")
+        .replace("<br/>", "\n")
+        .replace("<br>", "\n")
+        .replace("</p>", "\n")
+        .replace("</div>", "\n")
+        .replace("</li>", "\n");
+    graphe_domain::search::search_preview_plain(&broken)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn pieces_from_entries(

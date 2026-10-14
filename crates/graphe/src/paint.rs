@@ -84,6 +84,74 @@ pub(crate) fn top_strip_bg(dark: bool, palette: &UiPalette) -> egui::Color32 {
     }
 }
 
+const TIP_WIDTH: f32 = 280.0;
+
+/// Hover card in the same voice as the pane menu.
+pub(crate) fn hover_tip(response: egui::Response, text: impl Into<String>) -> egui::Response {
+    show_hover_tip(&response, text.into(), false);
+    response
+}
+
+/// Same card as [`hover_tip`], anchored at the pointer.
+pub(crate) fn hover_tip_at_pointer(
+    response: egui::Response,
+    text: impl Into<String>,
+) -> egui::Response {
+    show_hover_tip(&response, text.into(), true);
+    response
+}
+
+fn show_hover_tip(response: &egui::Response, text: String, at_pointer: bool) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let dark = response.ctx.style().visuals.dark_mode;
+    let mut tip = egui::Tooltip::for_enabled(response);
+    tip.popup = tip.popup.frame(tip_frame(dark)).width(TIP_WIDTH);
+    tip = if at_pointer {
+        tip.at_pointer().gap(16.0)
+    } else {
+        tip.gap(8.0)
+    };
+    let lines: Vec<String> = text
+        .split('\n')
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+    tip.show(move |ui| {
+        ui.set_max_width(TIP_WIDTH);
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let palette = theme::palette(ui.visuals().dark_mode);
+        for (index, line) in lines.iter().enumerate() {
+            let secondary = index > 0;
+            ui.label(
+                egui::RichText::new(line)
+                    .size(if secondary { 12.0 } else { 13.0 })
+                    .color(color(if secondary {
+                        palette.ui_text_subtle
+                    } else {
+                        palette.ui_text
+                    })),
+            );
+        }
+    });
+}
+
+fn tip_frame(dark: bool) -> egui::Frame {
+    let palette = theme::palette(dark);
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SURFACE as u8))
+        .fill(color(palette.ui_surface_elevated))
+        .stroke(egui::Stroke::new(1.0_f32, color(palette.ui_border)))
+        .shadow(egui::Shadow {
+            offset: [0, 4],
+            blur: 16,
+            spread: 0,
+            color: egui::Color32::from_black_alpha(if dark { 120 } else { 35 }),
+        })
+}
+
 pub(crate) fn canon_books() -> Vec<BookRecord> {
     GRAPHE_BOOK_NUMBERS
         .iter()
@@ -638,4 +706,103 @@ pub(crate) fn unescape(value: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&amp;", "&")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tip_frame_matches_the_pane_menu() {
+        let light = tip_frame(false);
+        assert_eq!(light.fill, color(theme::LIGHT.ui_surface_elevated));
+        assert_eq!(light.stroke.color, color(theme::LIGHT.ui_border));
+        assert_eq!(light.stroke.width, 1.0);
+        assert_eq!(
+            light.corner_radius,
+            egui::CornerRadius::same(theme::RADIUS_SURFACE as u8)
+        );
+        assert_eq!(light.shadow.offset, [0, 4]);
+        assert_eq!(light.shadow.blur, 16);
+        assert_eq!(light.shadow.color, egui::Color32::from_black_alpha(35));
+        assert_eq!(light.inner_margin, egui::Margin::symmetric(10, 8));
+
+        let dark = tip_frame(true);
+        assert_eq!(dark.fill, color(theme::DARK.ui_surface_elevated));
+        assert_eq!(dark.stroke.color, color(theme::DARK.ui_border));
+        assert_eq!(dark.shadow.color, egui::Color32::from_black_alpha(120));
+    }
+
+    #[test]
+    fn hover_tip_paints_a_small_warm_card() {
+        let ctx = egui::Context::default();
+        let mut style = (*ctx.style()).clone();
+        style.visuals = egui::Visuals::light();
+        style.interaction.tooltip_delay = 0.0;
+        style.interaction.show_tooltips_only_when_still = false;
+        ctx.set_style(style);
+
+        let mut pointer = egui::pos2(80.0, 40.0);
+        let mut output = None;
+        for time in [0.0_f64, 0.2, 0.4] {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(480.0, 320.0),
+            ));
+            raw.time = Some(time);
+            raw.events.push(egui::Event::PointerMoved(pointer));
+            output = Some(ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(160.0, 32.0), egui::Sense::click());
+                    pointer = rect.center();
+                    hover_tip_at_pointer(
+                        response,
+                        "Comentário Expositivo - W. W. Wiersbe\nComentário Expositivo.commentary",
+                    );
+                });
+            }));
+        }
+
+        let output = output.expect("frame");
+        let mut cards = Vec::new();
+        let mut text_heights = Vec::new();
+        for clipped in &output.shapes {
+            collect(&clipped.shape, &mut cards, &mut text_heights);
+        }
+        let fill = color(theme::LIGHT.ui_surface_elevated);
+        let border = color(theme::LIGHT.ui_border);
+        let card = cards
+            .iter()
+            .find(|rect| rect.fill == fill && rect.stroke.color == border)
+            .expect("warm tooltip card");
+        assert_eq!(
+            card.corner_radius,
+            egui::CornerRadius::same(theme::RADIUS_SURFACE as u8)
+        );
+        assert!(
+            card.rect.width() > 40.0 && card.rect.width() <= TIP_WIDTH + 24.0,
+            "width {}",
+            card.rect.width()
+        );
+        let smallest = text_heights.iter().copied().fold(f32::MAX, f32::min);
+        assert!(
+            smallest < 18.0,
+            "tip text should stay at the chrome size, got {smallest}"
+        );
+    }
+
+    fn collect(shape: &egui::Shape, cards: &mut Vec<egui::epaint::RectShape>, text: &mut Vec<f32>) {
+        match shape {
+            egui::Shape::Rect(rect) => cards.push(rect.clone()),
+            egui::Shape::Text(text_shape) => text.push(text_shape.galley.size().y),
+            egui::Shape::Vec(list) => {
+                for shape in list {
+                    collect(shape, cards, text);
+                }
+            }
+            _ => {}
+        }
+    }
 }

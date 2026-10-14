@@ -172,7 +172,7 @@ impl GrapheApp {
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        if response.on_hover_text("F3").clicked() {
+        if paint::hover_tip(response, "F3").clicked() {
             self.open_navigation();
         }
     }
@@ -201,7 +201,7 @@ impl GrapheApp {
             }),
             Icon::Info,
         );
-        if response.on_hover_text(i18n::t("aboutTitle")).clicked() {
+        if paint::hover_tip(response, i18n::t("aboutTitle")).clicked() {
             self.session.dialog = Dialog::About;
         }
     }
@@ -212,6 +212,8 @@ impl GrapheApp {
             ui.allocate_exact_size(egui::vec2(width, STRIP_HEIGHT), egui::Sense::hover());
         ui.painter()
             .rect_filled(rect, 0.0, paint::top_strip_bg(self.session.dark, palette));
+        #[cfg(test)]
+        mark_layout(ui, "workspace-tabs", rect);
 
         let tabs = self.session.workspaces.get_tab_state();
         let items = tabs.items.clone();
@@ -391,7 +393,7 @@ impl GrapheApp {
         if add.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        let add_clicked = add.on_hover_text(i18n::t("workspaceNew")).clicked();
+        let add_clicked = paint::hover_tip(add, i18n::t("workspaceNew")).clicked();
 
         if cancel_rename {
             self.renaming = None;
@@ -439,7 +441,7 @@ impl GrapheApp {
             return;
         };
         let active = self.session.active_pane_id == pane_id;
-        let (book, chapter, _) = self.session.reading_location(pane_id);
+        let (book, chapter, verse) = self.session.reading_location(pane_id);
         let pane_width = ui.available_width();
         let bible = pane.pane_type == PaneType::Bible;
         let kind = pane.pane_type;
@@ -454,20 +456,29 @@ impl GrapheApp {
                 ui.set_min_size(rect.size());
                 ui.add_space(8.0);
                 ui.spacing_mut().item_spacing.x = 4.0;
-                self.pane_badge(ui, pane_id, palette);
-                self.module_combo(ui, pane_id, &kind);
+                // The letter mark hides once the pane is too narrow to keep the chapter group.
+                if pane_width >= 420.0 {
+                    self.pane_badge(ui, pane_id, palette);
+                }
+                self.module_combo(ui, pane_id, &kind, pane_width);
                 if bible {
                     self.chapter_nav(ui, pane_id, book, chapter, pane_width, palette);
                 } else {
                     self.place_label(ui, pane_id, book, chapter, palette);
                 }
-                let pad = (ui.available_width() - 64.0).max(0.0);
+                // Icon slots, the gap egui inserts before each one, and 8px before the pane edge.
+                let actions = if bible { 76.0 } else { 108.0 };
+                let pad = (ui.available_width() - actions).max(0.0);
                 let (_, pad_response) =
                     ui.allocate_exact_size(egui::vec2(pad, 28.0), egui::Sense::click());
                 if pad_response.clicked() {
                     self.activate_pane(pane_id);
                 }
-                self.pane_options(ui, pane_id, palette);
+                if bible {
+                    self.pane_options(ui, pane_id, palette);
+                } else {
+                    self.commentary_toolbar_actions(ui, pane_id, book, chapter, verse, palette);
+                }
                 self.pane_close(ui, pane_id, palette);
                 #[cfg(test)]
                 mark_layout(ui, &format!("toolbar:{pane_id}"), rect);
@@ -501,9 +512,81 @@ impl GrapheApp {
         }
     }
 
+    fn commentary_toolbar_actions(
+        &mut self,
+        ui: &mut egui::Ui,
+        pane_id: &str,
+        book: i64,
+        chapter: i64,
+        verse: Option<i64>,
+        palette: &UiPalette,
+    ) {
+        if self.toolbar_icon(
+            ui,
+            Icon::BookOpen,
+            i18n::t("allCommentaries"),
+            palette,
+            Some(&format!("all-commentaries:{pane_id}")),
+        ) {
+            self.load_all_commentaries(book, chapter, verse);
+        }
+        if self.toolbar_icon(
+            ui,
+            Icon::Info,
+            i18n::t("commentaryCoverage"),
+            palette,
+            Some(&format!("coverage:{pane_id}")),
+        ) {
+            self.session.coverage_module_id = self.commentary_module_id(pane_id);
+            self.session.dialog = Dialog::Coverage;
+        }
+    }
+
+    fn commentary_module_id(&self, pane_id: &str) -> Option<String> {
+        let assigned = self
+            .session
+            .panes
+            .get(pane_id)
+            .and_then(|pane| pane.module_id.clone());
+        if assigned.is_some() {
+            return assigned;
+        }
+        self.modules
+            .iter()
+            .find(|module| module.kind == "commentary")
+            .map(|module| module.id.clone())
+    }
+
+    fn toolbar_icon(
+        &mut self,
+        ui: &mut egui::Ui,
+        icon: Icon,
+        tip: String,
+        palette: &UiPalette,
+        mark: Option<&str>,
+    ) -> bool {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let ink = paint::color(if response.hovered() {
+            palette.ui_text
+        } else {
+            palette.ui_text_subtle
+        });
+        paint::draw_icon(ui.painter(), rect.center(), ink, icon);
+        #[cfg(test)]
+        if let Some(mark) = mark {
+            mark_layout(ui, mark, rect);
+        }
+        #[cfg(not(test))]
+        let _ = mark;
+        paint::hover_tip(response, tip).clicked()
+    }
+
     fn pane_badge(&self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
         let label = get_pane_display_label(&self.session.panes, pane_id);
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(22.0, 20.0), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
         let fill = if self.session.dark {
             paint::color_alpha(palette.ui_surface, 28)
         } else {
@@ -516,9 +599,19 @@ impl GrapheApp {
         } else {
             palette.ui_text_subtle
         });
-        let galley = ui
-            .painter()
-            .layout_no_wrap(label, egui::FontId::monospace(11.0), ink);
+        let galley = egui::WidgetText::from(
+            egui::RichText::new(label)
+                .monospace()
+                .size(11.0)
+                .strong()
+                .color(ink),
+        )
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            24.0,
+            egui::FontSelection::default(),
+        );
         ui.painter().galley(
             egui::pos2(
                 rect.center().x - galley.rect.width() / 2.0,
@@ -550,6 +643,8 @@ impl GrapheApp {
             240.0
         };
         let (rect, _) = ui.allocate_exact_size(egui::vec2(nav_w, 32.0), egui::Sense::hover());
+        #[cfg(test)]
+        mark_layout(ui, &format!("nav:{pane_id}"), rect);
         if ui.rect_contains_pointer(rect) {
             ui.painter().rect_filled(
                 rect,
@@ -564,8 +659,10 @@ impl GrapheApp {
             egui::vec2(side, rect.height()),
         );
         let mid_rect = egui::Rect::from_min_max(prev_rect.right_top(), next_rect.left_bottom());
-        self.nav_divider(ui, prev_rect.right(), rect.center().y, palette);
-        self.nav_divider(ui, next_rect.left(), rect.center().y, palette);
+        if !compact {
+            self.nav_divider(ui, prev_rect.right(), rect.center().y, palette);
+            self.nav_divider(ui, next_rect.left(), rect.center().y, palette);
+        }
         if self.nav_end(ui, prev_rect, prev, true, !compact, palette) {
             self.go_chapter(pane_id, -1);
         }
@@ -611,12 +708,29 @@ impl GrapheApp {
         } else {
             palette.ui_text_dim
         });
-        let icon_x = if previous {
-            rect.left() + 12.0
-        } else if show_label {
-            rect.right() - 12.0
+        let label = if show_label {
+            target.map(|(book, chapter)| {
+                ui.painter().layout_no_wrap(
+                    place_text(book, chapter),
+                    egui::FontId::proportional(11.0),
+                    ink,
+                )
+            })
         } else {
-            rect.center().x
+            None
+        };
+        let text_w = label
+            .as_ref()
+            .map(|galley| galley.rect.width())
+            .unwrap_or(0.0);
+        let gap = if text_w > 0.0 { 4.0 } else { 0.0 };
+        let icon_span = 10.0;
+        let content_w = icon_span + gap + text_w;
+        let origin = rect.center().x - content_w / 2.0;
+        let (icon_x, text_x) = if previous {
+            (origin + icon_span / 2.0, origin + icon_span + gap)
+        } else {
+            (origin + text_w + gap + icon_span / 2.0, origin)
         };
         paint::draw_icon(
             ui.painter(),
@@ -628,17 +742,7 @@ impl GrapheApp {
                 Icon::ChevronRight
             },
         );
-        if let (true, Some((book, chapter))) = (show_label, target) {
-            let galley = ui.painter().layout_no_wrap(
-                place_text(book, chapter),
-                egui::FontId::proportional(11.0),
-                ink,
-            );
-            let text_x = if previous {
-                rect.left() + 22.0
-            } else {
-                rect.right() - 22.0 - galley.rect.width()
-            };
+        if let Some(galley) = label {
             ui.painter().galley(
                 egui::pos2(text_x, rect.center().y - galley.rect.height() / 2.0),
                 galley,
@@ -653,7 +757,7 @@ impl GrapheApp {
         } else {
             i18n::t("nextChapter")
         };
-        response.on_hover_text(hint).clicked() && target.is_some()
+        paint::hover_tip(response, hint).clicked() && target.is_some()
     }
 
     fn nav_current(
@@ -668,7 +772,7 @@ impl GrapheApp {
         let ink = paint::color(palette.ui_text);
         let galley = egui::WidgetText::from(
             egui::RichText::new(place_text(book, chapter))
-                .size(13.0)
+                .size(14.0)
                 .strong()
                 .color(ink),
         )
@@ -700,13 +804,17 @@ impl GrapheApp {
         chapter: i64,
         palette: &UiPalette,
     ) {
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(96.0, 28.0), egui::Sense::click());
-        let ink = paint::color(palette.ui_text);
+        let ink = paint::color(palette.ui_text_muted);
         let galley = ui.painter().layout_no_wrap(
             place_text(book, chapter),
-            egui::FontId::proportional(13.0),
+            egui::FontId::proportional(14.0),
             ink,
         );
+        let width = galley.rect.width() + 16.0;
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        #[cfg(test)]
+        mark_layout(ui, &format!("place:{pane_id}"), rect);
         ui.painter().galley(
             egui::pos2(
                 rect.left() + 8.0,
@@ -715,6 +823,9 @@ impl GrapheApp {
             galley,
             ink,
         );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         if response.clicked() {
             self.activate_pane(pane_id);
             self.open_navigation();
@@ -723,6 +834,8 @@ impl GrapheApp {
 
     fn pane_options(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
         let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());
+        #[cfg(test)]
+        mark_layout(ui, &format!("options:{pane_id}"), rect);
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -824,7 +937,7 @@ impl GrapheApp {
                     egui::Popup::close_id(ui.ctx(), popup_id);
                 }
             });
-        response.on_hover_text(i18n::t("paneOptions"));
+        paint::hover_tip(response, i18n::t("paneOptions"));
     }
 
     fn pane_close(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
@@ -837,6 +950,8 @@ impl GrapheApp {
                 egui::Sense::hover()
             },
         );
+        #[cfg(test)]
+        mark_layout(ui, &format!("close:{pane_id}"), rect);
         let ink = paint::color(if !enabled {
             palette.ui_text_dim
         } else if response.hovered() {
@@ -848,7 +963,7 @@ impl GrapheApp {
         if enabled && response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        if response.on_hover_text(i18n::t("closePane")).clicked()
+        if paint::hover_tip(response, i18n::t("closePane")).clicked()
             && self.session.close_pane(pane_id)
         {
             self.after_toolbar_change();
@@ -914,6 +1029,20 @@ fn place_text(book: i64, chapter: i64) -> String {
     format!("{} {}", i18n::book_name(book).short, chapter)
 }
 
+/// Module trigger width from the Electron pane toolbar.
+/// Wide panes use a slice of the window. Narrow panes shrink with the pane.
+pub(crate) fn toolbar_picker_width(pane_width: f32, screen_width: f32) -> f32 {
+    if pane_width < 330.0 {
+        68.0
+    } else if pane_width < 420.0 {
+        80.0
+    } else if pane_width < 560.0 {
+        (pane_width * 0.28).clamp(88.0, 128.0)
+    } else {
+        (screen_width * 0.20).clamp(112.0, 192.0)
+    }
+}
+
 fn menu_item(
     ui: &mut egui::Ui,
     icon: Icon,
@@ -958,4 +1087,18 @@ fn menu_item(
         ink,
     );
     enabled && response.clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::toolbar_picker_width;
+
+    #[test]
+    fn picker_width_follows_the_pane() {
+        assert!((toolbar_picker_width(800.0, 1400.0) - 192.0).abs() < 0.1);
+        assert!((toolbar_picker_width(800.0, 500.0) - 112.0).abs() < 0.1);
+        assert!((toolbar_picker_width(500.0, 1400.0) - 128.0).abs() < 0.1);
+        assert!((toolbar_picker_width(400.0, 1400.0) - 80.0).abs() < 0.1);
+        assert!((toolbar_picker_width(300.0, 1400.0) - 68.0).abs() < 0.1);
+    }
 }

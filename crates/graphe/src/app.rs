@@ -583,7 +583,7 @@ impl GrapheApp {
                             self.session.focus_sidebar(view);
                             self.note_workspaces();
                         }
-                        response.on_hover_text(label_for(view));
+                        paint::hover_tip(response, label_for(view));
                     }
                     let gap = (ui.available_height() - 48.0).max(0.0);
                     ui.allocate_space(egui::vec2(0.0, gap));
@@ -591,7 +591,7 @@ impl GrapheApp {
                     if response.clicked() {
                         self.session.dialog = Dialog::Settings;
                     }
-                    response.on_hover_text(i18n::t("settings"));
+                    paint::hover_tip(response, i18n::t("settings"));
                 });
             });
     }
@@ -718,6 +718,104 @@ mod tests {
         assert_eq!(app.session.dialog, Dialog::None);
     }
 
+    fn shape_has_paper(shape: &egui::Shape, paper: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Rect(rect) => {
+                rect.fill == paper && (rect.rect.width() - 520.0).abs() < 8.0
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().any(|shape| shape_has_paper(shape, paper)),
+            _ => false,
+        }
+    }
+
+    fn dialog_frame(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+    ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
+        let mut style = (*ctx.style()).clone();
+        style.animation_time = 0.0;
+        ctx.set_style(style);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let mut marks = Vec::new();
+        let output = ctx.run(raw, |ctx| {
+            ctx.data_mut(|data| {
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+            });
+            app.dialogs(ctx);
+            marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+        });
+        (output, marks)
+    }
+
+    #[test]
+    fn settings_opens_as_a_paper_card_and_the_theme_button_flips_the_theme() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::Settings;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (output, marks) = dialog_frame(&ctx, &mut app);
+        let card = mark(&marks, "modal-card");
+        assert!(
+            (card[2] - 520.0).abs() < 2.0,
+            "settings card is 520px wide, got {card:?}"
+        );
+        let paper = paint::color("#fefdf9");
+        let painted = output
+            .shapes
+            .iter()
+            .any(|clipped| shape_has_paper(&clipped.shape, paper));
+        assert!(painted, "the settings card uses the cream surface");
+        let theme = *mark(&marks, "settings-theme");
+        let close = *mark(&marks, "settings-close");
+        assert!(
+            close[0] + close[2] > card[0] + card[2] - 28.0,
+            "Fechar sits at the right of the footer, card {card:?} close {close:?}"
+        );
+        let pos = egui::pos2(theme[0] + theme[2] * 0.5, theme[1] + theme[3] * 0.5);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.events = vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ];
+        let _ = ctx.run(raw, |ctx| {
+            app.dialogs(ctx);
+        });
+        assert!(app.session.dark, "the theme control toggles light and dark");
+        assert_eq!(app.store.settings()["theme"], "dark");
+    }
+
+    #[test]
+    fn all_commentaries_keeps_the_reference_in_the_title() {
+        let mut app = bare(Session::new());
+        i18n::set_lang("pt");
+        app.load_all_commentaries(650, 10, Some(2));
+        assert_eq!(app.session.commentary_ref, "Hb 10:2");
+        assert!(app.session.commentary_sections.is_empty());
+        assert_eq!(app.session.dialog, Dialog::AllCommentaries);
+    }
+
     #[test]
     fn split_panes_pin_the_toolbar_to_the_top_and_fill_the_rest_with_the_chapter() {
         let ctx = egui::Context::default();
@@ -797,6 +895,131 @@ mod tests {
                 body.1[3]
             );
         }
+    }
+
+    #[test]
+    fn split_toolbars_meet_and_keep_the_close_button_on_screen() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let below = app.session.split(true);
+        app.session.panes.get_mut(&below).unwrap().pane_type =
+            graphe_domain::model::PaneType::Commentary;
+        app.session.active_pane_id = "pane-1".into();
+        let right = app.session.split(false);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let palette = theme::palette(false);
+        let mut marks = Vec::new();
+        for _ in 0..2 {
+            let _ = ctx.run(raw.clone(), |ctx| {
+                app.editor(ctx, palette);
+                marks = ctx.data(|data| {
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                        .unwrap_or_default()
+                });
+            });
+        }
+        let toolbar = |id: &str| *mark(&marks, &format!("toolbar:{id}"));
+        let close = |id: &str| *mark(&marks, &format!("close:{id}"));
+        let left = toolbar("pane-1");
+        let right_bar = toolbar(&right);
+        let lower = toolbar(&below);
+        assert!(
+            (left[0] + left[2] - right_bar[0]).abs() < 1.0,
+            "side-by-side toolbars meet: {marks:?}"
+        );
+        let tabs = *mark(&marks, "workspace-tabs");
+        assert!(
+            (tabs[1] + tabs[3] - left[1]).abs() < 1.0,
+            "the study tabs sit on the toolbar with no paper gap: {tabs:?} {left:?}"
+        );
+        assert!(
+            marks.iter().any(|(key, rect)| {
+                key == "split-rule" && (rect[0] - right_bar[0]).abs() < 1.5 && rect[3] > 40.0
+            }),
+            "a vertical rule separates the side-by-side panes: {marks:?}"
+        );
+        assert!(
+            (left[1] - right_bar[1]).abs() < 1.0,
+            "side-by-side toolbars share a row: {marks:?}"
+        );
+        assert!(
+            (right_bar[0] + right_bar[2] - (lower[0] + lower[2])).abs() < 1.0,
+            "the commentary bar reaches the same right edge: {marks:?}"
+        );
+        assert!(
+            right_bar[0] + right_bar[2] > 1190.0,
+            "the right toolbar reaches the window edge: {marks:?}"
+        );
+        let upper_bottom = marks
+            .iter()
+            .filter(|(key, _)| key == "body:pane-1" || key == &format!("body:{right}"))
+            .map(|(_, rect)| rect[1] + rect[3])
+            .fold(0.0_f32, f32::max);
+        assert!(
+            (lower[1] - upper_bottom).abs() < 1.0,
+            "the commentary bar sits against the panes above it: {marks:?}"
+        );
+        for id in ["pane-1", right.as_str(), below.as_str()] {
+            let bar = toolbar(id);
+            let button = close(id);
+            let button_right = button[0] + button[2];
+            let bar_right = bar[0] + bar[2];
+            assert!(
+                button_right <= bar_right + 0.5 && button_right <= 1200.5,
+                "{id} close is clipped: button {button:?} bar {bar:?}"
+            );
+            assert!(
+                button_right > bar_right - 36.0,
+                "{id} close is not at the end of its bar: {button:?} {bar:?}"
+            );
+        }
+        let all = *mark(&marks, &format!("all-commentaries:{below}"));
+        let coverage = *mark(&marks, &format!("coverage:{below}"));
+        assert!(
+            all[1] >= lower[1] - 1.0 && all[1] + all[3] <= lower[1] + lower[3] + 1.0,
+            "all-commentaries sits in the commentary toolbar: {all:?} {lower:?}"
+        );
+        assert!(
+            coverage[0] > all[0] && coverage[0] + coverage[2] < close(&below)[0],
+            "coverage info icon sits between the book icon and close: {marks:?}"
+        );
+        assert!(
+            marks.iter().any(|(key, _)| key == "options:pane-1"),
+            "the bible toolbar keeps the options menu: {marks:?}"
+        );
+        assert!(
+            !marks
+                .iter()
+                .any(|(key, _)| key == &format!("options:{below}")),
+            "the commentary toolbar has no options menu: {marks:?}"
+        );
+        let nav = *mark(&marks, "nav:pane-1");
+        let expected_nav = if left[2] < 420.0 {
+            118.0
+        } else if left[2] < 560.0 {
+            150.0
+        } else {
+            240.0
+        };
+        assert!(
+            (nav[2] - expected_nav).abs() < 1.0,
+            "chapter group is {expected_nav}px on a {}px pane: {nav:?}",
+            left[2]
+        );
+        let place = *mark(&marks, &format!("place:{below}"));
+        assert!(
+            place[2] < 80.0,
+            "commentary place is the book and chapter, not a wide slot: {place:?}"
+        );
+        let picker = *mark(&marks, "picker:pane-1");
+        assert!(
+            (picker[2] - 192.0).abs() < 1.0 || (picker[2] - 112.0).abs() < 1.0,
+            "bible module name sits in a wide plain trigger: {picker:?}"
+        );
     }
 
     #[test]
@@ -932,8 +1155,6 @@ mod tests {
         app.reading.commentary.insert(
             key,
             crate::study::CommentaryPaint {
-                coverage_text: "Gn — Genesis".into(),
-                coverage_class: graphe_domain::coverage::CoverageClass::Full,
                 pieces: std::sync::Arc::new(pieces),
             },
         );
