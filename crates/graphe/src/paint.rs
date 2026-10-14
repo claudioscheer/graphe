@@ -46,13 +46,12 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     ctx.options_mut(|options| {
         options.input_options.line_scroll_speed = 100.0;
     });
-    install_fonts(ctx);
 }
 
 /// Ubuntu-Light has no Hebrew, so dictionary lemmas draw as empty boxes.
 /// DejaVu is always available. A system face, when present, is tried first
 /// and matches the letters the Electron window gets from the OS.
-fn install_fonts(ctx: &egui::Context) {
+pub(crate) fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         "DejaVuSans".to_owned(),
@@ -1425,7 +1424,10 @@ mod tests {
             egui::Pos2::ZERO,
             egui::vec2(800.0, 600.0),
         ));
-        let _ = ctx.run(raw.clone(), |ctx| apply(ctx, false, 16.0));
+        let _ = ctx.run(raw.clone(), |ctx| {
+            install_fonts(ctx);
+            apply(ctx, false, 16.0);
+        });
         // New font definitions load at the start of the next pass.
         let _ = ctx.run(raw, |_| {});
         let id = egui::FontId::proportional(16.0);

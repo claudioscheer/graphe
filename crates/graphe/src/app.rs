@@ -69,6 +69,7 @@ pub fn run() -> eframe::Result {
         "Graphe",
         native_options,
         Box::new(move |cc| {
+            paint::install_fonts(&cc.egui_ctx);
             paint::apply(&cc.egui_ctx, session.dark, session.font_size);
             Ok(Box::new(GrapheApp {
                 session,
@@ -213,6 +214,7 @@ impl eframe::App for GrapheApp {
             self.applied_dark = self.session.dark;
             self.applied_font = self.session.font_size;
             self.theme_ready = true;
+            self.reading.clear();
         }
         if let Some(text) = self.session.pending_copy.take() {
             ctx.copy_text(text);
@@ -3762,5 +3764,36 @@ mod tests {
         let mut app = bare(Session::new());
         app.lookup_dict_focused("H9000", false);
         assert_eq!(app.session.dict_body, graphe_domain::i18n::t("dictPseudoStrongsNoEntry"));
+    }
+
+    #[test]
+    fn test_switching_theme_clears_reading_cache_and_applies_style() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.reading.remember_verse_text("k1".into(), vec![(1, "In the beginning".into())]);
+        assert!(app.reading.cached_verse_text("k1").is_some());
+
+        // Toggle to dark theme
+        app.session.dark = true;
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let _ = ctx.run(raw.clone(), |ctx| {
+            let mut frame = eframe::Frame::_new_kittest();
+            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+        });
+
+        assert!(app.applied_dark);
+        assert!(app.reading.cached_verse_text("k1").is_none());
+
+        // Repopulate and toggle back to light theme
+        app.reading.remember_verse_text("k2".into(), vec![(2, "God created".into())]);
+        app.session.dark = false;
+        let _ = ctx.run(raw, |ctx| {
+            let mut frame = eframe::Frame::_new_kittest();
+            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+        });
+
+        assert!(!app.applied_dark);
+        assert!(app.reading.cached_verse_text("k2").is_none());
     }
 }
