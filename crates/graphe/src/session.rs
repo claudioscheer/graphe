@@ -54,6 +54,8 @@ pub struct Session {
     pub reveal_verse: bool,
     /// Verse the Bible pane should bring into view, then clear.
     pub scroll_verse: Option<i64>,
+    /// Commentary panes that should scroll to a verse after their Bible moved.
+    pub commentary_scroll: Vec<(String, i64)>,
     pub scroll_center: bool,
     pub chapter_text: Vec<(i64, String)>,
     pub workspaces: WorkspaceManager,
@@ -114,6 +116,7 @@ impl Session {
             selection_anchor: None,
             reveal_verse: false,
             scroll_verse: None,
+            commentary_scroll: Vec::new(),
             scroll_center: false,
             chapter_text: Vec::new(),
             workspaces,
@@ -252,15 +255,22 @@ impl Session {
     }
 
     pub fn navigate(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
-        let Some(pane) = self.panes.get_mut(&self.active_pane_id) else {
-            return;
+        let moved = self.active_pane_id.clone();
+        let is_bible = {
+            let Some(pane) = self.panes.get_mut(&moved) else {
+                return;
+            };
+            pane.book_number = book;
+            pane.chapter = chapter;
+            pane.selected_verse = verse;
+            panes::push_nav_history_entry(pane);
+            pane.pane_type == PaneType::Bible
         };
-        pane.book_number = book;
-        pane.chapter = chapter;
-        pane.selected_verse = verse;
-        panes::push_nav_history_entry(pane);
         self.dialog = Dialog::None;
         self.reveal_selected_verse(verse.is_some());
+        if is_bible {
+            self.note_bible_moved(&moved);
+        }
     }
 
     /// Copy the active pane's verse into the visible selection and ask the view to scroll to it.
@@ -326,6 +336,7 @@ impl Session {
         if let Some(pane) = self.panes.get_mut(&target) {
             pane.selected_verse = self.selected_verses.last().copied();
         }
+        self.note_bible_moved(&target);
     }
 
     pub fn split(&mut self, vertical: bool) -> String {
@@ -532,6 +543,93 @@ impl Session {
             pane.module_id = Some(next.clone());
         }
         Some(next)
+    }
+
+    /// Point a commentary at a Bible pane, or at none. None keeps the place it was showing.
+    pub fn set_commentary_sync(&mut self, commentary_id: &str, target: Option<String>) {
+        let target = target.filter(|id| {
+            self.panes
+                .get(id)
+                .is_some_and(|pane| pane.pane_type == PaneType::Bible)
+        });
+        if target.is_none() {
+            let (book, chapter, verse) = self.reading_location(commentary_id);
+            let Some(pane) = self.panes.get_mut(commentary_id) else {
+                return;
+            };
+            if pane.pane_type != PaneType::Commentary {
+                return;
+            }
+            pane.book_number = book;
+            pane.chapter = chapter;
+            pane.selected_verse = verse;
+            pane.synced_to_pane_id = None;
+            self.commentary_scroll.retain(|(id, _)| id != commentary_id);
+            return;
+        }
+        let target = target.expect("filtered");
+        let (book, chapter, verse) = self
+            .panes
+            .get(&target)
+            .map(|pane| (pane.book_number, pane.chapter, pane.selected_verse))
+            .unwrap_or((10, 1, None));
+        if let Some(pane) = self.panes.get_mut(commentary_id) {
+            if pane.pane_type != PaneType::Commentary {
+                return;
+            }
+            pane.synced_to_pane_id = Some(target);
+            pane.book_number = book;
+            pane.chapter = chapter;
+            pane.selected_verse = verse;
+        }
+        if let Some(verse) = verse {
+            self.queue_commentary_scroll(commentary_id, verse);
+        }
+    }
+
+    /// Copy a Bible pane's place into every commentary that follows it.
+    pub fn note_bible_moved(&mut self, bible_id: &str) {
+        let Some(source) = self.panes.get(bible_id).cloned() else {
+            return;
+        };
+        if source.pane_type != PaneType::Bible {
+            return;
+        }
+        let followers: Vec<String> = self
+            .panes
+            .iter()
+            .filter(|(_, pane)| {
+                pane.pane_type == PaneType::Commentary
+                    && pane.synced_to_pane_id.as_deref() == Some(bible_id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in followers {
+            if let Some(pane) = self.panes.get_mut(&id) {
+                pane.book_number = source.book_number;
+                pane.chapter = source.chapter;
+                pane.selected_verse = source.selected_verse;
+            }
+            if let Some(verse) = source.selected_verse {
+                self.queue_commentary_scroll(&id, verse);
+            }
+        }
+    }
+
+    pub fn commentary_scroll_verse(&self, pane_id: &str) -> Option<i64> {
+        self.commentary_scroll
+            .iter()
+            .find(|(id, _)| id == pane_id)
+            .map(|(_, verse)| *verse)
+    }
+
+    pub fn clear_commentary_scroll(&mut self, pane_id: &str) {
+        self.commentary_scroll.retain(|(id, _)| id != pane_id);
+    }
+
+    fn queue_commentary_scroll(&mut self, pane_id: &str, verse: i64) {
+        self.commentary_scroll.retain(|(id, _)| id != pane_id);
+        self.commentary_scroll.push((pane_id.to_string(), verse));
     }
 
     pub fn reading_location(&self, pane_id: &str) -> (i64, i64, Option<i64>) {
@@ -745,6 +843,12 @@ impl Session {
         if self.link_target.as_deref() == Some(pane_id) {
             self.link_target = None;
         }
+        for pane in self.panes.values_mut() {
+            if pane.synced_to_pane_id.as_deref() == Some(pane_id) {
+                pane.synced_to_pane_id = None;
+            }
+        }
+        self.commentary_scroll.retain(|(id, _)| id != pane_id);
         if !self.panes.contains_key(&self.active_pane_id) {
             let id = graphe_domain::panes::get_first_leaf_id(&self.tree);
             if self.panes.contains_key(&id) {
@@ -1117,6 +1221,38 @@ mod tests {
             .panes
             .values()
             .any(|pane| pane.pane_type == PaneType::Commentary));
+    }
+
+    #[test]
+    fn commentary_follows_the_bible_picked_from_the_badge() {
+        let mut session = Session::new();
+        session.panes.get_mut("pane-1").unwrap().book_number = 10;
+        session.panes.get_mut("pane-1").unwrap().chapter = 1;
+        let other = session.split(false);
+        session.panes.get_mut(&other).unwrap().book_number = 470;
+        session.panes.get_mut(&other).unwrap().chapter = 5;
+        session.panes.get_mut(&other).unwrap().selected_verse = Some(2);
+        session.active_pane_id = other.clone();
+        let commentary = session.split_commentary(false);
+        assert_eq!(
+            session.panes[&commentary].synced_to_pane_id.as_deref(),
+            Some(other.as_str())
+        );
+        session.set_commentary_sync(&commentary, Some("pane-1".into()));
+        assert_eq!(session.reading_location(&commentary), (10, 1, None));
+        session.active_pane_id = "pane-1".into();
+        session.navigate(10, 11, Some(4));
+        assert_eq!(session.reading_location(&commentary), (10, 11, Some(4)));
+        assert_eq!(session.commentary_scroll_verse(&commentary), Some(4));
+        session.set_commentary_sync(&commentary, None);
+        assert!(session.panes[&commentary].synced_to_pane_id.is_none());
+        assert_eq!(session.reading_location(&commentary).1, 11);
+        session.navigate(10, 12, Some(1));
+        assert_eq!(
+            session.reading_location(&commentary).1,
+            11,
+            "an unsynced commentary stays where it was"
+        );
     }
 
     #[test]

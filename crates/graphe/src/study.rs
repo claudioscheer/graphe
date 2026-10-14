@@ -387,6 +387,7 @@ impl GrapheApp {
             pane.selected_verse = Some(verse);
         }
         self.session.reveal_selected_verse(false);
+        self.session.note_bible_moved(pane_id);
         self.loaded_key.clear();
     }
 
@@ -721,12 +722,13 @@ impl GrapheApp {
             return paint.clone();
         }
         let entries = sqlite::commentary_in_file(&module.path, book, chapter);
-        let pieces = if entries.is_empty() {
-            Arc::new(Vec::new())
+        let (pieces, anchors) = if entries.is_empty() {
+            (Vec::new(), Vec::new())
         } else {
-            Arc::new(pieces_from_entries(&entries, self.matcher()))
+            pieces_from_entries(&entries, self.matcher(), chapter)
         };
-        let paint = CommentaryPaint::new(pieces);
+        let mut paint = CommentaryPaint::new(pieces);
+        paint.anchors = Arc::new(anchors);
         if self.reading.commentary.len() >= 24 {
             self.reading.commentary.clear();
         }
@@ -914,6 +916,15 @@ impl GrapheApp {
         ui.painter()
             .with_clip_rect(rect)
             .galley(rect.min, Arc::clone(&galley), text_color);
+        if let Some(verse) = self.session.commentary_scroll_verse(pane_id) {
+            if let Some(index) = anchor_for_verse(&paint.anchors, verse) {
+                let local = galley.pos_from_cursor(egui::text::CCursor::new(index));
+                ui.scroll_to_rect(local.translate(rect.min.to_vec2()), Some(egui::Align::TOP));
+                self.session.clear_commentary_scroll(pane_id);
+            } else if !paint.pieces.is_empty() {
+                self.session.clear_commentary_scroll(pane_id);
+            }
+        }
         let pointer = response
             .hover_pos()
             .or_else(|| response.interact_pointer_pos());
@@ -1052,18 +1063,6 @@ fn click_modifiers(ui: &egui::Ui) -> (bool, bool) {
     })
 }
 
-fn slice_between(text: &str, start: usize, end: usize) -> &str {
-    if start <= end
-        && end <= text.len()
-        && text.is_char_boundary(start)
-        && text.is_char_boundary(end)
-    {
-        &text[start..end]
-    } else {
-        ""
-    }
-}
-
 /// Grab strip centered on the hairline. It overlaps both panes and does not open a gap.
 const SPLIT_HIT: f32 = 6.0;
 const SPLIT_MIN_WIDTH: f32 = 168.0;
@@ -1071,7 +1070,7 @@ const SPLIT_MIN_HEIGHT: f32 = 88.0;
 
 /// Space around the bible list so the first and last verse can scroll clear of the pane edge.
 const BIBLE_PAD_LEFT: f32 = 8.0;
-const BIBLE_PAD_RIGHT: f32 = 14.0;
+const BIBLE_PAD_RIGHT: f32 = 24.0;
 const BIBLE_PAD_TOP: f32 = 10.0;
 const BIBLE_PAD_BOTTOM: f32 = 28.0;
 const VERSE_NUM_W: f32 = 36.0;
@@ -1096,6 +1095,8 @@ pub(crate) struct ChapterPaint {
 pub(crate) struct CommentaryPaint {
     pub(crate) pieces: Arc<Vec<CommentaryPiece>>,
     fingerprint: u64,
+    /// `(verse_from, verse_to, char index)` so a Bible verse can scroll this chapter.
+    anchors: Arc<Vec<(i64, i64, usize)>>,
 }
 
 impl CommentaryPaint {
@@ -1105,6 +1106,7 @@ impl CommentaryPaint {
         Self {
             pieces,
             fingerprint,
+            anchors: Arc::new(Vec::new()),
         }
     }
 }
@@ -1168,6 +1170,13 @@ struct PaneHeightState {
 #[derive(Clone)]
 pub(crate) enum CommentaryPiece {
     Text(String),
+    Rich {
+        text: String,
+        italic: bool,
+        bold: bool,
+    },
+    Heading(String),
+    Break,
     Link {
         label: String,
         book: i64,
@@ -1606,6 +1615,19 @@ fn pieces_fingerprint(pieces: &[CommentaryPiece]) -> u64 {
                 0u8.hash(&mut hasher);
                 text.hash(&mut hasher);
             }
+            CommentaryPiece::Rich { text, italic, bold } => {
+                2u8.hash(&mut hasher);
+                text.hash(&mut hasher);
+                italic.hash(&mut hasher);
+                bold.hash(&mut hasher);
+            }
+            CommentaryPiece::Heading(text) => {
+                3u8.hash(&mut hasher);
+                text.hash(&mut hasher);
+            }
+            CommentaryPiece::Break => {
+                4u8.hash(&mut hasher);
+            }
             CommentaryPiece::Link {
                 label,
                 book,
@@ -1624,66 +1646,96 @@ fn pieces_fingerprint(pieces: &[CommentaryPiece]) -> u64 {
 }
 
 fn commentary_plain(text: &str) -> String {
-    let broken = text
-        .replace("<br />", "\n")
-        .replace("<br/>", "\n")
-        .replace("<br>", "\n")
-        .replace("</p>", "\n")
-        .replace("</div>", "\n")
-        .replace("</li>", "\n");
-    graphe_domain::search::search_preview_plain(&broken)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    graphe_domain::commentary_html::plain_text(text)
+}
+
+fn anchor_for_verse(anchors: &[(i64, i64, usize)], verse: i64) -> Option<usize> {
+    anchors
+        .iter()
+        .filter(|(from, to, _)| verse >= *from && verse <= *to)
+        .min_by_key(|(from, to, _)| to - from)
+        .map(|(_, _, index)| *index)
 }
 
 fn pieces_from_entries(
     entries: &[graphe_domain::model::CommentaryEntry],
     matcher: &graphe_domain::commentary_ref::ReferenceMatcher,
-) -> Vec<CommentaryPiece> {
+    chapter: i64,
+) -> (Vec<CommentaryPiece>, Vec<(i64, i64, usize)>) {
     let mut pieces = Vec::new();
-    for (index, entry) in entries.iter().enumerate() {
-        if index > 0 {
-            pieces.push(CommentaryPiece::Text("\n".into()));
+    let mut anchors = Vec::new();
+    let mut chars = 0usize;
+    for entry in entries {
+        if !pieces.is_empty() {
+            pieces.push(CommentaryPiece::Break);
+            pieces.push(CommentaryPiece::Break);
+            chars += 2;
         }
-        let block = format!("{} {}", entry.verse_from, entry.text);
-        append_linked(&mut pieces, &block, matcher);
+        let end = entry.verse_to.unwrap_or(entry.verse_from);
+        anchors.push((entry.verse_from, end, chars));
+        let heading = if end > entry.verse_from {
+            format!("{}-{end}", entry.verse_from)
+        } else {
+            entry.verse_from.to_string()
+        };
+        chars += heading.chars().count();
+        pieces.push(CommentaryPiece::Heading(heading));
+        pieces.push(CommentaryPiece::Break);
+        chars += 1;
+        let runs =
+            graphe_domain::commentary_html::render_commentary_html(&entry.text, Some(matcher));
+        let mut at_break = true;
+        for run in runs {
+            match run {
+                graphe_domain::commentary_html::CommentaryRun::Break => {
+                    pieces.push(CommentaryPiece::Break);
+                    chars += 1;
+                    at_break = true;
+                }
+                graphe_domain::commentary_html::CommentaryRun::Text { text, italic, bold } => {
+                    if at_break {
+                        note_body_anchor(&text, chars, chapter, &mut anchors);
+                    }
+                    at_break = false;
+                    chars += text.chars().count();
+                    if italic || bold {
+                        pieces.push(CommentaryPiece::Rich { text, italic, bold });
+                    } else {
+                        pieces.push(CommentaryPiece::Text(text));
+                    }
+                }
+                graphe_domain::commentary_html::CommentaryRun::Link {
+                    label,
+                    book,
+                    chapter,
+                    verse,
+                    ..
+                } => {
+                    at_break = false;
+                    chars += label.chars().count();
+                    pieces.push(CommentaryPiece::Link {
+                        label,
+                        book,
+                        chapter,
+                        verse,
+                    });
+                }
+            }
+        }
     }
-    pieces
+    (pieces, anchors)
 }
 
-fn append_linked(
-    pieces: &mut Vec<CommentaryPiece>,
-    text: &str,
-    matcher: &graphe_domain::commentary_ref::ReferenceMatcher,
-) {
-    let matches = matcher.find_matches(Some(text));
-    let mut cursor = 0usize;
-    for reference in &matches {
-        let head = slice_between(text, cursor, reference.index);
-        if !head.is_empty() {
-            pieces.push(CommentaryPiece::Text(head.to_string()));
-        }
-        let label = slice_between(text, reference.index, reference.end_index);
-        let label = if label.is_empty() {
-            reference.raw.clone()
-        } else {
-            label.to_string()
-        };
-        pieces.push(CommentaryPiece::Link {
-            label,
-            book: reference.book_num,
-            chapter: reference.chapter,
-            verse: reference.verse_from,
-        });
-        cursor = reference.end_index;
+fn note_body_anchor(text: &str, chars: usize, chapter: i64, anchors: &mut Vec<(i64, i64, usize)>) {
+    let Some(leading) =
+        graphe_domain::commentary_ref::parse_leading_reference_from_plain_text(Some(text))
+    else {
+        return;
+    };
+    if leading.chapter != chapter {
+        return;
     }
-    let tail = slice_between(text, cursor, text.len());
-    if !tail.is_empty() {
-        pieces.push(CommentaryPiece::Text(tail.to_string()));
-    }
+    anchors.push((leading.verse_from, leading.verse_to, chars));
 }
 
 fn text_format(size: f32, color: egui::Color32) -> egui::TextFormat {
@@ -1700,11 +1752,22 @@ fn push_chars(
     text: &str,
     format: egui::TextFormat,
 ) {
+    push_chars_leading(job, chars, text, 0.0, format);
+}
+
+fn push_chars_leading(
+    job: &mut egui::text::LayoutJob,
+    chars: &mut usize,
+    text: &str,
+    leading: f32,
+    format: egui::TextFormat,
+) {
     if text.is_empty() {
         return;
     }
-    *chars += text.chars().count();
-    job.append(text, 0.0, format);
+    let shown = graphe_domain::bidi::display_text(text);
+    *chars += shown.chars().count();
+    job.append(shown.as_ref(), leading, format);
 }
 
 fn verse_layout(
@@ -1719,16 +1782,16 @@ fn verse_layout(
     job.break_on_newline = true;
     let mut chars = 0usize;
     let mut strongs = Vec::new();
-    // A body-sized space was just written, so the next number should not add another.
-    let mut separated = false;
-    let body = text_format(font, paint::color(palette.ui_text));
-    let strong_fmt = text_format(font * 0.55, paint::color(palette.ui_text_subtle));
+    // Electron `.strongs` is 0.5em, raised, with 2px on the left and a word space after.
+    let mut body = text_format(font, paint::color(palette.ui_text));
+    body.extra_letter_spacing = 0.45;
+    let mut strong_fmt = text_format(font * 0.5, paint::color(palette.ui_text_subtle));
+    strong_fmt.valign = egui::Align::TOP;
     let note_fmt = text_format(font * 0.72, paint::color(palette.ui_text_muted));
     for (index, span) in spans.iter().enumerate() {
         match span {
             VerseSpan::Text(text) => {
                 push_chars(&mut job, &mut chars, text, body.clone());
-                separated = false;
             }
             VerseSpan::Strong {
                 display,
@@ -1738,15 +1801,9 @@ fn verse_layout(
                 if display.is_empty() {
                     continue;
                 }
-                // The number is a smaller face. A space in that face vanishes
-                // into the next word, so the gap after it is a word space.
-                let label = if separated {
-                    display.clone()
-                } else {
-                    format!(" {display}")
-                };
                 let start = chars;
-                push_chars(&mut job, &mut chars, &label, strong_fmt.clone());
+                chars += display.chars().count();
+                job.append(display, 2.0, strong_fmt.clone());
                 strongs.push(StrongHit {
                     start,
                     end: chars,
@@ -1754,10 +1811,9 @@ fn verse_layout(
                     morph: morph.clone(),
                     lemma: lemma.clone(),
                 });
-                separated = false;
                 if gap_after_strong(spans.get(index + 1)) {
-                    push_chars(&mut job, &mut chars, " ", body.clone());
-                    separated = true;
+                    // A little more than one word space, on the right of the number.
+                    push_chars_leading(&mut job, &mut chars, " ", 3.0, body.clone());
                 }
             }
             VerseSpan::Annotation {
@@ -1787,11 +1843,9 @@ fn verse_layout(
                         note_fmt.clone(),
                     );
                 }
-                separated = false;
             }
             VerseSpan::Footnote(note) => {
                 push_chars(&mut job, &mut chars, &format!(" {note}"), note_fmt.clone());
-                separated = false;
             }
         }
     }
@@ -1799,10 +1853,9 @@ fn verse_layout(
     VerseLayout { galley, strongs }
 }
 
-/// A word follows the number. Punctuation stays against it: `G4228.`
+/// A word follows the number. Another number, or punctuation, stays closer: `G4228.`
 fn gap_after_strong(next: Option<&VerseSpan>) -> bool {
     match next {
-        Some(VerseSpan::Strong { display, .. }) => !display.is_empty(),
         Some(VerseSpan::Text(text)) => text.chars().next().is_some_and(|ch| ch.is_alphanumeric()),
         _ => false,
     }
@@ -1842,9 +1895,20 @@ fn commentary_layout(
     let body = text_format(font, text_color);
     let mut link_fmt = text_format(font, link_color);
     link_fmt.underline = egui::Stroke::new(1.0_f32, link_color);
+    let mut heading = text_format(font * 0.85, link_color);
+    heading.extra_letter_spacing = 0.2;
     for piece in pieces {
         match piece {
+            CommentaryPiece::Break => push_chars(&mut job, &mut chars, "\n", body.clone()),
+            CommentaryPiece::Heading(text) => {
+                push_chars(&mut job, &mut chars, text, heading.clone())
+            }
             CommentaryPiece::Text(text) => push_chars(&mut job, &mut chars, text, body.clone()),
+            CommentaryPiece::Rich { text, italic, .. } => {
+                let mut format = body.clone();
+                format.italics = *italic;
+                push_chars(&mut job, &mut chars, text, format);
+            }
             CommentaryPiece::Link {
                 label,
                 book,
@@ -1897,7 +1961,10 @@ fn link_at<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{rows_prefix, verse_layout, visible_row_span, VerseSpan};
+    use super::{
+        anchor_for_verse, pieces_from_entries, rows_prefix, verse_layout, visible_row_span,
+        CommentaryPiece, VerseSpan,
+    };
 
     #[test]
     fn switching_back_to_a_chapter_reuses_its_row_heights() {
@@ -1996,6 +2063,39 @@ mod tests {
     }
 
     #[test]
+    fn commentary_html_becomes_text_and_a_bible_link() {
+        let matcher = graphe_domain::commentary_ref::build_reference_matcher(&[], &[]);
+        let entries = vec![graphe_domain::model::CommentaryEntry {
+            verse_from: 1,
+            verse_to: Some(1),
+            chapter_to: None,
+            text: "<p><strong>Capítulo</strong> <em>Dez</em> <a class='bible' href='B:10 10:1'>Gênesis 10.1</a></p>".into(),
+        }];
+        let (pieces, anchors) = pieces_from_entries(&entries, &matcher, 10);
+        let dumped: String = pieces
+            .iter()
+            .map(|piece| match piece {
+                CommentaryPiece::Text(text)
+                | CommentaryPiece::Heading(text)
+                | CommentaryPiece::Rich { text, .. } => text.clone(),
+                CommentaryPiece::Link { label, .. } => label.clone(),
+                CommentaryPiece::Break => "\n".into(),
+            })
+            .collect();
+        assert!(!dumped.contains('<'), "{dumped}");
+        assert!(pieces.iter().any(|piece| matches!(
+            piece,
+            CommentaryPiece::Link {
+                book: 10,
+                chapter: 10,
+                verse: Some(1),
+                ..
+            }
+        )));
+        assert_eq!(anchor_for_verse(&anchors, 1), Some(0));
+    }
+
+    #[test]
     fn strong_number_keeps_a_word_space_before_the_next_word() {
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
@@ -2010,15 +2110,21 @@ mod tests {
                 ];
                 let palette = graphe_domain::theme::palette(false);
                 let layout = verse_layout(ui, &spans, 480.0, 18.0, &palette);
-                assert_eq!(
-                    layout.galley.job.text,
-                    "diante G3588 G3063 esperando G4228."
-                );
-                let before_number = space_advance(&layout.galley, "diante G3588");
-                let after_number = space_advance(&layout.galley, "G3063 esperando");
+                assert_eq!(layout.galley.job.text, "dianteG3588G3063 esperandoG4228.");
+                let strong = layout
+                    .galley
+                    .job
+                    .sections
+                    .iter()
+                    .find(|section| section.format.font_id.size < 18.0)
+                    .expect("a strong number");
+                assert_eq!(strong.format.valign, egui::Align::TOP);
+                assert!((strong.format.font_id.size - 9.0).abs() < 0.1);
+                let word_y = glyph_y(&layout.galley, 'd');
+                let number_y = glyph_y(&layout.galley, 'G');
                 assert!(
-                    after_number > before_number + 0.5,
-                    "gap after the number is {after_number}, the small face space is {before_number}"
+                    number_y + 1.0 < word_y,
+                    "the number sits above the word: number {number_y} word {word_y}"
                 );
             });
         });
@@ -2032,22 +2138,14 @@ mod tests {
         }
     }
 
-    fn space_advance(galley: &egui::Galley, sample: &str) -> f32 {
-        let start = galley
-            .job
-            .text
-            .find(sample)
-            .unwrap_or_else(|| panic!("missing {sample} in {}", galley.job.text));
-        let space_at = start + sample.find(' ').unwrap();
-        let mut index = 0usize;
+    fn glyph_y(galley: &egui::Galley, ch: char) -> f32 {
         for row in &galley.rows {
             for glyph in &row.glyphs {
-                if index == space_at {
-                    return glyph.advance_width;
+                if glyph.chr == ch {
+                    return glyph.pos.y;
                 }
-                index += 1;
             }
         }
-        panic!("no glyph at {space_at}");
+        panic!("missing {ch}");
     }
 }

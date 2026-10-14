@@ -2004,6 +2004,37 @@ mod tests {
         marks
     }
 
+    #[test]
+    fn commentary_badge_lists_the_bible_views_it_can_follow() {
+        i18n::set_lang("pt");
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let other = app.session.split(false);
+        app.session.active_pane_id = "pane-1".into();
+        let commentary = app.session.split_commentary(false);
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let marks = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let badge = format!("sync-badge:{commentary}");
+        click_mark(&ctx, &mut app, 0.2, &marks, &badge);
+        let menu = study_frame(&ctx, &mut app, 0.4, egui::Modifiers::default(), Vec::new());
+        assert!(
+            menu.iter()
+                .any(|(key, _)| key == &format!("sync-none:{commentary}")),
+            "the badge offers none: {menu:?}"
+        );
+        let other_key = format!("sync-bible:{commentary}:{other}");
+        assert!(
+            menu.iter().any(|(key, _)| key == &other_key),
+            "the badge lists the other Bible view: {menu:?}"
+        );
+        click_mark(&ctx, &mut app, 0.5, &menu, &other_key);
+        assert_eq!(
+            app.session.panes[&commentary].synced_to_pane_id.as_deref(),
+            Some(other.as_str())
+        );
+    }
+
     fn mark<'a>(marks: &'a [(String, [f32; 4])], key: &str) -> &'a [f32; 4] {
         marks
             .iter()

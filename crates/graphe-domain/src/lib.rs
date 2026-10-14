@@ -5,7 +5,9 @@
 
 pub mod app_state;
 pub mod bible_ref;
+pub mod bidi;
 pub mod books;
+pub mod commentary_html;
 pub mod commentary_ref;
 pub mod coverage;
 pub mod dict;

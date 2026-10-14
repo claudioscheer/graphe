@@ -455,8 +455,9 @@ impl GrapheApp {
                 ui.set_min_size(rect.size());
                 ui.add_space(8.0);
                 ui.spacing_mut().item_spacing.x = 4.0;
-                // The letter mark hides once the pane is too narrow to keep the chapter group.
-                if pane_width >= 420.0 {
+                // A Bible letter can yield on a narrow strip so the chapter group stays.
+                // The commentary letter is the control that picks which Bible it follows.
+                if !bible || pane_width >= 420.0 {
                     self.pane_badge(ui, pane_id, palette);
                 }
                 self.module_combo(ui, pane_id, &kind, pane_width);
@@ -583,10 +584,35 @@ impl GrapheApp {
         paint::hover_tip(response, tip).clicked()
     }
 
-    fn pane_badge(&self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
-        let label = get_pane_display_label(&self.session.panes, pane_id);
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-        let fill = if self.session.dark {
+    fn pane_badge(&mut self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
+        let commentary = self
+            .session
+            .panes
+            .get(pane_id)
+            .is_some_and(|pane| pane.pane_type == PaneType::Commentary);
+        let bibles: Vec<String> = self
+            .session
+            .panes
+            .iter()
+            .filter(|(_, pane)| pane.pane_type == PaneType::Bible)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let clickable = commentary && !bibles.is_empty();
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(20.0, 20.0),
+            if clickable {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            },
+        );
+        #[cfg(test)]
+        if clickable {
+            mark_layout(ui, &format!("sync-badge:{pane_id}"), rect);
+        }
+        let fill = if clickable && response.hovered() {
+            paint::color_alpha(palette.ui_text, 28)
+        } else if self.session.dark {
             paint::color_alpha(palette.ui_surface, 28)
         } else {
             paint::color_alpha("#1a1612", 16)
@@ -598,6 +624,7 @@ impl GrapheApp {
         } else {
             palette.ui_text_subtle
         });
+        let label = get_pane_display_label(&self.session.panes, pane_id);
         let galley = egui::WidgetText::from(
             egui::RichText::new(label)
                 .monospace()
@@ -619,6 +646,74 @@ impl GrapheApp {
             galley,
             ink,
         );
+        if !clickable {
+            return;
+        }
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        paint::hover_tip(response.clone(), i18n::t("commentarySyncHint"));
+        let current = self
+            .session
+            .panes
+            .get(pane_id)
+            .and_then(|pane| pane.synced_to_pane_id.clone());
+        let options: Vec<(Option<String>, String)> =
+            std::iter::once((None, i18n::t("commentarySyncNone").to_string()))
+                .chain(bibles.iter().map(|id| {
+                    let letter = get_pane_display_label(&self.session.panes, id);
+                    (
+                        Some(id.clone()),
+                        format!("{} {letter}", i18n::t("commentarySyncBiblePrefix")),
+                    )
+                }))
+                .collect();
+        let mut picked = None;
+        egui::Popup::from_toggle_button_response(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .frame(
+                egui::Frame::new()
+                    .fill(paint::color(palette.ui_surface_elevated))
+                    .stroke(egui::Stroke::new(1.0_f32, paint::color(palette.ui_border)))
+                    .corner_radius(egui::CornerRadius::same(6))
+                    .inner_margin(egui::Margin::same(4))
+                    .shadow(egui::Shadow {
+                        offset: [0, 4],
+                        blur: 16,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(if self.session.dark {
+                            120
+                        } else {
+                            35
+                        }),
+                    }),
+            )
+            .show(|ui| {
+                ui.set_min_width(160.0);
+                for (value, label) in &options {
+                    let selected = current.as_ref() == value.as_ref();
+                    let (clicked, choice_rect) = sync_choice(ui, label, selected, palette);
+                    #[cfg(test)]
+                    {
+                        let key = match value {
+                            None => format!("sync-none:{pane_id}"),
+                            Some(id) => format!("sync-bible:{pane_id}:{id}"),
+                        };
+                        mark_layout(ui, &key, choice_rect);
+                    }
+                    #[cfg(not(test))]
+                    let _ = choice_rect;
+                    if clicked {
+                        picked = Some(value.clone());
+                        ui.close();
+                    }
+                }
+            });
+        // Marks are taken from the choice widgets on the frame they are drawn.
+        if let Some(target) = picked {
+            self.session.set_commentary_sync(pane_id, target);
+            self.after_toolbar_change();
+        }
     }
 
     fn chapter_nav(
@@ -910,7 +1005,8 @@ impl GrapheApp {
                 } else {
                     i18n::t("pinLinkTarget")
                 };
-                if menu_item(ui, Icon::Pin, &pin_label, true, palette) {
+                let pin_icon = if pinned { Icon::Pin } else { Icon::PinOff };
+                if menu_item(ui, pin_icon, &pin_label, true, palette) {
                     self.activate_pane(pane_id);
                     self.session.toggle_pin();
                     self.note_workspaces();
@@ -1018,6 +1114,7 @@ impl GrapheApp {
             push_nav_history_entry(pane);
         }
         self.session.reveal_selected_verse(true);
+        self.session.note_bible_moved(&target);
         self.after_toolbar_change();
     }
 
@@ -1123,6 +1220,48 @@ fn menu_choice(
     #[cfg(not(test))]
     let _ = mark;
     response.clicked()
+}
+
+fn sync_choice(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: bool,
+    palette: &UiPalette,
+) -> (bool, egui::Rect) {
+    let width = ui.available_width().max(160.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+    if selected || response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            4.0,
+            paint::color_alpha(palette.ui_text, if selected { 28 } else { 16 }),
+        );
+    }
+    if selected {
+        let bar = egui::Rect::from_min_size(rect.left_top(), egui::vec2(3.0, rect.height()));
+        ui.painter()
+            .rect_filled(bar, 0.0, paint::color(palette.ui_link_strong));
+    }
+    let ink = paint::color(if selected {
+        palette.ui_link_strong
+    } else {
+        palette.ui_text
+    });
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + 12.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    (response.clicked(), rect)
 }
 
 fn menu_item(

@@ -39,6 +39,53 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     // bar and the divider is thinner, so hover flips every frame and the line flashes.
     style.spacing.scroll.floating_width = style.spacing.scroll.bar_width;
     ctx.set_style(style);
+    install_fonts(ctx);
+}
+
+/// Ubuntu-Light has no Hebrew, so dictionary lemmas draw as empty boxes.
+/// DejaVu is always available. A system face, when present, is tried first
+/// and matches the letters the Electron window gets from the OS.
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "DejaVuSans".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../../../assets/fonts/DejaVuSans.ttf"
+        ))),
+    );
+    if let Some(bytes) = system_ui_font() {
+        fonts.font_data.insert(
+            "system-ui".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+        );
+    }
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        let Some(list) = fonts.families.get_mut(&family) else {
+            continue;
+        };
+        let at = list
+            .iter()
+            .position(|name| name == "NotoEmoji-Regular")
+            .unwrap_or(list.len());
+        list.insert(at, "DejaVuSans".to_owned());
+        if fonts.font_data.contains_key("system-ui") {
+            list.insert(at, "system-ui".to_owned());
+        }
+    }
+    ctx.set_fonts(fonts);
+}
+
+fn system_ui_font() -> Option<Vec<u8>> {
+    [
+        r"C:\Windows\Fonts\segoeui.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+    ]
+    .iter()
+    .find_map(|path| std::fs::read(path).ok())
 }
 
 pub(crate) fn panel(hex: &str) -> egui::Frame {
@@ -218,6 +265,7 @@ pub(crate) enum Icon {
     ArrowLeft,
     ArrowRight,
     Pin,
+    PinOff,
 }
 
 pub(crate) fn icon_button(
@@ -265,6 +313,124 @@ pub(crate) fn draw_search_icon(
         ],
         stroke,
     );
+}
+
+/// Lucide `settings` at the Electron activity-bar size (`w-5`, 20px).
+fn draw_settings_icon(painter: &egui::Painter, center: egui::Pos2, ink: egui::Color32) {
+    const SCALE: f32 = 20.0 / 24.0;
+    let map = |x: f32, y: f32| center + egui::vec2((x - 12.0) * SCALE, (y - 12.0) * SCALE);
+    let stroke_w = 2.0 * SCALE;
+    let mut points: Vec<egui::Pos2> = settings_gear_points()
+        .into_iter()
+        .map(|(x, y)| map(x, y))
+        .collect();
+    if points.len() > 2 {
+        let last = points.len() - 1;
+        if points[0].distance(points[last]) < 0.4 {
+            points.pop();
+        }
+    }
+    painter.add(egui::Shape::Path(egui::epaint::PathShape::closed_line(
+        points,
+        egui::Stroke::new(stroke_w, ink),
+    )));
+    painter.circle_stroke(
+        map(12.0, 12.0),
+        3.0 * SCALE,
+        egui::Stroke::new(stroke_w, ink),
+    );
+}
+
+/// Outline of the Lucide settings gear in the 24×24 viewBox.
+fn settings_gear_points() -> Vec<(f32, f32)> {
+    let mut points = vec![(9.671, 4.136)];
+    let arcs = [
+        (true, 4.659, 0.0),
+        (false, 3.319, 1.915),
+        (true, 2.33, 4.033),
+        (false, 0.0, 3.831),
+        (true, -2.33, 4.033),
+        (false, -3.319, 1.915),
+        (true, -4.659, 0.0),
+        (false, -3.32, -1.915),
+        (true, -2.33, -4.033),
+        (false, 0.0, -3.831),
+    ];
+    for (sweep, dx, dy) in arcs {
+        let (x, y) = *points.last().expect("gear starts at a point");
+        points.extend(sample_svg_arc(x, y, 2.34, sweep, x + dx, y + dy, 5));
+    }
+    let (x, y) = *points.last().expect("gear has arcs");
+    points.extend(sample_svg_arc(x, y, 2.34, true, 6.35, 6.051, 5));
+    let (x, y) = *points.last().expect("gear has arcs");
+    points.extend(sample_svg_arc(x, y, 2.34, false, x + 3.319, y - 1.915, 5));
+    points
+}
+
+/// Sample one circular SVG arc (`a`/`A` with equal radii and no rotation).
+fn sample_svg_arc(
+    x1: f32,
+    y1: f32,
+    radius: f32,
+    sweep: bool,
+    x2: f32,
+    y2: f32,
+    steps: usize,
+) -> Vec<(f32, f32)> {
+    let dx = (x1 - x2) / 2.0;
+    let dy = (y1 - y2) / 2.0;
+    let mut rx = radius.abs();
+    let mut ry = radius.abs();
+    let lambda = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+    if lambda > 1.0 {
+        let scale = lambda.sqrt();
+        rx *= scale;
+        ry *= scale;
+    }
+    let denom = rx * rx * dy * dy + ry * ry * dx * dx;
+    let numer = (rx * rx * ry * ry - rx * rx * dy * dy - ry * ry * dx * dx).max(0.0);
+    // large-arc is 0, so the center sign is negative when sweep is set.
+    let sign = if sweep { -1.0 } else { 1.0 };
+    let coef = if denom <= f32::EPSILON {
+        0.0
+    } else {
+        sign * (numer / denom).sqrt()
+    };
+    let cxp = coef * rx * dy / ry;
+    let cyp = coef * -ry * dx / rx;
+    let cx = (x1 + x2) / 2.0 + cxp;
+    let cy = (y1 + y2) / 2.0 + cyp;
+    let theta1 = vector_angle(1.0, 0.0, (dx - cxp) / rx, (dy - cyp) / ry);
+    let mut delta = vector_angle(
+        (dx - cxp) / rx,
+        (dy - cyp) / ry,
+        (-dx - cxp) / rx,
+        (-dy - cyp) / ry,
+    );
+    if !sweep && delta > 0.0 {
+        delta -= std::f32::consts::TAU;
+    } else if sweep && delta < 0.0 {
+        delta += std::f32::consts::TAU;
+    }
+    (1..=steps)
+        .map(|step| {
+            let theta = theta1 + delta * (step as f32 / steps as f32);
+            (cx + rx * theta.cos(), cy + ry * theta.sin())
+        })
+        .collect()
+}
+
+fn vector_angle(ux: f32, uy: f32, vx: f32, vy: f32) -> f32 {
+    let dot = ux * vx + uy * vy;
+    let len = (ux * ux + uy * uy).sqrt() * (vx * vx + vy * vy).sqrt();
+    if len <= f32::EPSILON {
+        return 0.0;
+    }
+    let mut angle = (dot / len).clamp(-1.0, 1.0).acos();
+    if ux * vy - uy * vx < 0.0 {
+        angle = -angle;
+    }
+    angle
 }
 
 pub(crate) fn draw_icon(
@@ -420,14 +586,7 @@ pub(crate) fn draw_icon(
                 egui::StrokeKind::Outside,
             );
         }
-        Icon::Settings => {
-            painter.circle_stroke(center, 3.5, stroke);
-            for index in 0..8 {
-                let angle = index as f32 * std::f32::consts::FRAC_PI_4;
-                let dir = egui::vec2(angle.cos(), angle.sin());
-                painter.line_segment([center + dir * 5.0, center + dir * 7.5], stroke);
-            }
-        }
+        Icon::Settings => draw_settings_icon(painter, center, ink),
         Icon::PanelLeftClose => {
             // Lucide panel-left-close: rect with divider and left arrow
             let rect = egui::Rect::from_center_size(center, egui::vec2(15.0, 13.0));
@@ -598,20 +757,108 @@ pub(crate) fn draw_icon(
                 stroke,
             );
         }
-        Icon::Pin => {
-            painter.circle_stroke(center + egui::vec2(0.0, -3.0), 3.0, stroke);
-            painter.line_segment(
-                [center + egui::vec2(0.0, 0.0), center + egui::vec2(0.0, 6.0)],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-3.0, 3.0),
-                    center + egui::vec2(3.0, 3.0),
-                ],
-                stroke,
-            );
+        Icon::Pin => draw_pin_icon(painter, center, ink, false),
+        Icon::PinOff => draw_pin_icon(painter, center, ink, true),
+    }
+}
+
+/// Lucide `pin` / `pin-off` at the Electron menu size (`w-4`, 16px).
+fn draw_pin_icon(painter: &egui::Painter, center: egui::Pos2, ink: egui::Color32, off: bool) {
+    const SCALE: f32 = 16.0 / 24.0;
+    let stroke = egui::Stroke::new(2.0 * SCALE, ink);
+    let map = |points: Vec<(f32, f32)>| -> Vec<egui::Pos2> {
+        points
+            .into_iter()
+            .map(|(x, y)| center + egui::vec2((x - 12.0) * SCALE, (y - 12.0) * SCALE))
+            .collect()
+    };
+    let paths = if off { pin_off_paths() } else { pin_paths() };
+    for (points, closed) in paths {
+        let shape = if closed {
+            egui::epaint::PathShape::closed_line(map(points), stroke)
+        } else {
+            egui::epaint::PathShape::line(map(points), stroke)
+        };
+        painter.add(egui::Shape::Path(shape));
+    }
+}
+
+fn pin_paths() -> Vec<(Vec<(f32, f32)>, bool)> {
+    let mut body = StrokePath::start(9.0, 10.76);
+    body.rel_arc(2.0, true, -1.11, 1.79);
+    body.rel_line(-1.78, 0.9);
+    body.arc(2.0, false, 5.0, 15.24);
+    body.line(5.0, 16.0);
+    body.rel_arc(1.0, false, 1.0, 1.0);
+    body.rel_line(12.0, 0.0);
+    body.rel_arc(1.0, false, 1.0, -1.0);
+    body.rel_line(0.0, -0.76);
+    body.rel_arc(2.0, false, -1.11, -1.79);
+    body.rel_line(-1.78, -0.9);
+    body.arc(2.0, true, 15.0, 10.76);
+    body.line(15.0, 7.0);
+    body.rel_arc(1.0, true, 1.0, -1.0);
+    body.rel_arc(2.0, false, 0.0, -4.0);
+    body.line(8.0, 2.0);
+    body.rel_arc(2.0, false, 0.0, 4.0);
+    body.rel_arc(1.0, true, 1.0, 1.0);
+    vec![
+        (vec![(12.0, 17.0), (12.0, 22.0)], false),
+        (body.points, true),
+    ]
+}
+
+fn pin_off_paths() -> Vec<(Vec<(f32, f32)>, bool)> {
+    let mut head = StrokePath::start(15.0, 9.34);
+    head.line(15.0, 7.0);
+    head.rel_arc(1.0, true, 1.0, -1.0);
+    head.rel_arc(2.0, false, 0.0, -4.0);
+    head.line(7.89, 2.0);
+    let mut base = StrokePath::start(9.0, 9.0);
+    base.line(9.0, 10.76);
+    base.rel_arc(2.0, true, -1.11, 1.79);
+    base.rel_line(-1.78, 0.9);
+    base.arc(2.0, false, 5.0, 15.24);
+    base.line(5.0, 16.0);
+    base.rel_arc(1.0, false, 1.0, 1.0);
+    base.rel_line(11.0, 0.0);
+    vec![
+        (vec![(12.0, 17.0), (12.0, 22.0)], false),
+        (head.points, false),
+        (vec![(2.0, 2.0), (22.0, 22.0)], false),
+        (base.points, false),
+    ]
+}
+
+struct StrokePath {
+    points: Vec<(f32, f32)>,
+}
+
+impl StrokePath {
+    fn start(x: f32, y: f32) -> Self {
+        Self {
+            points: vec![(x, y)],
         }
+    }
+
+    fn line(&mut self, x: f32, y: f32) {
+        self.points.push((x, y));
+    }
+
+    fn rel_line(&mut self, dx: f32, dy: f32) {
+        let (x, y) = *self.points.last().expect("path has a point");
+        self.line(x + dx, y + dy);
+    }
+
+    fn arc(&mut self, radius: f32, sweep: bool, x: f32, y: f32) {
+        let (x1, y1) = *self.points.last().expect("path has a point");
+        self.points
+            .extend(sample_svg_arc(x1, y1, radius, sweep, x, y, 6));
+    }
+
+    fn rel_arc(&mut self, radius: f32, sweep: bool, dx: f32, dy: f32) {
+        let (x, y) = *self.points.last().expect("path has a point");
+        self.arc(radius, sweep, x + dx, y + dy);
     }
 }
 
@@ -704,8 +951,9 @@ fn push_html_text(
     if text.is_empty() {
         return;
     }
+    let shown = graphe_domain::bidi::display_text(text);
     job.append(
-        text,
+        shown.as_ref(),
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::proportional(size),
@@ -736,6 +984,66 @@ pub(crate) fn unescape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proportional_font_covers_hebrew_points_and_greek() {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        let _ = ctx.run(raw.clone(), |ctx| apply(ctx, false, 16.0));
+        // New font definitions load at the start of the next pass.
+        let _ = ctx.run(raw, |_| {});
+        let id = egui::FontId::proportional(16.0);
+        ctx.fonts_mut(|fonts| {
+            for ch in ['א', 'ֱ', 'ֹ', 'ִ', 'ם', 'λ', 'ἀ', 'ĕ'] {
+                assert!(
+                    fonts.has_glyph(&id, ch),
+                    "missing {ch} U+{:04X}",
+                    u32::from(ch)
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn pin_icon_is_a_thumbtack() {
+        let body = pin_paths()
+            .into_iter()
+            .find(|(_, closed)| *closed)
+            .map(|(points, _)| points)
+            .expect("the pin body is a closed thumbtack");
+        let min_y = body.iter().map(|point| point.1).fold(f32::MAX, f32::min);
+        let max_y = body.iter().map(|point| point.1).fold(f32::MIN, f32::max);
+        let head: Vec<_> = body.iter().filter(|point| point.1 < 3.0).collect();
+        let head_width = head.iter().map(|point| point.0).fold(f32::MIN, f32::max)
+            - head.iter().map(|point| point.0).fold(f32::MAX, f32::min);
+        assert!(
+            min_y < 3.0 && max_y > 16.0 && head_width > 6.0,
+            "the pin has a wide head and a base, not a circle on a stick: y {min_y}..{max_y} head {head_width}"
+        );
+    }
+
+    #[test]
+    fn settings_icon_is_the_lucide_gear() {
+        let points = settings_gear_points();
+        let first = points[0];
+        let last = *points.last().expect("gear");
+        assert!(
+            (first.0 - last.0).abs() < 0.08 && (first.1 - last.1).abs() < 0.08,
+            "the gear outline closes: start {first:?} end {last:?}"
+        );
+        let min_x = points.iter().map(|point| point.0).fold(f32::MAX, f32::min);
+        let max_x = points.iter().map(|point| point.0).fold(f32::MIN, f32::max);
+        let min_y = points.iter().map(|point| point.1).fold(f32::MAX, f32::min);
+        let max_y = points.iter().map(|point| point.1).fold(f32::MIN, f32::max);
+        assert!(
+            min_x < 6.0 && max_x > 18.0 && min_y < 6.0 && max_y > 18.0,
+            "the gear fills the Lucide viewBox, not a small sun: {min_x} {max_x} {min_y} {max_y}"
+        );
+    }
 
     #[test]
     fn tip_frame_matches_the_pane_menu() {

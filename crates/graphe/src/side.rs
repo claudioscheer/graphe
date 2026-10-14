@@ -527,8 +527,9 @@ impl GrapheApp {
                                 .and_then(|e| e.get("lexeme"))
                                 .filter(|l| !l.is_empty())
                             {
+                                let lexeme = graphe_domain::bidi::display_text(lexeme);
                                 ui.label(
-                                    egui::RichText::new(lexeme)
+                                    egui::RichText::new(lexeme.as_ref())
                                         .size(24.0)
                                         .color(paint::color(palette.ui_text)),
                                 );
@@ -568,8 +569,9 @@ impl GrapheApp {
                                 .and_then(|e| e.get("short_definition"))
                                 .filter(|s| !s.is_empty())
                             {
+                                let short_def = graphe_domain::bidi::display_text(short_def);
                                 ui.label(
-                                    egui::RichText::new(short_def)
+                                    egui::RichText::new(short_def.as_ref())
                                         .size(13.0)
                                         .strong()
                                         .color(paint::color(palette.ui_text)),
@@ -1118,7 +1120,8 @@ fn morph_line(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) 
         ..Default::default()
     };
     job.append(&format!("{label}:"), 0.0, label_fmt);
-    job.append(value, 6.0, value_fmt);
+    let value = graphe_domain::bidi::display_text(value);
+    job.append(value.as_ref(), 6.0, value_fmt);
     ui.label(job);
 }
 
@@ -1182,6 +1185,8 @@ fn append_snippet(
     if text.is_empty() {
         return;
     }
+    let text = graphe_domain::bidi::display_text(text);
+    let text = text.as_ref();
     if marked {
         // Warm golden badge: rgba(193, 138, 31, 0.4)
         let bg = paint::color_alpha(palette.ui_warn, 102);
