@@ -188,9 +188,10 @@ impl GrapheApp {
         // 3. Results List
         let terms = extract_search_terms(&self.session.query);
         let hits = self.session.hits.clone();
-        // A fixed row keeps the bar 1:1 with the pointer. Building every hit
-        // on each drag was what made the search list feel sticky.
-        const SEARCH_ROW: f32 = 100.0;
+        // Each card is only as tall as its verse, with a small gap. A fixed
+        // slot left a hole under short verses. The row is clipped to the list
+        // so a verse cannot paint over the count or the search field.
+        const SEARCH_GAP: f32 = 6.0;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .animated(false)
@@ -198,31 +199,52 @@ impl GrapheApp {
             .max_height(ui.available_height())
             .show_viewport(ui, |ui, viewport| {
                 let width = ui.available_width();
-                ui.set_min_height((hits.len() as f32 * SEARCH_ROW).max(1.0));
+                let card_width = (width - 16.0).max(32.0);
+                let text_width = (card_width - 16.0).max(32.0);
+                let plain = paint::color(palette.ui_text_muted);
+                let mark = paint::color(palette.ui_text);
+                let mut snippets = Vec::with_capacity(hits.len());
+                let mut offsets = Vec::with_capacity(hits.len() + 1);
+                offsets.push(0.0);
+                for hit in &hits {
+                    let snippet =
+                        search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
+                    let galley = ui
+                        .painter()
+                        .layout_job(marked_job(&snippet, text_width, 12.0, plain, mark, palette));
+                    let card = 14.0 + 16.0 + 3.0 + galley.rect.height();
+                    let last = *offsets.last().unwrap_or(&0.0);
+                    offsets.push(last + card + SEARCH_GAP);
+                    snippets.push(snippet);
+                }
+                ui.set_min_height((*offsets.last().unwrap_or(&1.0)).max(1.0));
                 if hits.is_empty() {
                     return;
                 }
-                let first = (viewport.min.y / SEARCH_ROW).floor().max(0.0) as usize;
-                let mut last = (viewport.max.y / SEARCH_ROW).ceil() as usize + 1;
+                let first = offsets
+                    .partition_point(|y| *y <= viewport.min.y)
+                    .saturating_sub(1)
+                    .min(hits.len());
+                let mut last = offsets.partition_point(|y| *y < viewport.max.y);
                 if last > hits.len() {
                     last = hits.len();
                 }
                 let first = first.min(last);
                 let top = ui.max_rect().top();
-                for (offset, hit) in hits[first..last].iter().enumerate() {
-                    let index = first + offset;
+                let list_clip = ui.clip_rect();
+                for index in first..last {
+                    let hit = &hits[index];
+                    let snippet = &snippets[index];
                     let rect = egui::Rect::from_min_size(
-                        egui::pos2(ui.max_rect().left() + 8.0, top + index as f32 * SEARCH_ROW),
-                        egui::vec2((width - 16.0).max(32.0), SEARCH_ROW - 6.0),
+                        egui::pos2(ui.max_rect().left() + 8.0, top + offsets[index]),
+                        egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
                     );
                     let mut row_ui = ui.new_child(
                         egui::UiBuilder::new()
                             .max_rect(rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
-                    row_ui.set_clip_rect(rect);
-                    let snippet =
-                        search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
+                    row_ui.set_clip_rect(rect.intersect(list_clip));
                     let label = format!(
                         "{} {}:{}",
                         i18n::book_name(hit.book_number).short,
@@ -1150,16 +1172,16 @@ fn morph_line(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) 
     ui.label(job);
 }
 
-fn draw_marked(
-    ui: &mut egui::Ui,
+fn marked_job(
     marked: &str,
+    width: f32,
     size: f32,
     plain: egui::Color32,
     mark: egui::Color32,
     palette: &UiPalette,
-) {
+) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
-    job.wrap.max_width = ui.available_width();
+    job.wrap.max_width = width;
     let mut rest = marked;
     while let Some(start) = rest.find("<mark>") {
         let (head, tail) = rest.split_at(start);
@@ -1196,6 +1218,18 @@ fn draw_marked(
         false,
         palette,
     );
+    job
+}
+
+fn draw_marked(
+    ui: &mut egui::Ui,
+    marked: &str,
+    size: f32,
+    plain: egui::Color32,
+    mark: egui::Color32,
+    palette: &UiPalette,
+) {
+    let job = marked_job(marked, ui.available_width(), size, plain, mark, palette);
     ui.label(job);
 }
 
