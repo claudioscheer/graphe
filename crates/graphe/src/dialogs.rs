@@ -801,6 +801,8 @@ impl GrapheApp {
             );
             #[cfg(test)]
             crate::chrome::mark_layout(ui, "convert-desc", desc.rect);
+            #[cfg(not(test))]
+            let _ = desc;
             if !status.is_empty() {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new(status).size(12.0).color(hint));
@@ -2410,7 +2412,7 @@ fn form_line(ui: &mut egui::Ui, value: &mut String, mark: &str) {
     #[cfg(test)]
     crate::chrome::mark_layout(ui, mark, response.rect);
     #[cfg(not(test))]
-    let _ = mark;
+    let _ = (mark, response);
 }
 
 fn form_area(ui: &mut egui::Ui, value: &mut String, rows: usize, mark: &str) {
@@ -2424,7 +2426,7 @@ fn form_area(ui: &mut egui::Ui, value: &mut String, rows: usize, mark: &str) {
     #[cfg(test)]
     crate::chrome::mark_layout(ui, mark, response.rect);
     #[cfg(not(test))]
-    let _ = mark;
+    let _ = (mark, response);
 }
 
 fn fill_button(ui: &mut egui::Ui, dark: bool, label: &str, mark: &str) -> egui::Response {

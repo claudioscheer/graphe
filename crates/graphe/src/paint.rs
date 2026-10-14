@@ -986,6 +986,8 @@ fn render_inline_block(
     indent: f32,
 ) {
     let label = definition_label(html);
+    #[cfg(not(test))]
+    let _ = &label;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         if indent > 0.0 {
@@ -1002,6 +1004,8 @@ fn render_inline_block(
             if let Some(label) = &label {
                 crate::chrome::mark_layout(ui, &format!("dict-item:{label}"), response.rect);
             }
+            #[cfg(not(test))]
+            let _ = response;
         });
     });
 }
