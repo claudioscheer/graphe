@@ -15,10 +15,9 @@
 
 ## Testing
 
-- [ ] `npm run typecheck`
-- [ ] `npm test` (or the Vitest path for the area you touched)
-- [ ] UI change verified in the running app
+- [ ] `cargo test`
+- [ ] UI change verified in `cargo run -p graphe`
 
 ## Notes
 
-<!-- IPC/preload/`window.api` updates, behavior reviewers should watch, or screenshots. -->
+<!-- Behavior reviewers should watch, or screenshots. -->
