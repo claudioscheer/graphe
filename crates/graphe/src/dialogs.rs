@@ -1207,28 +1207,37 @@ impl GrapheApp {
             let row_width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::vec2(row_width, 36.0),
-                egui::Layout::right_to_left(egui::Align::Center),
+                egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    let folder =
-                        self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
-                    let files =
-                        self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
-                    #[cfg(test)]
-                    {
-                        crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
-                        crate::chrome::mark_layout(ui, "convert-files", files.rect);
+                    let install = self.session.convert_install;
+                    if self.check_option(ui, install, &i18n::t("installAfterConvert"), None) {
+                        self.session.convert_install = !install;
                     }
-                    if folder.clicked() {
-                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                            self.convert_paths(convertible_in_folder(&dir));
-                        }
-                    }
-                    if files.clicked() {
-                        if let Some(paths) = rfd::FileDialog::new().pick_files() {
-                            self.convert_paths(paths);
-                        }
-                    }
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            let folder =
+                                self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
+                            let files =
+                                self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
+                            #[cfg(test)]
+                            {
+                                crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
+                                crate::chrome::mark_layout(ui, "convert-files", files.rect);
+                            }
+                            if folder.clicked() {
+                                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                                    self.convert_paths(convertible_in_folder(&dir));
+                                }
+                            }
+                            if files.clicked() {
+                                if let Some(paths) = rfd::FileDialog::new().pick_files() {
+                                    self.convert_paths(paths);
+                                }
+                            }
+                        },
+                    );
                 },
             );
             false
@@ -1240,17 +1249,35 @@ impl GrapheApp {
         if files.is_empty() {
             return;
         }
-        let dir = graphe_store::state::modules_dir(&graphe_store::state::user_home());
-        let _ = std::fs::create_dir_all(&dir);
+        let global_dir = graphe_store::state::modules_dir(&graphe_store::state::user_home());
+        let _ = std::fs::create_dir_all(&global_dir);
         let mut notes = Vec::new();
+        let install = self.session.convert_install;
         for file in files {
-            notes.push(match graphe_store::convert::convert_file(&file, &dir) {
-                Ok(path) => path.display().to_string(),
-                Err(err) => err.0,
-            });
+            let out_dir = file.parent().unwrap_or(&global_dir);
+            match graphe_store::convert::convert_file(&file, out_dir) {
+                Ok(path) => {
+                    let mut note = path.display().to_string();
+                    if install {
+                        if let Some(file_name) = path.file_name() {
+                            let dest = global_dir.join(file_name);
+                            if dest != path {
+                                let _ = std::fs::copy(&path, &dest);
+                            }
+                        }
+                        note.push_str(" (");
+                        note.push_str(&i18n::t("installConverted"));
+                        note.push(')');
+                    }
+                    notes.push(note);
+                }
+                Err(err) => notes.push(err.0),
+            }
         }
         self.session.status = notes.join("\n");
-        self.reload_modules();
+        if install {
+            self.reload_modules();
+        }
     }
 
     fn picker_body(&mut self, ui: &mut egui::Ui) {
@@ -1401,6 +1428,7 @@ impl GrapheApp {
             .into_iter()
             .filter(|(key, _)| !known_info_key(key))
             .collect();
+        self.editor.deleted_extras.clear();
         self.editor.tables = sqlite::tables_in_file(&path);
         self.editor.books = sqlite::editable_books_in_file(&path);
         if self.editor.books.is_empty() && self.editor.tables.verses {
@@ -1677,13 +1705,33 @@ impl GrapheApp {
         form_label(ui, dark, &i18n::t("moduleShortTitle"));
         form_line(ui, &mut self.editor.short_title, "editor-short-title");
         ui.add_space(6.0);
-        let count = self.editor.extras.len();
-        for index in 0..count {
-            let label = info_field_label(&self.editor.extras[index].0);
-            let mark = format!("editor-extra:{}", self.editor.extras[index].0);
-            form_label(ui, dark, &label);
-            form_line(ui, &mut self.editor.extras[index].1, &mark);
+        let palette = theme::palette(dark);
+        let mut to_remove = None;
+        for (index, (key, value)) in self.editor.extras.iter_mut().enumerate() {
+            let label = info_field_label(key);
+            let mark = format!("editor-extra:{}", key);
+            ui.horizontal(|ui| {
+                form_label(ui, dark, &label);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let del_btn = ui.add(
+                        egui::Button::new(
+                            egui::RichText::new("×")
+                                .size(16.0)
+                                .color(paint::color(palette.ui_text_subtle)),
+                        )
+                        .frame(false),
+                    );
+                    if del_btn.on_hover_text(i18n::t("deleteRow")).clicked() {
+                        to_remove = Some(index);
+                    }
+                });
+            });
+            form_line(ui, value, &mark);
             ui.add_space(6.0);
+        }
+        if let Some(index) = to_remove {
+            let removed = self.editor.extras.remove(index);
+            self.editor.deleted_extras.push(removed.0);
         }
         ui.add_space(4.0);
         let strong = self.editor.strong;
@@ -1700,6 +1748,12 @@ impl GrapheApp {
         let Some(path) = self.editor_path.clone() else {
             return;
         };
+        for name in &self.editor.deleted_extras {
+            if let Err(err) = sqlite::delete_info(&path, name) {
+                self.note_editor_result(Err(err), "");
+                return;
+            }
+        }
         let mut rows = vec![
             ("description".to_string(), self.editor.description.clone()),
             ("language".to_string(), self.editor.language.clone()),
@@ -1723,6 +1777,7 @@ impl GrapheApp {
                 return;
             }
         }
+        self.editor.deleted_extras.clear();
         self.note_editor_result(Ok(()), &i18n::t("savedModuleInfo"));
         self.reload_modules();
     }

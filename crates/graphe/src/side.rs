@@ -659,7 +659,25 @@ impl GrapheApp {
                             }
 
                             // Body definition
-                            if !self.session.dict_body.is_empty() {
+                            if self.session.dict_body == i18n::t("dictNoDictsConfigured") {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(i18n::t("dictNoDictsConfigured"))
+                                            .size(13.0)
+                                            .color(paint::color(palette.ui_text_subtle)),
+                                    );
+                                    if ui
+                                        .link(
+                                            egui::RichText::new(i18n::t("settings"))
+                                                .size(13.0)
+                                                .color(paint::color(palette.ui_link)),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.session.dialog = Dialog::Settings;
+                                    }
+                                });
+                            } else if !self.session.dict_body.is_empty() {
                                 paint::show_html(
                                     ui,
                                     &self.session.dict_body,
@@ -734,6 +752,15 @@ impl GrapheApp {
         lemma: Option<&str>,
         bible_path: Option<&Path>,
     ) {
+        if self.session.strongs_dicts.is_empty() {
+            self.session.dict_query = topic.to_string();
+            self.session.dict_body = i18n::t("dictNoDictsConfigured");
+            self.session.dict_entry = None;
+            self.session.dict_cognates.clear();
+            self.session.focus_sidebar("dictionary");
+            self.session.dialog = Dialog::None;
+            return;
+        }
         self.session.dict_morph_code = morph.map(str::to_string);
         self.session.dict_morph_lemma = lemma.map(str::to_string);
         self.session.dict_morph_meaning = morph.map(|code| {
@@ -763,8 +790,12 @@ impl GrapheApp {
             self.session.focus_sidebar("dictionary");
             self.session.dialog = Dialog::None;
         }
+        let is_strong = topic.starts_with(['H', 'G', 'h', 'g'])
+            && topic.chars().skip(1).all(|ch| ch.is_ascii_digit());
         let Some(path) = self.dict_path_for(&topic) else {
-            self.session.dict_body = if self
+            self.session.dict_body = if is_strong && is_pseudo_strong(&topic) {
+                i18n::t("dictPseudoStrongsNoEntry")
+            } else if self
                 .modules
                 .iter()
                 .any(|module| module.kind == "dictionary")
@@ -810,7 +841,11 @@ impl GrapheApp {
                 }));
             }
             None => {
-                self.session.dict_body = i18n::t("dictNoEntry");
+                self.session.dict_body = if is_pseudo_strong(&topic) {
+                    i18n::t("dictPseudoStrongsNoEntry")
+                } else {
+                    i18n::t("dictNoEntry")
+                };
                 self.session.dict_entry = None;
                 self.session.dict_cognates.clear();
             }
@@ -866,6 +901,25 @@ impl GrapheApp {
                     .clicked()
                 {
                     self.session.dialog = Dialog::Convert;
+                }
+                let (key, is_reloading) = match self.reload_feedback {
+                    Some(start) => {
+                        let (key, reloading, repaint) =
+                            reload_feedback_status(start.elapsed().as_millis());
+                        if let Some(dur) = repaint {
+                            ui.ctx().request_repaint_after(dur);
+                        }
+                        (key, reloading)
+                    }
+                    None => ("reloadModules", false),
+                };
+                let reload_label = i18n::t(key);
+                let reload_resp = ui.add_enabled_ui(!is_reloading, |ui| {
+                    command_button(ui, paint::Icon::Refresh, &reload_label, palette)
+                });
+                if reload_resp.inner.clicked() && !is_reloading {
+                    self.reload_modules();
+                    self.reload_feedback = Some(std::time::Instant::now());
                 }
             });
         separator_line(ui, palette.ui_border);
@@ -1334,6 +1388,27 @@ fn append_snippet(
     }
 }
 
+fn is_pseudo_strong(topic: &str) -> bool {
+    let strong = topic.starts_with(['H', 'G', 'h', 'g'])
+        && topic.chars().skip(1).all(|ch| ch.is_ascii_digit());
+    if strong {
+        if let Ok(num) = topic[1..].parse::<u32>() {
+            return num >= 9000;
+        }
+    }
+    false
+}
+
+fn reload_feedback_status(elapsed_ms: u128) -> (&'static str, bool, Option<std::time::Duration>) {
+    if elapsed_ms < 400 {
+        ("reloadingModules", true, Some(std::time::Duration::from_millis(50)))
+    } else if elapsed_ms < 1600 {
+        ("modulesReloaded", false, Some(std::time::Duration::from_millis(100)))
+    } else {
+        ("reloadModules", false, None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1365,5 +1440,43 @@ mod tests {
                 assert_eq!(heights[1], heights[2]);
             });
         });
+    }
+
+    #[test]
+    fn test_pseudo_strong_detection() {
+        use super::is_pseudo_strong;
+        assert!(is_pseudo_strong("H9000"));
+        assert!(is_pseudo_strong("H9009"));
+        assert!(is_pseudo_strong("G9050"));
+        assert!(!is_pseudo_strong("H1234"));
+        assert!(!is_pseudo_strong("G1"));
+        assert!(!is_pseudo_strong("word"));
+    }
+
+    #[test]
+    fn test_reload_feedback_stages() {
+        use super::reload_feedback_status;
+        let (key, reloading, repaint) = reload_feedback_status(0);
+        assert_eq!(key, "reloadingModules");
+        assert!(reloading);
+        assert_eq!(repaint, Some(std::time::Duration::from_millis(50)));
+
+        let (key, reloading, _repaint) = reload_feedback_status(399);
+        assert_eq!(key, "reloadingModules");
+        assert!(reloading);
+
+        let (key, reloading, repaint) = reload_feedback_status(400);
+        assert_eq!(key, "modulesReloaded");
+        assert!(!reloading);
+        assert_eq!(repaint, Some(std::time::Duration::from_millis(100)));
+
+        let (key, reloading, _repaint) = reload_feedback_status(1599);
+        assert_eq!(key, "modulesReloaded");
+        assert!(!reloading);
+
+        let (key, reloading, repaint) = reload_feedback_status(1600);
+        assert_eq!(key, "reloadModules");
+        assert!(!reloading);
+        assert_eq!(repaint, None);
     }
 }

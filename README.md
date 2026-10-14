@@ -93,9 +93,9 @@ O Graphe usa módulos no formato **MyBible SQLite3**. O tipo é detectado pelas 
 
 #### Instalar módulos
 
-1. **File → Install Modules...** (ou **Instalar Módulos** se ainda não houver bíblia instalada)
-2. Selecione um ou mais arquivos `.sqlite3`
-3. O app copia para a pasta de módulos e recarrega a interface
+1. Na barra lateral, abra o painel **Módulos** e clique em **Instalar Módulos** (ou use o botão na tela inicial se ainda não houver bíblia instalada).
+2. Selecione um ou mais arquivos `.sqlite3`.
+3. O app copia para a pasta de módulos e recarrega a interface.
 
 | Sistema | Pasta de módulos                 |
 | ------- | -------------------------------- |
@@ -103,15 +103,15 @@ O Graphe usa módulos no formato **MyBible SQLite3**. O tipo é detectado pelas 
 | macOS   | `~/.graphe/modules/`             |
 | Windows | `%USERPROFILE%\.graphe\modules\` |
 
-Outros itens de menu:
+Outras ações de gestão de módulos:
 
-- **File → Convert Modules...** — conversão integrada (ver abaixo)
-- **File → Reload Modules** — recarrega a pasta de módulos
-- **Edit → Edit Module Data...** (`Ctrl+E` / `Cmd+E`) — editor de módulo
+- **Converter Módulos** — no painel **Módulos**, conversão integrada de módulos TheWord e MySword (salva junto ao arquivo original com opção de instalar no Graphe).
+- **Recarregar Módulos** — no painel **Módulos**, recarrega os arquivos da pasta sem precisar reiniciar o app.
+- **Editar dados do módulo** (`Ctrl+E` / `Cmd+E`) — editor de metadados (`info`), nomes de livros, texto de versículos e comentários.
 
 #### Conversão de módulos
 
-Conversão no próprio app (ou salva o `.sqlite3` ao lado do arquivo original):
+Conversão no próprio app (salva o `.sqlite3` ao lado do arquivo original, com opção de instalar no Graphe):
 
 | Origem  | Entrada                                                                               | Saída típica                                               |
 | ------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -122,7 +122,7 @@ Conversão no próprio app (ou salva o `.sqlite3` ao lado do arquivo original):
 
 Permite inspecionar e editar dados do módulo instalado (conforme o tipo):
 
-- Metadados (`info`)
+- Metadados (`info`) com alteração e exclusão de campos adicionais
 - Nomes de livros
 - Texto de versículos
 - Entradas de comentário
@@ -131,9 +131,8 @@ Permite inspecionar e editar dados do módulo instalado (conforme o tipo):
 ### Interface
 
 - Temas claro e escuro
-- Tamanho de fonte ajustável
+- Tamanho de fonte ajustável em **Configurações** (`Ctrl+,` / `Cmd+,`)
 - Idiomas da interface: **Português**, **Inglês** e **Espanhol** (não altera a tradução bíblica)
-- Zoom da janela e tela cheia pelos atalhos nativos do sistema
 
 ### Atalhos de teclado
 

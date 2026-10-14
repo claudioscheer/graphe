@@ -97,6 +97,7 @@ pub fn run() -> eframe::Result {
                 editor_path: None,
                 editor: ModuleEditorForm::default(),
                 dict_info: None,
+                reload_feedback: None,
             }))
         }),
     )
@@ -129,6 +130,7 @@ pub(crate) struct GrapheApp {
     pub(crate) editor_path: Option<PathBuf>,
     pub(crate) editor: ModuleEditorForm,
     pub(crate) dict_info: Option<crate::dialogs::DictInfoState>,
+    pub(crate) reload_feedback: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -150,6 +152,7 @@ pub(crate) struct ModuleEditorForm {
     pub(crate) short_key: String,
     pub(crate) strong: bool,
     pub(crate) extras: Vec<(String, String)>,
+    pub(crate) deleted_extras: Vec<String>,
     pub(crate) book: String,
     pub(crate) short_name: String,
     pub(crate) long_name: String,
@@ -179,6 +182,7 @@ impl Default for ModuleEditorForm {
             short_key: "short.title".into(),
             strong: false,
             extras: Vec::new(),
+            deleted_extras: Vec::new(),
             book: "10".into(),
             short_name: String::new(),
             long_name: String::new(),
@@ -760,6 +764,7 @@ mod tests {
             editor_path: None,
             editor: ModuleEditorForm::default(),
             dict_info: None,
+            reload_feedback: None,
         }
     }
 
@@ -3685,6 +3690,12 @@ mod tests {
         assert_eq!(value("language").as_deref(), Some("en"));
         assert_eq!(value("articles_language").as_deref(), Some("en"));
         assert_eq!(value("short.title").as_deref(), Some("Strong-PT"));
+
+        let removed = app.editor.extras.remove(0);
+        app.editor.deleted_extras.push(removed.0);
+        app.save_module_editor_info();
+        let rows = graphe_store::sqlite::info_in_file(&path);
+        assert!(!rows.iter().any(|(k, _)| k == "articles_language"));
         let _ = std::fs::remove_file(&path);
     }
 
@@ -3735,5 +3746,21 @@ mod tests {
             card[1] >= -1.0 && card[1] + card[3] <= 321.0,
             "the short-screen card stays inside the window, {card:?}"
         );
+    }
+
+    #[test]
+    fn test_strongs_unconfigured_guidance() {
+        let mut app = bare(Session::new());
+        app.session.strongs_dicts.clear();
+        app.lookup_dict_with_context("H1234", None, None, None);
+        assert_eq!(app.session.dict_body, graphe_domain::i18n::t("dictNoDictsConfigured"));
+        assert_eq!(app.session.sidebar, "dictionary");
+    }
+
+    #[test]
+    fn test_pseudo_strong_no_entry_explanation() {
+        let mut app = bare(Session::new());
+        app.lookup_dict_focused("H9000", false);
+        assert_eq!(app.session.dict_body, graphe_domain::i18n::t("dictPseudoStrongsNoEntry"));
     }
 }

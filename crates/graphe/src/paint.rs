@@ -339,6 +339,7 @@ pub(crate) enum Icon {
     ArrowRight,
     Pin,
     PinOff,
+    Refresh,
 }
 
 pub(crate) fn icon_button(
@@ -935,6 +936,19 @@ pub(crate) fn draw_icon(
         }
         Icon::Pin => draw_pin_icon(painter, center, ink, false),
         Icon::PinOff => draw_pin_icon(painter, center, ink, true),
+        Icon::Refresh => {
+            let r = 5.0_f32;
+            let mut points = Vec::new();
+            for i in 0..=12 {
+                let frac = i as f32 / 12.0;
+                let angle = std::f32::consts::PI * (-0.7 + 1.5 * frac);
+                points.push(center + egui::vec2(r * angle.cos(), r * angle.sin()));
+            }
+            painter.add(egui::Shape::Path(egui::epaint::PathShape::line(points, stroke)));
+            let tip = center + egui::vec2(r * (-0.7 * std::f32::consts::PI).cos(), r * (-0.7 * std::f32::consts::PI).sin());
+            painter.line_segment([tip, tip + egui::vec2(2.5, 0.5)], stroke);
+            painter.line_segment([tip, tip + egui::vec2(-0.5, -2.5)], stroke);
+        }
     }
 }
 

@@ -922,6 +922,13 @@ pub fn write_info(path: &Path, name: &str, value: &str) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
+pub fn delete_info(path: &Path, name: &str) -> Result<(), String> {
+    let db = Connection::open(path).map_err(|err| err.to_string())?;
+    db.execute("DELETE FROM info WHERE name = ?1", rusqlite::params![name])
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
 pub fn write_book_names(
     path: &Path,
     book_number: i64,
@@ -1245,5 +1252,23 @@ mod tests {
         assert!(!dictionary_is_strong(&plain));
         assert_eq!(dictionary_topic_count(&plain), 1);
         assert_eq!(dictionary_topic_count(&bible()), 0);
+    }
+
+    #[test]
+    fn test_write_and_delete_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.sqlite3");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE info (name TEXT, value TEXT);").unwrap();
+        drop(conn);
+
+        write_info(&path, "custom_key", "custom_value").unwrap();
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(info_rows(&conn), vec![("custom_key".to_string(), "custom_value".to_string())]);
+        drop(conn);
+
+        delete_info(&path, "custom_key").unwrap();
+        let conn = Connection::open(&path).unwrap();
+        assert!(info_rows(&conn).is_empty());
     }
 }

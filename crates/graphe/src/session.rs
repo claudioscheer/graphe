@@ -94,6 +94,7 @@ pub struct Session {
     pub dict_module_id: Option<String>,
     pub dict_cache: BTreeMap<String, String>,
     pub restore_panels: bool,
+    pub convert_install: bool,
 }
 
 impl Session {
@@ -154,6 +155,7 @@ impl Session {
             dict_module_id: None,
             dict_cache: BTreeMap::new(),
             restore_panels: false,
+            convert_install: true,
         }
     }
 
