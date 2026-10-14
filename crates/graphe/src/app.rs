@@ -2481,6 +2481,158 @@ mod tests {
     }
 
     #[test]
+    fn selecting_a_verse_does_not_scroll_the_other_bible() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir = std::env::temp_dir().join(format!("graphe-two-bibles-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("kjv.SQLite3");
+        let mut sql = String::from(
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);",
+        );
+        for verse in 1..=80 {
+            sql.push_str(&format!(
+                "INSERT INTO verses VALUES (10, 1, {verse}, 'Verse {verse} of the chapter.');\n"
+            ));
+        }
+        graphe_store::sqlite::init_module_sql(&path, &sql).unwrap();
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "kjv".into(),
+            name: "KJV".into(),
+            kind: "bible".into(),
+            path: path.clone(),
+            short_title: Some("KJV".into()),
+            description: None,
+        });
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("kjv".into());
+        let other = app.session.split(false);
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let shown = study_frame(&ctx, &mut app, 0.2, egui::Modifiers::default(), Vec::new());
+        let right = *mark(&shown, &format!("body:{other}"));
+        let at = egui::pos2(right[0] + right[2] * 0.5, right[1] + 80.0);
+        let mut time = 0.3;
+        let mut scrolled = shown;
+        for _ in 0..6 {
+            scrolled = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(at),
+            );
+            time += 0.1;
+        }
+        let before = *mark(&scrolled, &format!("chapter-offset:{other}"));
+        assert!(
+            before[1] > 200.0,
+            "Bible B should be away from the top before the click, offset {} content {} viewport {}",
+            before[1],
+            before[0],
+            before[2]
+        );
+        let last_on_b = scrolled
+            .iter()
+            .filter_map(|(key, rect)| {
+                key.strip_prefix(&format!("verse:{other}:"))
+                    .and_then(|verse| verse.parse::<i64>().ok())
+                    .map(|verse| (verse, *rect))
+            })
+            .max_by_key(|(verse, _)| *verse)
+            .expect("a visible verse on Bible B");
+        let click_b = egui::pos2(last_on_b.1[0] + 40.0, last_on_b.1[1] + last_on_b.1[3] * 0.5);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            click(click_b),
+        );
+        time += 0.1;
+        assert_eq!(
+            app.session.active_pane_id, other,
+            "selecting Bible B should activate it, selection {:?}",
+            app.session.selected_verses
+        );
+        let selected_b = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        time += 0.1;
+        let held = *mark(&selected_b, &format!("chapter-offset:{other}"));
+        assert!(
+            held[1] > 200.0,
+            "selecting the last visible verse on Bible B jumped it to {}",
+            held[1]
+        );
+        let left_verse = *mark(&selected_b, "verse:pane-1:1");
+        let click_a = egui::pos2(left_verse[0] + 40.0, left_verse[1] + left_verse[3] * 0.5);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            click(click_a),
+        );
+        assert_eq!(
+            app.session.active_pane_id, "pane-1",
+            "the verse click should activate Bible A, selection {:?}",
+            app.session.selected_verses
+        );
+        time += 0.1;
+        let after = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let moved = *mark(&after, &format!("chapter-offset:{other}"));
+        assert!(
+            (moved[1] - held[1]).abs() < 2.0,
+            "selecting verse 1 on Bible A moved Bible B from {} to {} (content {} viewport {})",
+            held[1],
+            moved[1],
+            moved[0],
+            moved[2]
+        );
+
+        let left = *mark(&after, "body:pane-1");
+        let left_at = egui::pos2(left[0] + left[2] * 0.5, left[1] + 80.0);
+        let mut both = after;
+        for _ in 0..6 {
+            time += 0.1;
+            both = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(left_at),
+            );
+        }
+        let left_before = *mark(&both, "chapter-offset:pane-1");
+        let right_before = *mark(&both, &format!("chapter-offset:{other}"));
+        assert!(
+            left_before[1] > 200.0 && right_before[1] > 200.0,
+            "both bibles should be away from the top, A {} B {}",
+            left_before[1],
+            right_before[1]
+        );
+        app.session.active_pane_id = "pane-1".into();
+        app.session.scroll_verse = Some(1);
+        app.session.scroll_center = false;
+        time += 0.1;
+        let revealed = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let left_after = *mark(&revealed, "chapter-offset:pane-1");
+        let right_after = *mark(&revealed, &format!("chapter-offset:{other}"));
+        assert!(
+            (right_after[1] - right_before[1]).abs() < 2.0,
+            "scrolling Bible A to verse 1 moved Bible B from {} to {}",
+            right_before[1],
+            right_after[1]
+        );
+        assert!(
+            left_after[1] + 20.0 < left_before[1],
+            "Bible A should move toward verse 1, from {} to {}",
+            left_before[1],
+            left_after[1]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn wheel_past_the_end_does_not_jump_the_text() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());

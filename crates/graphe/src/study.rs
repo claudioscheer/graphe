@@ -255,7 +255,9 @@ impl GrapheApp {
             .animated(false)
             .scroll_source(egui::containers::scroll_area::ScrollSource {
                 scroll_bar: true,
-                drag: true,
+                // A press on a verse must not drag the chapter. Dragging is what
+                // made a Bible jump when the other Bible's verse was selected.
+                drag: false,
                 mouse_wheel: false,
             })
             .max_height(ui.available_height())
@@ -379,6 +381,20 @@ impl GrapheApp {
             chapter_view.content_size,
             chapter_view.inner_rect.size(),
         );
+        #[cfg(test)]
+        {
+            let offset = egui::containers::scroll_area::State::load(ui.ctx(), chapter_scroll)
+                .map(|state| state.offset.y)
+                .unwrap_or(0.0);
+            crate::chrome::mark_layout(
+                ui,
+                &format!("chapter-offset:{pane_id}"),
+                egui::Rect::from_min_size(
+                    egui::pos2(chapter_view.content_size.y, offset),
+                    egui::vec2(chapter_view.inner_rect.height(), 1.0),
+                ),
+            );
+        }
         if active_bible && scroll_verse.is_some() {
             self.session.scroll_verse = None;
         }
@@ -397,10 +413,14 @@ impl GrapheApp {
             self.session.select_verse(verse, shift, toggle);
             return;
         }
+        // The verse is under the pointer, so it is already on screen. Do not
+        // request a scroll. Revealing it on the next frame moved a Bible that
+        // was sitting on its last verse back toward the top.
         if let Some(pane) = self.session.panes.get_mut(pane_id) {
             pane.selected_verse = Some(verse);
         }
-        self.session.reveal_selected_verse(false);
+        self.session.selected_verses = vec![verse];
+        self.session.selection_anchor = Some(verse);
         self.session.note_bible_moved(pane_id);
         self.loaded_key.clear();
     }
