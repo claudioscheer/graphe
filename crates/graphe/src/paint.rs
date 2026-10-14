@@ -388,7 +388,8 @@ pub(crate) fn draw_search_icon(
     );
 }
 
-/// Lucide `settings` at the Electron activity-bar size (`w-5`, 20px).
+/// Classic settings cog at the Electron activity-bar size (`w-5`, 20px).
+/// Lucide's later `settings` mark is a scalloped rosette and reads as a flower.
 fn draw_settings_icon(painter: &egui::Painter, center: egui::Pos2, ink: egui::Color32) {
     const SCALE: f32 = 20.0 / 24.0;
     let map = |x: f32, y: f32| center + egui::vec2((x - 12.0) * SCALE, (y - 12.0) * SCALE);
@@ -414,30 +415,132 @@ fn draw_settings_icon(painter: &egui::Painter, center: egui::Pos2, ink: egui::Co
     );
 }
 
-/// Outline of the Lucide settings gear in the 24×24 viewBox.
+/// Feather settings cog in the 24×24 viewBox: six teeth and a flat crown.
 fn settings_gear_points() -> Vec<(f32, f32)> {
-    let mut points = vec![(9.671, 4.136)];
-    let arcs = [
-        (true, 4.659, 0.0),
-        (false, 3.319, 1.915),
-        (true, 2.33, 4.033),
-        (false, 0.0, 3.831),
-        (true, -2.33, 4.033),
-        (false, -3.319, 1.915),
-        (true, -4.659, 0.0),
-        (false, -3.32, -1.915),
-        (true, -2.33, -4.033),
-        (false, 0.0, -3.831),
-    ];
-    for (sweep, dx, dy) in arcs {
-        let (x, y) = *points.last().expect("gear starts at a point");
-        points.extend(sample_svg_arc(x, y, 2.34, sweep, x + dx, y + dy, 5));
+    #[derive(Clone, Copy)]
+    enum Step {
+        H(f32),
+        V(f32),
+        L(f32, f32),
+        /// Relative circular arc, radius 2, large-arc 0.
+        A(bool, f32, f32),
     }
-    let (x, y) = *points.last().expect("gear has arcs");
-    points.extend(sample_svg_arc(x, y, 2.34, true, 6.35, 6.051, 5));
-    let (x, y) = *points.last().expect("gear has arcs");
-    points.extend(sample_svg_arc(x, y, 2.34, false, x + 3.319, y - 1.915, 5));
+    use Step::{A, H, L, V};
+    // https://unpkg.com/lucide-static@0.263.0/icons/settings.svg
+    let steps = [
+        H(-0.44),
+        A(false, -2.0, 2.0),
+        L(0.0, 0.18),
+        A(true, -1.0, 1.73),
+        L(-0.43, 0.25),
+        A(true, -2.0, 0.0),
+        L(-0.15, -0.08),
+        A(false, -2.73, 0.73),
+        L(-0.22, 0.38),
+        A(false, 0.73, 2.73),
+        L(0.15, 0.1),
+        A(true, 1.0, 1.72),
+        L(0.0, 0.51),
+        A(true, -1.0, 1.74),
+        L(-0.15, 0.09),
+        A(false, -0.73, 2.73),
+        L(0.22, 0.38),
+        A(false, 2.73, 0.73),
+        L(0.15, -0.08),
+        A(true, 2.0, 0.0),
+        L(0.43, 0.25),
+        A(true, 1.0, 1.73),
+        V(20.0),
+        A(false, 2.0, 2.0),
+        H(0.44),
+        A(false, 2.0, -2.0),
+        L(0.0, -0.18),
+        A(true, 1.0, -1.73),
+        L(0.43, -0.25),
+        A(true, 2.0, 0.0),
+        L(0.15, 0.08),
+        A(false, 2.73, -0.73),
+        L(0.22, -0.39),
+        A(false, -0.73, -2.73),
+        L(-0.15, -0.08),
+        A(true, -1.0, -1.74),
+        L(0.0, -0.5),
+        A(true, 1.0, -1.74),
+        L(0.15, -0.09),
+        A(false, 0.73, -2.73),
+        L(-0.22, -0.38),
+        A(false, -2.73, -0.73),
+        L(-0.15, 0.08),
+        A(true, -2.0, 0.0),
+        L(-0.43, -0.25),
+        A(true, -1.0, -1.73),
+        V(4.0),
+        A(false, -2.0, -2.0),
+    ];
+    let mut points = vec![(12.22, 2.0)];
+    for step in steps {
+        let (x, y) = *points.last().expect("gear starts at a point");
+        match step {
+            H(dx) => points.push((x + dx, y)),
+            V(y) => points.push((x, y)),
+            L(dx, dy) => points.push((x + dx, y + dy)),
+            A(sweep, dx, dy) => {
+                points.extend(sample_gear_arc(x, y, sweep, x + dx, y + dy, 4));
+            }
+        }
+    }
     points
+}
+
+/// One circular SVG arc with large-arc 0, equal radii, and no rotation.
+/// `sample_svg_arc` keeps the sign the pin paths were tuned against.
+fn sample_gear_arc(
+    x1: f32,
+    y1: f32,
+    sweep: bool,
+    x2: f32,
+    y2: f32,
+    steps: usize,
+) -> Vec<(f32, f32)> {
+    let dx = (x1 - x2) / 2.0;
+    let dy = (y1 - y2) / 2.0;
+    let mut radius = 2.0_f32;
+    let lambda = (dx * dx + dy * dy) / (radius * radius);
+    if lambda > 1.0 {
+        radius *= lambda.sqrt();
+    }
+    let denom = radius * radius * (dx * dx + dy * dy);
+    let numer =
+        (radius * radius * radius * radius - radius * radius * (dx * dx + dy * dy)).max(0.0);
+    // large-arc is 0, so the center sits on the opposite side of a set sweep.
+    let sign = if sweep { 1.0 } else { -1.0 };
+    let coef = if denom <= f32::EPSILON {
+        0.0
+    } else {
+        sign * (numer / denom).sqrt()
+    };
+    let cxp = coef * dy;
+    let cyp = coef * -dx;
+    let cx = (x1 + x2) / 2.0 + cxp;
+    let cy = (y1 + y2) / 2.0 + cyp;
+    let theta1 = vector_angle(1.0, 0.0, (dx - cxp) / radius, (dy - cyp) / radius);
+    let mut delta = vector_angle(
+        (dx - cxp) / radius,
+        (dy - cyp) / radius,
+        (-dx - cxp) / radius,
+        (-dy - cyp) / radius,
+    );
+    if !sweep && delta > 0.0 {
+        delta -= std::f32::consts::TAU;
+    } else if sweep && delta < 0.0 {
+        delta += std::f32::consts::TAU;
+    }
+    (1..=steps)
+        .map(|step| {
+            let theta = theta1 + delta * (step as f32 / steps as f32);
+            (cx + radius * theta.cos(), cy + radius * theta.sin())
+        })
+        .collect()
 }
 
 /// Sample one circular SVG arc (`a`/`A` with equal radii and no rotation).
@@ -1350,13 +1453,38 @@ mod tests {
             (first.0 - last.0).abs() < 0.08 && (first.1 - last.1).abs() < 0.08,
             "the gear outline closes: start {first:?} end {last:?}"
         );
-        let min_x = points.iter().map(|point| point.0).fold(f32::MAX, f32::min);
-        let max_x = points.iter().map(|point| point.0).fold(f32::MIN, f32::max);
-        let min_y = points.iter().map(|point| point.1).fold(f32::MAX, f32::min);
-        let max_y = points.iter().map(|point| point.1).fold(f32::MIN, f32::max);
+        let crown: Vec<_> = points
+            .iter()
+            .filter(|point| (point.1 - 2.0).abs() < 0.05)
+            .collect();
+        let crown_x = crown.iter().map(|point| point.0).fold(f32::MIN, f32::max)
+            - crown.iter().map(|point| point.0).fold(f32::MAX, f32::min);
         assert!(
-            min_x < 6.0 && max_x > 18.0 && min_y < 6.0 && max_y > 18.0,
-            "the gear fills the Lucide viewBox, not a small sun: {min_x} {max_x} {min_y} {max_y}"
+            crown.len() >= 2 && crown_x > 0.3 && crown_x < 1.2,
+            "the top tooth is a short flat crown, not a petal: {crown:?}"
+        );
+        let radius = |point: (f32, f32)| {
+            let dx = point.0 - 12.0;
+            let dy = point.1 - 12.0;
+            (dx * dx + dy * dy).sqrt()
+        };
+        let mut teeth = Vec::new();
+        let mut notches = Vec::new();
+        let count = points.len();
+        for index in 0..count {
+            let previous = radius(points[(index + count - 1) % count]);
+            let current = radius(points[index]);
+            let next = radius(points[(index + 1) % count]);
+            if current >= previous && current > next && current > 9.2 {
+                teeth.push(current);
+            }
+            if current <= previous && current < next && current < 8.0 {
+                notches.push(current);
+            }
+        }
+        assert!(
+            teeth.len() == 6 && notches.len() >= 6,
+            "the cog has six teeth and a notch between each, not a flower: teeth {teeth:?} notches {notches:?}"
         );
     }
 

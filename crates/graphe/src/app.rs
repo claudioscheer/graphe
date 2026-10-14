@@ -1012,6 +1012,51 @@ mod tests {
     }
 
     #[test]
+    fn cross_reference_settings_show_without_a_strong_dictionary() {
+        i18n::set_lang("pt");
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "tsk".into(),
+            name: "The Treasury of Scripture Knowledge".into(),
+            kind: "crossreference".into(),
+            path: std::path::PathBuf::from("tsk.crossreference.SQLite3"),
+            short_title: Some("TSK".into()),
+            description: None,
+        });
+        app.session.dialog = Dialog::Settings;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, marks) = dialog_frame(&ctx, &mut app);
+        let card = *mark(&marks, "modal-card");
+        let heading = *mark(&marks, "settings-crossrefs");
+        assert!(
+            marks.iter().all(|(key, _)| key != "settings-strongs"),
+            "a Strong's dictionary is not installed, so that section stays hidden"
+        );
+        let end = *mark(&marks, "settings-crossrefs-end");
+        let card_bottom = card[1] + card[3];
+        assert!(
+            heading[1] >= card[1] && end[1] <= card_bottom + 1.0,
+            "cross-reference settings must be on the card without a Strong module: heading {heading:?} end {end:?} card {card:?}"
+        );
+
+        app.session.dialog = Dialog::About;
+        let _ = dialog_frame(&ctx, &mut app);
+        let _ = dialog_frame(&ctx, &mut app);
+        app.session.dialog = Dialog::Settings;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, after_about) = dialog_frame(&ctx, &mut app);
+        let card = *mark(&after_about, "modal-card");
+        let heading = *mark(&after_about, "settings-crossrefs");
+        let end = *mark(&after_about, "settings-crossrefs-end");
+        let card_bottom = card[1] + card[3];
+        assert!(
+            heading[1] >= card[1] && end[1] <= card_bottom + 1.0,
+            "cross-reference settings stay visible after a shorter dialog: heading {heading:?} end {end:?} card {card:?}"
+        );
+    }
+
+    #[test]
     fn settings_opens_as_a_paper_card_and_the_theme_button_flips_the_theme() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -1076,6 +1121,80 @@ mod tests {
             (top_gap - 20.0).abs() < 0.6,
             "close inset is 20px: top {top_gap} right {right_gap}"
         );
+    }
+
+    #[test]
+    fn reference_preview_paints_the_bible_line_and_grows_to_the_verse() {
+        let screen = egui::vec2(1400.0, 1000.0);
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: std::path::PathBuf::from("missing.commentaries.SQLite3"),
+            short_title: None,
+            description: None,
+        });
+        app.session.coverage_module_id = Some("notes".into());
+        app.session.dialog = Dialog::Coverage;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, coverage) = dialog_frame_in(&ctx, &mut app, screen);
+        let coverage_h = mark(&coverage, "modal-card")[3];
+
+        app.session.show_strongs = true;
+        app.session.preview_book = 470;
+        app.session.preview_verse = Some(3);
+        app.session.preview_title = "Mt 20:3".into();
+        app.session.preview_body =
+            "E, saindo <S>1831</S><m>V-2AAP-NSM</m><l>ἐξέρχομαι</l> perto da hora ".repeat(14);
+        app.session.dialog = Dialog::Preview;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (output, marks) = dialog_frame_in(&ctx, &mut app, screen);
+        let card = *mark(&marks, "modal-card");
+        let verse = *mark(&marks, "preview-verse");
+        let painted = collected_text(&output);
+        assert!(
+            painted.contains("G1831"),
+            "the preview should show the Strong's number like the Bible: {painted}"
+        );
+        assert!(
+            !painted.contains("V-2AAP-NSM") && !painted.contains("ἐξέρχομαι"),
+            "morphology and the lemma belong on the number, not in the sentence: {painted}"
+        );
+        assert!(
+            verse[1] + verse[3] <= card[1] + card[3] + 1.0,
+            "the verse is clipped inside the card: verse {verse:?} card {card:?}"
+        );
+        let chrome = 57.0 + 32.0;
+        assert!(
+            card[3] + 8.0 >= chrome + verse[3] && card[3] + 40.0 < coverage_h,
+            "the card should hug the verse, not the previous dialog: card {} verse {} coverage {coverage_h}",
+            card[3],
+            verse[3]
+        );
+    }
+
+    fn collected_text(output: &egui::FullOutput) -> String {
+        fn walk(shape: &egui::Shape, out: &mut String) {
+            match shape {
+                egui::Shape::Text(text) => {
+                    out.push_str(&text.galley.job.text);
+                    out.push('\n');
+                }
+                egui::Shape::Vec(list) => {
+                    for shape in list {
+                        walk(shape, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = String::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
     }
 
     #[test]
@@ -2630,6 +2749,168 @@ mod tests {
             left_after[1]
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two translations of one chapter share a width. The pane that loses the
+    /// selection used to adopt the other translation's row heights and clamp
+    /// its scroll offset, which threw a Bible that was far down back upward.
+    #[test]
+    fn selecting_a_verse_keeps_the_other_translations_scroll() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir =
+            std::env::temp_dir().join(format!("graphe-two-translations-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let long_path = dir.join("long.SQLite3");
+        let short_path = dir.join("short.SQLite3");
+        let long_line = "No principio criou Deus os ceus e a terra. ".repeat(14);
+        write_chapter(&long_path, 40, |verse| format!("{verse} {long_line}"));
+        write_chapter(&short_path, 40, |verse| format!("Amen {verse}."));
+        app.modules.push(bible_module("long", "Long", long_path));
+        app.modules.push(bible_module("short", "Short", short_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("long".into());
+        let other = app.session.split(false);
+        app.session.panes.get_mut(&other).unwrap().module_id = Some("short".into());
+        app.session.active_pane_id = "pane-1".into();
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let shown = study_frame(&ctx, &mut app, 0.2, egui::Modifiers::default(), Vec::new());
+        let left = *mark(&shown, "body:pane-1");
+        let at = egui::pos2(left[0] + left[2] * 0.5, left[1] + 80.0);
+        let mut time = 0.3;
+        let mut scrolled = shown;
+        for _ in 0..8 {
+            scrolled = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(at),
+            );
+            time += 0.1;
+        }
+        let before = *mark(&scrolled, "chapter-offset:pane-1");
+        assert!(
+            before[1] > 400.0,
+            "the long Bible should be far down, offset {} content {} viewport {}",
+            before[1],
+            before[0],
+            before[2]
+        );
+        let short_verse = *mark(&scrolled, &format!("verse:{other}:1"));
+        let click_short = egui::pos2(short_verse[0] + 40.0, short_verse[1] + short_verse[3] * 0.5);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            click(click_short),
+        );
+        time += 0.1;
+        assert_eq!(app.session.active_pane_id, other);
+        let after = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let moved = *mark(&after, "chapter-offset:pane-1");
+        assert!(
+            (moved[1] - before[1]).abs() < 2.0,
+            "selecting a verse in the short Bible moved the long one from {} to {} (content {} -> {}, viewport {})",
+            before[1],
+            moved[1],
+            before[0],
+            moved[0],
+            moved[2]
+        );
+
+        let right = *mark(&after, &format!("body:{other}"));
+        let right_at = egui::pos2(right[0] + right[2] * 0.5, right[1] + 80.0);
+        let mut short_scrolled = after;
+        for _ in 0..6 {
+            time += 0.1;
+            short_scrolled = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(right_at),
+            );
+        }
+        let short_before = *mark(&short_scrolled, &format!("chapter-offset:{other}"));
+        assert!(
+            short_before[1] > 200.0,
+            "the short Bible should leave the top, offset {}",
+            short_before[1]
+        );
+        let long_body = *mark(&short_scrolled, "body:pane-1");
+        let long_verse = short_scrolled
+            .iter()
+            .filter_map(|(key, rect)| {
+                if !key.starts_with("verse:pane-1:") {
+                    return None;
+                }
+                let mid_y = rect[1] + rect[3] * 0.5;
+                if mid_y > long_body[1] + 4.0 && mid_y < long_body[1] + long_body[3] - 4.0 {
+                    Some(*rect)
+                } else {
+                    None
+                }
+            })
+            .next()
+            .expect("a visible verse on the long Bible");
+        let click_long = egui::pos2(long_verse[0] + 40.0, long_verse[1] + long_verse[3] * 0.5);
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            click(click_long),
+        );
+        time += 0.1;
+        assert_eq!(app.session.active_pane_id, "pane-1");
+        let back = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let short_after = *mark(&back, &format!("chapter-offset:{other}"));
+        let long_after = *mark(&back, "chapter-offset:pane-1");
+        assert!(
+            (short_after[1] - short_before[1]).abs() < 2.0,
+            "selecting a verse in the long Bible moved the short one from {} to {}",
+            short_before[1],
+            short_after[1]
+        );
+        assert!(
+            (long_after[1] - moved[1]).abs() < 2.0,
+            "activating the long Bible moved it from {} to {}",
+            moved[1],
+            long_after[1]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn bible_module(
+        id: &str,
+        name: &str,
+        path: std::path::PathBuf,
+    ) -> graphe_store::catalog::InstalledModule {
+        graphe_store::catalog::InstalledModule {
+            id: id.into(),
+            name: name.into(),
+            kind: "bible".into(),
+            path,
+            short_title: Some(name.into()),
+            description: None,
+        }
+    }
+
+    fn write_chapter(path: &std::path::Path, count: i64, text: impl Fn(i64) -> String) {
+        let mut sql = String::from(
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);",
+        );
+        for verse in 1..=count {
+            let line = text(verse).replace('\'', "''");
+            sql.push_str(&format!(
+                "INSERT INTO verses VALUES (10, 1, {verse}, '{line}');\n"
+            ));
+        }
+        graphe_store::sqlite::init_module_sql(path, &sql).unwrap();
     }
 
     #[test]

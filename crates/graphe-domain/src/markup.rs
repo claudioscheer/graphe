@@ -276,7 +276,11 @@ fn push_markup(spans: &mut Vec<VerseSpan>, text: &str, show_strongs: bool, stron
     }
     if !show_strongs {
         static STRONG_BLOCK: OnceLock<Regex> = OnceLock::new();
-        let block = STRONG_BLOCK.get_or_init(|| Regex::new(r"(?i)<S[^>]*>[\s\S]*?</S>").unwrap());
+        // The number and the morphology/lemma that belong to it. Leaving `<m>`
+        // and `<l>` would print codes such as V-2AAP-NSM in the sentence.
+        let block = STRONG_BLOCK.get_or_init(|| {
+            Regex::new(r"(?i)<S[^>]*>[\s\S]*?</S>(?:\s*<m>[^<]*</m>)?(?:\s*<l>[^<]*</l>)?").unwrap()
+        });
         let plain = collapse(&strip_tags(&block.replace_all(text, " ")));
         push_text(spans, &plain);
         return;
@@ -440,5 +444,7 @@ mod tests {
     fn hides_strongs_when_display_is_off() {
         let (spans, _) = verse_spans("word <S>123</S>", false, "G");
         assert_eq!(spans, vec![VerseSpan::Text("word".into())]);
+        let line = visible_verse_line("saindo <S>1831</S><m>V-2AAP-NSM</m><l>ἐξέρχομαι</l> perto");
+        assert_eq!(line, "saindo perto");
     }
 }

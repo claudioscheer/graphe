@@ -130,10 +130,7 @@ impl GrapheApp {
                 } else {
                     self.session.preview_title.clone()
                 };
-                let body = self.session.preview_body.clone();
-                self.titled_card(ui, &title, move |_app, ui| {
-                    ui.label(egui::RichText::new(body).size(15.0));
-                })
+                self.preview_card(ui, &title)
             }
             Dialog::AllCommentaries => {
                 let title = commentaries_title(&self.session.commentary_ref);
@@ -150,6 +147,47 @@ impl GrapheApp {
             Dialog::DictInfo => self.dict_info_card(ui),
             Dialog::None => false,
         }
+    }
+
+    /// The reference preview is one Bible row. The card grows to that row.
+    /// A scrollbar appears only when the verse is taller than the screen.
+    fn preview_card(&mut self, ui: &mut egui::Ui, title: &str) -> bool {
+        self.header_bar(ui, title);
+        let chrome = ui.min_rect().height();
+        let cap = commentary_body_limit(ui.ctx().content_rect().height(), chrome);
+        let inner = (ui.available_width() - 32.0).max(48.0);
+        let row_h = self.preview_verse_height(ui, inner);
+        let wanted = row_h + 32.0;
+        let fits = wanted <= cap + 1.0;
+        let max_h = if fits { wanted + 2.0 } else { cap };
+        let output = egui::ScrollArea::vertical()
+            .id_salt(("modal-scroll", "preview"))
+            .max_height(max_h)
+            .auto_shrink([false, true])
+            .scroll_bar_visibility(if fits {
+                egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden
+            } else {
+                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+            })
+            .scroll_source(egui::containers::scroll_area::ScrollSource {
+                scroll_bar: !fits,
+                drag: false,
+                mouse_wheel: !fits,
+            })
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(16))
+                    .show(ui, |ui| {
+                        self.paint_preview_verse(ui);
+                    });
+            });
+        let shown = output.inner_rect.height();
+        if fits && wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.inner_rect.top() + wanted);
+            ui.ctx().request_repaint();
+        }
+        false
     }
 
     fn titled_card(
@@ -501,8 +539,16 @@ impl GrapheApp {
         self.header_bar(ui, &i18n::t("settings"));
         // Hug the rows. A footer that takes the leftover height leaves a gap
         // under the last option when a taller modal used this area last.
+        // Grow when the rows are taller than the area remembered from a shorter
+        // dialog, or the cross-reference section sits past the bottom.
         let max_h = max_body(ui, 70.0);
-        modal_scroll(ui, "settings", max_h, |ui| self.settings_body(ui));
+        let output = modal_scroll(ui, "settings", max_h, |ui| self.settings_body(ui));
+        let shown = output.viewport.height();
+        let wanted = output.content_height.min(max_h);
+        if wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.viewport.top() + wanted);
+            ui.ctx().request_repaint();
+        }
         false
     }
 
@@ -671,11 +717,15 @@ impl GrapheApp {
             .any(|module| module.kind == "dictionary");
         if has_dicts {
             self.group_rule(ui);
-            self.section_heading(
+            let heading = self.section_heading(
                 ui,
                 &i18n::t("strongsDictionaries"),
                 &i18n::t("strongsDictsHint"),
             );
+            #[cfg(test)]
+            crate::chrome::mark_layout(ui, "settings-strongs", heading);
+            #[cfg(not(test))]
+            let _ = heading;
             ui.add_space(8.0);
             self.module_combo_setting(ui, "dictionary", true);
         }
@@ -688,11 +738,15 @@ impl GrapheApp {
             .collect();
         if !cross_refs.is_empty() {
             self.group_rule(ui);
-            self.section_heading(
+            let heading = self.section_heading(
                 ui,
                 &i18n::t("crossReferences"),
                 &i18n::t("crossRefModulesHint"),
             );
+            #[cfg(test)]
+            crate::chrome::mark_layout(ui, "settings-crossrefs", heading);
+            #[cfg(not(test))]
+            let _ = heading;
             ui.add_space(8.0);
             for (id, name) in &cross_refs {
                 let checked = self.session.xref_modules.iter().any(|item| item == id);
@@ -712,6 +766,12 @@ impl GrapheApp {
                 self.session.preview_pinned = !pinned;
                 self.patch_settings(json!({ "openPinnedRefsInModal": !pinned }));
             }
+            #[cfg(test)]
+            crate::chrome::mark_layout(
+                ui,
+                "settings-crossrefs-end",
+                egui::Rect::from_min_size(ui.cursor().min, egui::vec2(1.0, 1.0)),
+            );
         }
     }
 
@@ -2328,7 +2388,7 @@ impl GrapheApp {
         });
     }
 
-    fn section_heading(&self, ui: &mut egui::Ui, title: &str, hint: &str) {
+    fn section_heading(&self, ui: &mut egui::Ui, title: &str, hint: &str) -> egui::Rect {
         let palette = theme::palette(self.session.dark);
         let text = paint::color(palette.ui_text);
         let hint_color = paint::color(if self.session.dark {
@@ -2336,9 +2396,10 @@ impl GrapheApp {
         } else {
             palette.ui_text_muted
         });
-        ui.label(egui::RichText::new(title).size(14.0).strong().color(text));
+        let title = ui.label(egui::RichText::new(title).size(14.0).strong().color(text));
         ui.add_space(4.0);
         ui.label(egui::RichText::new(hint).size(12.0).color(hint_color));
+        title.rect
     }
 
     fn group_rule(&self, ui: &mut egui::Ui) {

@@ -69,6 +69,9 @@ pub struct Session {
     pub nav_input: String,
     pub preview_body: String,
     pub preview_title: String,
+    /// Book of the verse open in the reference preview, used for the Strong's prefix.
+    pub preview_book: i64,
+    pub preview_verse: Option<i64>,
     /// One collapsed row per commentary module in the all-commentaries dialog.
     pub commentary_sections: Vec<CommentarySection>,
     pub commentary_open: Vec<bool>,
@@ -130,6 +133,8 @@ impl Session {
             nav_input: String::new(),
             preview_body: String::new(),
             preview_title: String::new(),
+            preview_book: 10,
+            preview_verse: None,
             commentary_sections: Vec::new(),
             commentary_open: Vec::new(),
             commentary_ref: String::new(),

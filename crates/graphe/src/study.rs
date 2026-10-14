@@ -633,7 +633,9 @@ impl GrapheApp {
                 Some(value) => format!("{} {chapter}:{value}", name.short),
                 None => format!("{} {chapter}", name.short),
             };
-            self.session.preview_body = self.verse_preview(book, chapter, verse);
+            self.session.preview_book = book;
+            self.session.preview_verse = verse;
+            self.session.preview_body = self.verse_preview(pane_id, book, chapter, verse);
             self.session.dialog = Dialog::Preview;
             return;
         }
@@ -674,26 +676,123 @@ impl GrapheApp {
         }
     }
 
-    fn verse_preview(&self, book: i64, chapter: i64, verse: Option<i64>) -> String {
-        let text = self
-            .bible_path(None)
-            .and_then(|path| {
-                sqlite::chapter_in_file(path, book, chapter)
-                    .into_iter()
-                    .find(|row| verse.is_none_or(|value| row.verse == value))
-                    .map(|row| row.text)
-            })
+    /// Raw verse text from the Bible that was clicked. The preview paints it
+    /// with the same line as that Bible, Strong's numbers included.
+    fn verse_preview(&self, pane_id: &str, book: i64, chapter: i64, verse: Option<i64>) -> String {
+        let module_id = self
+            .session
+            .panes
+            .get(pane_id)
+            .and_then(|pane| pane.module_id.clone());
+        let rows = self
+            .bible_path(module_id.as_deref())
+            .map(|path| sqlite::chapter_in_file(path, book, chapter))
             .unwrap_or_default();
-        let (spans, _) = markup::verse_spans(&text, false, "");
-        let plain = spans
-            .iter()
-            .filter_map(|span| match span {
-                VerseSpan::Text(body) => Some(body.as_str()),
-                _ => None,
-            })
+        if let Some(verse) = verse {
+            return rows
+                .into_iter()
+                .find(|row| row.verse == verse)
+                .map(|row| row.text)
+                .unwrap_or_default();
+        }
+        rows.into_iter()
+            .map(|row| row.text)
             .collect::<Vec<_>>()
-            .join(" ");
-        plain
+            .join("\n")
+    }
+
+    fn preview_line(&mut self, ui: &egui::Ui, text_width: f32) -> (VerseLayout, f32) {
+        let prefix = if self.session.preview_book < 470 {
+            "H"
+        } else {
+            "G"
+        };
+        let font = self.session.font_size;
+        let palette = graphe_domain::theme::palette(self.session.dark);
+        let (spans, _) = markup::verse_spans(
+            &self.session.preview_body,
+            self.session.show_strongs,
+            prefix,
+        );
+        let layout = self.verse_row_layout(ui, &spans, text_width, font, &palette);
+        let row_height = layout.galley.rect.height().max(font * 0.8) + 8.0;
+        (layout, row_height)
+    }
+
+    /// One Bible row for the reference preview: verse number, body, raised Strong's.
+    pub(crate) fn paint_preview_verse(&mut self, ui: &mut egui::Ui) {
+        let font = self.session.font_size;
+        let palette = graphe_domain::theme::palette(self.session.dark);
+        let text_width = (ui.available_width() - VERSE_NUM_W).max(32.0);
+        let (layout, row_height) = self.preview_line(ui, text_width);
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), row_height),
+            egui::Sense::click(),
+        );
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "preview-verse", rect);
+        if let Some(verse) = self.session.preview_verse {
+            ui.painter().text(
+                rect.left_top() + egui::vec2(8.0, 4.0),
+                egui::Align2::LEFT_TOP,
+                verse.to_string(),
+                egui::FontId::proportional(font * 0.8),
+                paint::color(palette.ui_verse_num),
+            );
+        }
+        let origin = rect.left_top() + egui::vec2(VERSE_NUM_W, 4.0);
+        ui.painter().galley(
+            origin,
+            Arc::clone(&layout.galley),
+            paint::color(palette.ui_text),
+        );
+        let module_path = self.preview_bible_path();
+        let pointer = response
+            .hover_pos()
+            .or_else(|| response.interact_pointer_pos());
+        let strong = pointer
+            .and_then(|pos| strong_at(&layout, origin, pos))
+            .cloned();
+        if let Some(code) = strong.as_ref().and_then(|hit| hit.morph.clone()) {
+            if let Some(path) = module_path.as_deref() {
+                let meaning = self.morph_text(path, &code);
+                if !meaning.is_empty() {
+                    paint::hover_tip(response.clone(), format!("{code}: {meaning}"));
+                }
+            }
+        }
+        if response.clicked() {
+            if let Some(hit) = &strong {
+                self.lookup_dict_with_context(
+                    &hit.display,
+                    hit.morph.as_deref(),
+                    hit.lemma.as_deref(),
+                    module_path.as_deref(),
+                );
+            }
+        }
+    }
+
+    /// Height of the preview row before the dialog decides whether it fits.
+    /// `row_width` is the row inside the card padding, including the verse number.
+    pub(crate) fn preview_verse_height(&mut self, ui: &egui::Ui, row_width: f32) -> f32 {
+        let text_width = (row_width - VERSE_NUM_W).max(32.0);
+        self.preview_line(ui, text_width).1
+    }
+
+    fn preview_bible_path(&self) -> Option<std::path::PathBuf> {
+        let pane_id = self
+            .session
+            .link_target
+            .clone()
+            .unwrap_or_else(|| self.session.bible_target(&self.session.active_pane_id));
+        let module_id = self
+            .session
+            .panes
+            .get(&pane_id)
+            .and_then(|pane| pane.module_id.clone());
+        self.bible_path(module_id.as_deref())
+            .map(|path| path.to_path_buf())
     }
 
     pub(crate) fn morph_text(&mut self, path: &Path, code: &str) -> String {
@@ -746,7 +845,7 @@ impl GrapheApp {
         if let Some(paint) = self.reading.cached_chapter(&key, None) {
             return paint;
         }
-        let verses = module_path
+        let verses: Vec<(i64, String)> = module_path
             .map(|path| {
                 sqlite::chapter_in_file(path, book, chapter)
                     .into_iter()
@@ -754,8 +853,12 @@ impl GrapheApp {
                     .collect()
             })
             .unwrap_or_default();
+        // Row heights are stored by this fingerprint. Zero made every inactive
+        // chapter share one table, so the Bible that lost the selection took
+        // the other translation's row heights and its scroll offset snapped.
+        let fingerprint = text_fingerprint(&verses, show_strongs, prefix);
         self.reading
-            .insert_chapter(key, 0, verses, show_strongs, prefix)
+            .insert_chapter(key, fingerprint, verses, show_strongs, prefix)
     }
 
     fn load_commentary(
