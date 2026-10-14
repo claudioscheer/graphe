@@ -5,5 +5,6 @@ Exec=graphe
 Icon=graphe
 Terminal=false
 Type=Application
-Categories=Education;Humanities;
+Categories=Education;Utility;
 StartupWMClass=graphe
+Keywords=Bible;Study;Theology;Scripture;
