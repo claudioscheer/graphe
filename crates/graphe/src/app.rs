@@ -3796,4 +3796,69 @@ mod tests {
         assert!(!app.applied_dark);
         assert!(app.reading.cached_verse_text("k2").is_none());
     }
+
+    #[test]
+    fn test_update_banner_shows_download_button_and_dismisses() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let palette = theme::palette(false);
+
+        // When no update notice, update banner produces no marks
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let _ = ctx.run(raw.clone(), |ctx| {
+            app.update_banner(ctx, palette);
+        });
+
+        // Set an update notice
+        *app.update_notice.lock().unwrap() = Some("1.0.14".into());
+
+        // Now update banner renders download and close marks
+        let _ = ctx.run(raw.clone(), |ctx| {
+            ctx.data_mut(|d| {
+                d.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+            });
+            app.update_banner(ctx, palette);
+        });
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        assert!(marks.iter().any(|(key, _)| key == "update-download"));
+        let close_mark = marks
+            .iter()
+            .find(|(key, _)| key == "update-close")
+            .map(|(_, r)| *r)
+            .expect("close button");
+
+        // Click the close button
+        let mut click_raw = egui::RawInput::default();
+        click_raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        click_raw.events = vec![
+            egui::Event::PointerButton {
+                pos: egui::pos2(
+                    close_mark[0] + close_mark[2] / 2.0,
+                    close_mark[1] + close_mark[3] / 2.0,
+                ),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos: egui::pos2(
+                    close_mark[0] + close_mark[2] / 2.0,
+                    close_mark[1] + close_mark[3] / 2.0,
+                ),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ];
+        let _ = ctx.run(click_raw, |ctx| {
+            app.update_banner(ctx, palette);
+        });
+
+        // Notice should now be None (dismissed)
+        assert!(app.update_notice.lock().unwrap().is_none());
+    }
 }

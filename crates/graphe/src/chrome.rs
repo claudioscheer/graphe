@@ -29,23 +29,64 @@ impl GrapheApp {
         let Some(version) = version else {
             return;
         };
+        let mut dismiss = false;
         egui::TopBottomPanel::top("update-banner")
             .exact_height(28.0)
             .frame(
                 egui::Frame::new()
                     .fill(paint::color(palette.ui_link))
-                    .inner_margin(egui::Margin::symmetric(12, 4)),
+                    .inner_margin(egui::Margin::symmetric(12, 3)),
             )
             .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(i18n::t_fmt(
-                        "updateAvailable",
-                        &[("version", version.as_str())],
-                    ))
-                    .size(12.0)
-                    .color(egui::Color32::WHITE),
-                );
+                ui.horizontal_centered(|ui| {
+                    ui.label(
+                        egui::RichText::new(i18n::t_fmt(
+                            "updateAvailable",
+                            &[("version", version.as_str())],
+                        ))
+                        .size(12.0)
+                        .color(egui::Color32::WHITE),
+                    );
+                    ui.add_space(8.0);
+                    let download_btn = egui::Button::new(
+                        egui::RichText::new(i18n::t("updateDownload"))
+                            .size(11.0)
+                            .strong()
+                            .color(egui::Color32::WHITE),
+                    )
+                    .fill(egui::Color32::from_white_alpha(38))
+                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(128)))
+                    .corner_radius(egui::CornerRadius::same(2));
+                    let response = ui.add(download_btn);
+                    mark_layout(ui, "update-download", response.rect);
+                    if response.clicked() {
+                        let url = format!(
+                            "https://github.com/claudioscheer/graphe/releases/tag/v{version}"
+                        );
+                        let _ = open::that(url);
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_btn = egui::Button::new(
+                            egui::RichText::new("×")
+                                .size(16.0)
+                                .color(egui::Color32::from_white_alpha(200)),
+                        )
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::NONE);
+                        let close_resp = ui.add(close_btn);
+                        mark_layout(ui, "update-close", close_resp.rect);
+                        if close_resp.clicked() {
+                            dismiss = true;
+                        }
+                    });
+                });
             });
+        if dismiss {
+            if let Ok(mut notice) = self.update_notice.lock() {
+                *notice = None;
+            }
+        }
     }
 
     pub(crate) fn top_strip(&mut self, ctx: &egui::Context, palette: &UiPalette) {
@@ -1158,6 +1199,10 @@ pub(crate) fn mark_layout(ui: &egui::Ui, key: &str, rect: egui::Rect) {
         data.insert_temp(id, marks);
     });
 }
+
+#[cfg(not(test))]
+#[inline(always)]
+pub(crate) fn mark_layout(_ui: &egui::Ui, _key: &str, _rect: egui::Rect) {}
 
 fn place_text(book: i64, chapter: i64) -> String {
     format!("{} {}", i18n::book_name(book).short, chapter)
