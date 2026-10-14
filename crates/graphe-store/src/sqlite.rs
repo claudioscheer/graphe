@@ -30,7 +30,7 @@ pub struct InfoUpdate {
     pub inserted: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TableAvailability {
     pub info: bool,
     pub books: bool,
@@ -853,6 +853,18 @@ pub fn write_commentary_text(
 ) -> Result<(), String> {
     let db = Connection::open(path).map_err(|err| err.to_string())?;
     update_commentary_text(&db, book, chapter, verse_from, text).map_err(|err| err.to_string())
+}
+
+pub fn tables_in_file(path: &Path) -> TableAvailability {
+    open_read(path)
+        .map(|db| table_availability(&db))
+        .unwrap_or_default()
+}
+
+/// Creates a SQLite module file. The editor tests use it to build a fixture.
+pub fn init_module_sql(path: &Path, sql: &str) -> Result<(), String> {
+    let db = Connection::open(path).map_err(|err| err.to_string())?;
+    db.execute_batch(sql).map_err(|err| err.to_string())
 }
 
 pub fn table_availability(db: &Connection) -> TableAvailability {

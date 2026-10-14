@@ -1,6 +1,6 @@
 //! Settings, navigation, conversion, module editor, and preview windows.
 
-use crate::app::{language_button, GrapheApp};
+use crate::app::{language_button, EditorTab, GrapheApp};
 use crate::dropdown::ModuleDropdown;
 use crate::paint;
 use crate::session::Dialog;
@@ -65,13 +65,15 @@ impl GrapheApp {
         self.session.dialog = Dialog::None;
         self.nav = None;
         self.picker = None;
+        self.editor.loaded = None;
     }
 
     fn dialog_width(&self) -> f32 {
         match self.session.dialog {
             Dialog::About => 380.0,
             Dialog::Settings | Dialog::Convert | Dialog::Picker => 520.0,
-            Dialog::Navigation | Dialog::ModuleEditor => 560.0,
+            Dialog::Navigation => 560.0,
+            Dialog::ModuleEditor => 920.0,
             Dialog::Coverage => 620.0,
             Dialog::Preview | Dialog::AllCommentaries => 720.0,
             Dialog::None => 520.0,
@@ -84,9 +86,7 @@ impl GrapheApp {
             Dialog::About => self.about_card(ui),
             Dialog::Navigation => self.navigation_body(ui),
             Dialog::Convert => self.convert_card(ui),
-            Dialog::ModuleEditor => self.titled_card(ui, &i18n::t("editModuleData"), |app, ui| {
-                app.editor_body(ui);
-            }),
+            Dialog::ModuleEditor => self.module_editor_card(ui),
             Dialog::Preview => {
                 let title = if self.session.preview_title.is_empty() {
                     i18n::t("crossReferences")
@@ -100,11 +100,11 @@ impl GrapheApp {
             }
             Dialog::AllCommentaries => {
                 let title = commentaries_title(&self.session.commentary_ref);
-                self.titled_card(ui, &title, |app, ui| app.commentaries_body(ui))
+                self.growing_card(ui, &title, |app, ui| app.commentaries_body(ui))
             }
             Dialog::Coverage => {
                 let title = i18n::t("commentaryCoverage");
-                self.titled_card(ui, &title, |app, ui| app.coverage_body(ui))
+                self.growing_card(ui, &title, |app, ui| app.coverage_body(ui))
             }
             Dialog::Picker => {
                 let title = i18n::t("workbenchModules");
@@ -123,6 +123,31 @@ impl GrapheApp {
         let dismiss = self.header_bar(ui, title, true);
         let max_h = max_body(ui, 70.0);
         modal_scroll(ui, "titled", max_h, |ui| body(self, ui));
+        dismiss
+    }
+
+    /// Grow the card to its content, up to a margin from the screen edges.
+    /// The modal otherwise keeps the short first-frame height, because its
+    /// area size is whatever the scroll box used last frame. A very small
+    /// screen still scrolls.
+    fn growing_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        title: &str,
+        body: impl FnOnce(&mut Self, &mut egui::Ui),
+    ) -> bool {
+        let dismiss = self.header_bar(ui, title, true);
+        let chrome = ui.min_rect().height();
+        let max_h = commentary_body_limit(ui.ctx().content_rect().height(), chrome);
+        let output = modal_scroll(ui, "titled", max_h, |ui| body(self, ui));
+        let shown = output.viewport.height();
+        let wanted = output.content_height.min(max_h);
+        if wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.viewport.top() + wanted);
+            ui.ctx().request_repaint();
+        }
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "modal-scroll", output.viewport);
         dismiss
     }
 
@@ -716,146 +741,753 @@ impl GrapheApp {
         }
     }
 
-    fn editor_body(&mut self, ui: &mut egui::Ui) {
+    fn module_editor_card(&mut self, ui: &mut egui::Ui) -> bool {
         if self.editor_path.is_none() {
             self.editor_path = self.modules.first().map(|module| module.path.clone());
         }
-        let current_id = self.editor_path.as_ref().and_then(|path| {
-            self.modules
-                .iter()
-                .find(|m| &m.path == path)
-                .map(|m| m.id.as_str())
+        self.load_editor();
+        let subtitle = module_kind_label(&self.editor_kind());
+        let dismiss = self.editor_header(ui, &subtitle);
+        let deleted = self.editor_toolbar(ui);
+        self.editor_tabs(ui);
+        let chrome = ui.min_rect().height() + 36.0;
+        let max_h = commentary_body_limit(ui.ctx().content_rect().height(), chrome);
+        let output = modal_scroll(ui, "editor", max_h, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            self.editor_tab_body(ui);
         });
-        let palette = graphe_domain::theme::palette(self.session.dark);
-        let dropdown =
-            ModuleDropdown::from_all_installed("editor-module", current_id, &self.modules)
-                .show_favorites(false)
-                .width(ui.available_width().min(420.0));
-
-        if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
-            if let Some(module) = self.modules.iter().find(|m| m.id == id) {
-                self.editor_path = Some(module.path.clone());
-                self.editor_armed = false;
-            }
+        let shown = output.viewport.height();
+        let wanted = output.content_height.min(max_h);
+        if wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.viewport.top() + wanted);
+            ui.ctx().request_repaint();
         }
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "modal-scroll", output.viewport);
+        self.editor_status_line(ui);
+        dismiss || deleted
+    }
+
+    fn editor_kind(&self) -> String {
+        self.editor_path
+            .as_ref()
+            .and_then(|path| {
+                self.modules
+                    .iter()
+                    .find(|module| &module.path == path)
+                    .map(|module| module.kind.clone())
+            })
+            .unwrap_or_default()
+    }
+
+    fn load_editor(&mut self) {
         let Some(path) = self.editor_path.clone() else {
-            ui.label(i18n::t("noModules"));
+            self.editor.loaded = None;
             return;
         };
-        ui.separator();
-        ui.label("info");
-        for (name, value) in sqlite::info_in_file(&path) {
-            if ui.button(format!("{name} = {value}")).clicked() {
-                self.editor_info_name = name;
-                self.editor_info_value = value;
-            }
+        if self.editor.loaded.as_ref() == Some(&path) {
+            return;
         }
-        ui.text_edit_singleline(&mut self.editor_info_name);
-        ui.text_edit_singleline(&mut self.editor_info_value);
-        if ui.button("info").clicked() {
-            self.session.status =
-                sqlite::write_info(&path, &self.editor_info_name, &self.editor_info_value)
-                    .err()
-                    .unwrap_or_default();
-            self.reload_modules();
-        }
-        ui.separator();
-        ui.label(i18n::book_name(self.editor_book.parse().unwrap_or(10)).long);
-        for book in sqlite::editable_books_in_file(&path) {
-            let label = format!(
-                "{} {} {}",
-                book.book_number,
-                book.short_name.clone().unwrap_or_default(),
-                book.long_name.clone().unwrap_or_default()
-            );
-            if ui.button(label).clicked() {
-                self.editor_book = book.book_number.to_string();
-                self.editor_short = book.short_name.unwrap_or_default();
-                self.editor_long = book.long_name.unwrap_or_default();
-            }
-        }
-        ui.text_edit_singleline(&mut self.editor_book);
-        ui.text_edit_singleline(&mut self.editor_short);
-        ui.text_edit_singleline(&mut self.editor_long);
-        if ui.button(i18n::t("commentarySyncBiblePrefix")).clicked() {
-            if let Ok(book) = self.editor_book.parse::<i64>() {
-                self.session.status = sqlite::write_book_names(
-                    &path,
-                    book,
-                    Some(&self.editor_short),
-                    Some(&self.editor_long),
-                )
-                .err()
-                .unwrap_or_default();
-            }
-        }
-        ui.separator();
-        ui.text_edit_singleline(&mut self.editor_chapter);
-        ui.text_edit_singleline(&mut self.editor_verse);
-        ui.text_edit_multiline(&mut self.editor_text);
-        if ui.button(i18n::t("search")).clicked() {
-            if let (Ok(book), Ok(chapter), Ok(verse)) = (
-                self.editor_book.parse::<i64>(),
-                self.editor_chapter.parse::<i64>(),
-                self.editor_verse.parse::<i64>(),
-            ) {
-                if let Some(record) = sqlite::chapter_in_file(&path, book, chapter)
-                    .into_iter()
-                    .find(|row| row.verse == verse)
-                {
-                    self.editor_text = record.text;
-                } else if let Some(entry) = sqlite::commentary_in_file(&path, book, chapter)
-                    .into_iter()
-                    .find(|entry| entry.verse_from == verse)
-                {
-                    self.editor_text = entry.text;
-                }
-            }
-        }
-        if ui.button("verse").clicked() {
-            if let (Ok(book), Ok(chapter), Ok(verse)) = (
-                self.editor_book.parse::<i64>(),
-                self.editor_chapter.parse::<i64>(),
-                self.editor_verse.parse::<i64>(),
-            ) {
-                self.session.status =
-                    sqlite::write_verse_text(&path, book, chapter, verse, &self.editor_text)
-                        .err()
-                        .unwrap_or_default();
-                self.reading.clear();
-                self.loaded_key.clear();
-            }
-        }
-        if ui.button(i18n::t("commentary")).clicked() {
-            if let (Ok(book), Ok(chapter), Ok(verse)) = (
-                self.editor_book.parse::<i64>(),
-                self.editor_chapter.parse::<i64>(),
-                self.editor_verse.parse::<i64>(),
-            ) {
-                self.session.status =
-                    sqlite::write_commentary_text(&path, book, chapter, verse, &self.editor_text)
-                        .err()
-                        .unwrap_or_default();
-                self.reading.clear();
-            }
-        }
-        let delete_label = if self.editor_armed {
-            i18n::t("editModuleData")
-        } else {
-            "Delete".into()
+        let rows = sqlite::info_in_file(&path);
+        let value = |name: &str| -> String {
+            rows.iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, item)| item.clone())
+                .unwrap_or_default()
         };
-        if ui.button(delete_label).clicked() {
-            if self.editor_armed {
-                if graphe_store::catalog::delete_module(&path).is_ok() {
-                    self.editor_path = None;
-                    self.editor_armed = false;
-                    self.reload_modules();
-                    self.session.dialog = Dialog::None;
-                }
-            } else {
-                self.editor_armed = true;
+        self.editor.description = value("description");
+        self.editor.language = value("language");
+        if rows.iter().any(|(key, _)| key == "short.title") {
+            self.editor.short_key = "short.title".into();
+            self.editor.short_title = value("short.title");
+        } else if rows.iter().any(|(key, _)| key == "short_title") {
+            self.editor.short_key = "short_title".into();
+            self.editor.short_title = value("short_title");
+        } else {
+            self.editor.short_key = "short.title".into();
+            self.editor.short_title.clear();
+        }
+        self.editor.strong = value("strong_numbers").eq_ignore_ascii_case("true");
+        self.editor.extras = rows
+            .into_iter()
+            .filter(|(key, _)| !known_info_key(key))
+            .collect();
+        self.editor.tables = sqlite::tables_in_file(&path);
+        self.editor.books = sqlite::editable_books_in_file(&path);
+        if self.editor.books.is_empty() && self.editor.tables.verses {
+            self.editor.books = sqlite::chapter_spans_in_file(&path)
+                .into_iter()
+                .map(|(book_number, _)| sqlite::EditableBook {
+                    book_number,
+                    short_name: None,
+                    long_name: None,
+                    title: None,
+                    is_present: 1,
+                    source_table: "verses",
+                })
+                .collect();
+        }
+        if self
+            .editor
+            .books
+            .iter()
+            .all(|book| book.book_number.to_string() != self.editor.book)
+        {
+            if let Some(book) = self.editor.books.first() {
+                self.editor.book = book.book_number.to_string();
             }
         }
+        self.hydrate_book_names();
+        self.editor.verse_cache_key.clear();
+        self.editor.passage_key.clear();
+        self.editor.loaded = Some(path);
+        self.editor.armed = false;
+        self.editor.status.clear();
+        self.editor.status_ok = true;
+        let tabs = self.editor_tabs_available();
+        if !tabs.contains(&self.editor.tab) {
+            self.editor.tab = tabs.first().copied().unwrap_or(EditorTab::Info);
+        }
+    }
+
+    fn editor_tabs_available(&self) -> Vec<EditorTab> {
+        let mut tabs = Vec::new();
+        if self.editor.tables.info {
+            tabs.push(EditorTab::Info);
+        }
+        if self.editor.tables.books || self.editor.tables.books_all {
+            tabs.push(EditorTab::Books);
+        }
+        if self.editor.tables.verses {
+            tabs.push(EditorTab::Verses);
+        }
+        if self.editor.tables.commentaries {
+            tabs.push(EditorTab::Commentaries);
+        }
+        tabs
+    }
+
+    fn hydrate_book_names(&mut self) {
+        let names = self
+            .editor
+            .books
+            .iter()
+            .find(|book| book.book_number.to_string() == self.editor.book)
+            .map(|book| {
+                (
+                    book.short_name.clone().unwrap_or_default(),
+                    book.long_name.clone().unwrap_or_default(),
+                )
+            });
+        if let Some((short_name, long_name)) = names {
+            self.editor.short_name = short_name;
+            self.editor.long_name = long_name;
+        }
+    }
+
+    fn editor_header(&self, ui: &mut egui::Ui, subtitle: &str) -> bool {
+        let palette = theme::palette(self.session.dark);
+        let text = paint::color(palette.ui_text);
+        let subtle = paint::color(palette.ui_text_subtle);
+        let border = hairline(self.session.dark, palette);
+        let width = ui.available_width();
+        let height = if subtitle.is_empty() { 57.0 } else { 72.0 };
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let title = fit_title(
+            ui,
+            &i18n::t("editModuleData"),
+            (rect.width() - 64.0).max(40.0),
+            text,
+        );
+        let title_galley =
+            ui.painter()
+                .layout_no_wrap(title, egui::FontId::proportional(18.0), text);
+        let title_y = if subtitle.is_empty() {
+            rect.center().y - title_galley.rect.height() / 2.0
+        } else {
+            rect.top() + 14.0
+        };
+        ui.painter()
+            .galley(egui::pos2(rect.left() + 16.0, title_y), title_galley, text);
+        if !subtitle.is_empty() {
+            let sub = ui.painter().layout_no_wrap(
+                subtitle.to_string(),
+                egui::FontId::proportional(13.0),
+                subtle,
+            );
+            ui.painter().galley(
+                egui::pos2(rect.left() + 16.0, rect.bottom() - 12.0 - sub.rect.height()),
+                sub,
+                subtle,
+            );
+        }
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            egui::Stroke::new(1.0_f32, border),
+        );
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "modal-header", rect);
+        self.modal_close_button(ui, rect)
+    }
+
+    fn editor_toolbar(&mut self, ui: &mut egui::Ui) -> bool {
+        let palette = theme::palette(self.session.dark);
+        let dark = self.session.dark;
+        let width = ui.available_width();
+        let mut deleted = false;
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(16, 12))
+            .show(ui, |ui| {
+                ui.set_min_width((width - 32.0).max(0.0));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let delete_label = if self.editor.armed {
+                        i18n::t("confirmDeleteModule")
+                    } else {
+                        i18n::t("deleteModule")
+                    };
+                    let delete_w = delete_button_width(ui, &delete_label);
+                    let dropdown_w = (ui.available_width() - delete_w - 80.0).clamp(160.0, 360.0);
+                    let current_owned = self.editor_path.as_ref().and_then(|path| {
+                        self.modules
+                            .iter()
+                            .find(|module| &module.path == path)
+                            .map(|module| module.id.clone())
+                    });
+                    let dropdown = ModuleDropdown::from_all_installed(
+                        "editor-module",
+                        current_owned.as_deref(),
+                        &self.modules,
+                    )
+                    .show_favorites(false)
+                    .width(dropdown_w);
+                    if let Some(id) = dropdown.show(ui, &mut self.store, palette, dark) {
+                        if let Some(module) = self.modules.iter().find(|module| module.id == id) {
+                            if self.editor_path.as_ref() != Some(&module.path) {
+                                self.editor_path = Some(module.path.clone());
+                                self.editor.loaded = None;
+                                self.editor.armed = false;
+                                self.load_editor();
+                            }
+                        }
+                    }
+                    let path_w = (ui.available_width() - delete_w - 10.0).max(24.0);
+                    self.editor_path_label(ui, path_w);
+                    if delete_module_button(ui, &delete_label).clicked() {
+                        deleted = self.confirm_delete_module();
+                    }
+                });
+            });
+        editor_rule(ui, dark);
+        deleted
+    }
+
+    fn editor_path_label(&self, ui: &mut egui::Ui, width: f32) {
+        let palette = theme::palette(self.session.dark);
+        let color = paint::color(palette.ui_text_subtle);
+        let path = self
+            .editor_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::hover());
+        let font = egui::FontId::proportional(12.0);
+        let shown = ellipsize_start(
+            ui,
+            &path,
+            (rect.width() - 4.0).max(0.0),
+            font.clone(),
+            color,
+        );
+        let galley = ui.painter().layout_no_wrap(shown, font, color);
+        ui.painter().galley(
+            egui::pos2(rect.left(), rect.center().y - galley.rect.height() / 2.0),
+            galley,
+            color,
+        );
+        if !path.is_empty() {
+            let _ = response.on_hover_text(path);
+        }
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "editor-path", rect);
+    }
+
+    fn confirm_delete_module(&mut self) -> bool {
+        if !self.editor.armed {
+            self.editor.armed = true;
+            return false;
+        }
+        let Some(path) = self.editor_path.clone() else {
+            return false;
+        };
+        if graphe_store::catalog::delete_module(&path).is_ok() {
+            self.editor_path = None;
+            self.editor = crate::app::ModuleEditorForm::default();
+            self.reload_modules();
+            self.session.dialog = Dialog::None;
+            true
+        } else {
+            self.editor.status = i18n::t("saveFailed");
+            self.editor.status_ok = false;
+            self.editor.armed = false;
+            false
+        }
+    }
+
+    fn editor_tabs(&mut self, ui: &mut egui::Ui) {
+        let tabs = self.editor_tabs_available();
+        if tabs.is_empty() {
+            return;
+        }
+        let dark = self.session.dark;
+        let width = ui.available_width();
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(16, 10))
+            .show(ui, |ui| {
+                ui.set_min_width((width - 32.0).max(0.0));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for tab in tabs {
+                        let active = self.editor.tab == tab;
+                        if tab_button(ui, dark, &editor_tab_label(tab), active).clicked() {
+                            self.editor.tab = tab;
+                        }
+                    }
+                });
+            });
+        editor_rule(ui, dark);
+    }
+
+    fn editor_tab_body(&mut self, ui: &mut egui::Ui) {
+        if self.editor_path.is_none() {
+            ui.label(i18n::t("noModules"));
+            return;
+        }
+        if self.editor_tabs_available().is_empty() {
+            ui.label(i18n::t("moduleNothing"));
+            return;
+        }
+        match self.editor.tab {
+            EditorTab::Info => self.editor_info_tab(ui),
+            EditorTab::Books => self.editor_books_tab(ui),
+            EditorTab::Verses => self.editor_verses_tab(ui),
+            EditorTab::Commentaries => self.editor_commentaries_tab(ui),
+        }
+    }
+
+    fn editor_info_tab(&mut self, ui: &mut egui::Ui) {
+        let dark = self.session.dark;
+        form_label(ui, dark, &i18n::t("moduleDescription"));
+        form_area(ui, &mut self.editor.description, 4, "editor-description");
+        ui.add_space(6.0);
+        form_label(ui, dark, &i18n::t("moduleLanguage"));
+        form_line(ui, &mut self.editor.language, "editor-language");
+        ui.add_space(6.0);
+        form_label(ui, dark, &i18n::t("moduleShortTitle"));
+        form_line(ui, &mut self.editor.short_title, "editor-short-title");
+        ui.add_space(6.0);
+        let count = self.editor.extras.len();
+        for index in 0..count {
+            let label = info_field_label(&self.editor.extras[index].0);
+            let mark = format!("editor-extra:{}", self.editor.extras[index].0);
+            form_label(ui, dark, &label);
+            form_line(ui, &mut self.editor.extras[index].1, &mark);
+            ui.add_space(6.0);
+        }
+        ui.add_space(4.0);
+        let strong = self.editor.strong;
+        if self.check_option(ui, strong, &i18n::t("moduleStrongNumbers"), None) {
+            self.editor.strong = !strong;
+        }
+        ui.add_space(10.0);
+        if fill_button(ui, dark, &i18n::t("saveInfo"), "editor-save").clicked() {
+            self.save_module_editor_info();
+        }
+    }
+
+    pub(crate) fn save_module_editor_info(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let mut rows = vec![
+            ("description".to_string(), self.editor.description.clone()),
+            ("language".to_string(), self.editor.language.clone()),
+            (
+                self.editor.short_key.clone(),
+                self.editor.short_title.clone(),
+            ),
+            (
+                "strong_numbers".to_string(),
+                if self.editor.strong {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                },
+            ),
+        ];
+        rows.extend(self.editor.extras.iter().cloned());
+        for (name, value) in &rows {
+            if let Err(err) = sqlite::write_info(&path, name, value) {
+                self.note_editor_result(Err(err), "");
+                return;
+            }
+        }
+        self.note_editor_result(Ok(()), &i18n::t("savedModuleInfo"));
+        self.reload_modules();
+    }
+
+    fn editor_books_tab(&mut self, ui: &mut egui::Ui) {
+        let dark = self.session.dark;
+        if self.editor.books.is_empty() {
+            ui.label(i18n::t("noEditableBooks"));
+            return;
+        }
+        self.book_select(ui, "editor-book");
+        form_label(ui, dark, &i18n::t("moduleShortName"));
+        form_line(ui, &mut self.editor.short_name, "editor-short-name");
+        ui.add_space(6.0);
+        form_label(ui, dark, &i18n::t("moduleLongName"));
+        form_line(ui, &mut self.editor.long_name, "editor-long-name");
+        ui.add_space(10.0);
+        if fill_button(ui, dark, &i18n::t("saveBook"), "editor-save-book").clicked() {
+            self.save_editor_book();
+        }
+    }
+
+    fn save_editor_book(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let Ok(book) = self.editor.book.parse::<i64>() else {
+            self.editor.status = i18n::t("selectBookFirst");
+            self.editor.status_ok = false;
+            return;
+        };
+        let result = sqlite::write_book_names(
+            &path,
+            book,
+            Some(&self.editor.short_name),
+            Some(&self.editor.long_name),
+        );
+        if result.is_ok() {
+            if let Some(row) = self
+                .editor
+                .books
+                .iter_mut()
+                .find(|row| row.book_number == book)
+            {
+                row.short_name = Some(self.editor.short_name.clone());
+                row.long_name = Some(self.editor.long_name.clone());
+            }
+        }
+        self.note_editor_result(result, &i18n::t("savedBook"));
+    }
+
+    fn editor_verses_tab(&mut self, ui: &mut egui::Ui) {
+        let dark = self.session.dark;
+        if self.editor.books.is_empty() {
+            ui.label(i18n::t("noBooksFound"));
+            return;
+        }
+        if self.book_select(ui, "editor-verse-book") {
+            self.editor.verse_cache_key.clear();
+            self.editor.passage_key.clear();
+        }
+        self.refresh_editor_verses();
+        let chapters: Vec<(String, String)> = (1..=self.editor.chapter_count.max(1))
+            .take(self.editor.chapter_count.max(0) as usize)
+            .map(|chapter| {
+                let label = chapter.to_string();
+                (label.clone(), label)
+            })
+            .collect();
+        let chapter_now = self.editor.chapter.clone();
+        if let Some(chapter) = numbered_select(
+            ui,
+            dark,
+            "editor-chapter",
+            &i18n::t("moduleChapter"),
+            &chapter_now,
+            &chapters,
+        ) {
+            self.editor.chapter = chapter;
+            self.editor.verse_cache_key.clear();
+            self.editor.passage_key.clear();
+            self.refresh_editor_verses();
+        }
+        let verses: Vec<(String, String)> = self
+            .editor
+            .verse_numbers
+            .iter()
+            .map(|verse| {
+                let label = verse.to_string();
+                (label.clone(), label)
+            })
+            .collect();
+        let verse_now = self.editor.verse.clone();
+        if let Some(verse) = numbered_select(
+            ui,
+            dark,
+            "editor-verse",
+            &i18n::t("moduleVerse"),
+            &verse_now,
+            &verses,
+        ) {
+            self.editor.verse = verse;
+            self.editor.passage_key.clear();
+        }
+        self.load_editor_verse();
+        form_label(ui, dark, &i18n::t("moduleText"));
+        form_area(ui, &mut self.editor.verse_text, 8, "editor-verse-text");
+        ui.add_space(10.0);
+        if fill_button(ui, dark, &i18n::t("saveVerse"), "editor-save-verse").clicked() {
+            self.save_editor_verse();
+        }
+    }
+
+    fn refresh_editor_verses(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let book = self.editor.book.parse::<i64>().unwrap_or(0);
+        let chapter = self.editor.chapter.parse::<i64>().unwrap_or(1).max(1);
+        let key = format!("{book}:{chapter}");
+        if self.editor.verse_cache_key == key {
+            return;
+        }
+        self.editor.chapter_count = sqlite::chapter_count_in_file(&path, book);
+        let chapter = if self.editor.chapter_count > 0 {
+            chapter.min(self.editor.chapter_count)
+        } else {
+            chapter
+        };
+        self.editor.chapter = chapter.to_string();
+        self.editor.verse_numbers = sqlite::chapter_in_file(&path, book, chapter)
+            .into_iter()
+            .map(|row| row.verse)
+            .collect();
+        self.editor.verse_cache_key = format!("{book}:{chapter}");
+        if !self
+            .editor
+            .verse_numbers
+            .iter()
+            .any(|verse| verse.to_string() == self.editor.verse)
+        {
+            if let Some(first) = self.editor.verse_numbers.first() {
+                self.editor.verse = first.to_string();
+                self.editor.passage_key.clear();
+            }
+        }
+    }
+
+    fn load_editor_verse(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let Some((book, chapter, verse)) = self.editor_passage() else {
+            return;
+        };
+        let key = format!("{book}:{chapter}:{verse}");
+        if self.editor.passage_key == key {
+            return;
+        }
+        self.editor.passage_key = key;
+        if let Some(record) = sqlite::chapter_in_file(&path, book, chapter)
+            .into_iter()
+            .find(|row| row.verse == verse)
+        {
+            self.editor.verse_text = record.text;
+        } else {
+            self.editor.verse_text.clear();
+        }
+    }
+
+    fn save_editor_verse(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let Some((book, chapter, verse)) = self.editor_passage() else {
+            self.editor.status = i18n::t("choosePassageFirst");
+            self.editor.status_ok = false;
+            return;
+        };
+        let result = sqlite::write_verse_text(&path, book, chapter, verse, &self.editor.verse_text);
+        if result.is_ok() {
+            self.reading.clear();
+            self.loaded_key.clear();
+        }
+        self.note_editor_result(result, &i18n::t("savedVerse"));
+    }
+
+    fn editor_commentaries_tab(&mut self, ui: &mut egui::Ui) {
+        let dark = self.session.dark;
+        if self.editor.books.is_empty() {
+            ui.label(i18n::t("noBooksFound"));
+            return;
+        }
+        self.book_select(ui, "editor-commentary-book");
+        form_label(ui, dark, &i18n::t("moduleChapter"));
+        form_line(ui, &mut self.editor.chapter, "editor-commentary-chapter");
+        ui.add_space(6.0);
+        form_label(ui, dark, &i18n::t("moduleVerseFrom"));
+        form_line(ui, &mut self.editor.verse, "editor-commentary-verse");
+        ui.add_space(6.0);
+        form_label(ui, dark, &i18n::t("moduleText"));
+        form_area(
+            ui,
+            &mut self.editor.commentary_text,
+            8,
+            "editor-commentary-text",
+        );
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            if self
+                .paper_button(ui, &i18n::t("loadCommentary"), PaperButton::Outline)
+                .clicked()
+            {
+                self.load_editor_commentary();
+            }
+            if self
+                .paper_button(ui, &i18n::t("saveCommentary"), PaperButton::Quiet)
+                .clicked()
+            {
+                self.save_editor_commentary();
+            }
+        });
+    }
+
+    fn load_editor_commentary(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let Some((book, chapter, verse)) = self.editor_passage() else {
+            self.editor.status = i18n::t("choosePassageFirst");
+            self.editor.status_ok = false;
+            return;
+        };
+        if let Some(entry) = sqlite::commentary_in_file(&path, book, chapter)
+            .into_iter()
+            .find(|entry| entry.verse_from == verse)
+        {
+            self.editor.commentary_text = entry.text;
+            self.editor.status.clear();
+            self.editor.status_ok = true;
+        } else {
+            self.editor.commentary_text.clear();
+            self.editor.status = i18n::t("moduleEntryMissing");
+            self.editor.status_ok = false;
+        }
+    }
+
+    fn save_editor_commentary(&mut self) {
+        let Some(path) = self.editor_path.clone() else {
+            return;
+        };
+        let Some((book, chapter, verse)) = self.editor_passage() else {
+            self.editor.status = i18n::t("choosePassageFirst");
+            self.editor.status_ok = false;
+            return;
+        };
+        let result = sqlite::write_commentary_text(
+            &path,
+            book,
+            chapter,
+            verse,
+            &self.editor.commentary_text,
+        );
+        if result.is_ok() {
+            self.reading.clear();
+        }
+        self.note_editor_result(result, &i18n::t("savedCommentary"));
+    }
+
+    fn editor_passage(&self) -> Option<(i64, i64, i64)> {
+        Some((
+            self.editor.book.parse().ok()?,
+            self.editor.chapter.parse().ok()?,
+            self.editor.verse.parse().ok()?,
+        ))
+    }
+
+    fn book_select(&mut self, ui: &mut egui::Ui, salt: &str) -> bool {
+        let dark = self.session.dark;
+        let choices: Vec<(String, String)> = self
+            .editor
+            .books
+            .iter()
+            .map(|book| {
+                let short = i18n::book_name(book.book_number).short;
+                (
+                    book.book_number.to_string(),
+                    format!("{short} ({})", book.book_number),
+                )
+            })
+            .collect();
+        let current = self.editor.book.clone();
+        form_label(ui, dark, &i18n::t("moduleBook"));
+        let shown = choices
+            .iter()
+            .find(|(id, _)| id == &current)
+            .map(|(_, text)| text.clone())
+            .unwrap_or(current);
+        let picked = form_select(ui, dark, salt, &shown, &choices);
+        ui.add_space(6.0);
+        if let Some(id) = picked {
+            if id != self.editor.book {
+                self.editor.book = id;
+                self.hydrate_book_names();
+                return true;
+            }
+        }
+        false
+    }
+
+    fn note_editor_result(&mut self, result: Result<(), String>, ok: &str) {
+        match result {
+            Ok(()) => {
+                self.editor.status = ok.to_string();
+                self.editor.status_ok = true;
+            }
+            Err(err) => {
+                self.editor.status = if err.is_empty() {
+                    i18n::t("saveFailed")
+                } else {
+                    err
+                };
+                self.editor.status_ok = false;
+            }
+        }
+    }
+
+    fn editor_status_line(&self, ui: &mut egui::Ui) {
+        let dark = self.session.dark;
+        editor_rule(ui, dark);
+        let width = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::hover());
+        if self.editor.status.is_empty() {
+            return;
+        }
+        let color = if self.editor.status_ok {
+            paint::color(if dark { "#7adf84" } else { "#1d6b2a" })
+        } else {
+            paint::color(if dark { "#f29b9b" } else { "#8d2222" })
+        };
+        let galley = ui.painter().layout_no_wrap(
+            self.editor.status.clone(),
+            egui::FontId::proportional(13.0),
+            color,
+        );
+        ui.painter().galley(
+            egui::pos2(
+                rect.left() + 16.0,
+                rect.center().y - galley.rect.height() / 2.0,
+            ),
+            galley,
+            color,
+        );
     }
 
     fn prepare_modal_ui(&self, ui: &mut egui::Ui) {
@@ -881,6 +1513,7 @@ impl GrapheApp {
             .text_styles
             .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
         let visuals = &mut style.visuals;
+        visuals.clip_rect_margin = 0.0;
         visuals.override_text_color = Some(text);
         visuals.panel_fill = fill;
         visuals.window_fill = fill;
@@ -939,9 +1572,16 @@ impl GrapheApp {
             rect.bottom() - 0.5,
             egui::Stroke::new(1.0_f32, border),
         );
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "modal-header", rect);
         if !show_close {
             return false;
         }
+        self.modal_close_button(ui, rect)
+    }
+
+    fn modal_close_button(&self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
+        let palette = theme::palette(self.session.dark);
         let button = egui::Rect::from_center_size(
             egui::pos2(rect.right() - 28.0, rect.center().y),
             egui::vec2(28.0, 28.0),
@@ -1426,6 +2066,338 @@ impl GrapheApp {
     }
 }
 
+fn module_kind_label(kind: &str) -> String {
+    match kind {
+        "bible" => i18n::t("moduleKindBible"),
+        "commentary" => i18n::t("moduleKindCommentary"),
+        "dictionary" => i18n::t("moduleKindDictionary"),
+        "crossreference" => i18n::t("moduleKindCrossreference"),
+        "" => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn editor_tab_label(tab: EditorTab) -> String {
+    match tab {
+        EditorTab::Info => i18n::t("moduleInfo"),
+        EditorTab::Books => i18n::t("moduleBooks"),
+        EditorTab::Verses => i18n::t("moduleVerses"),
+        EditorTab::Commentaries => i18n::t("commentaries"),
+    }
+}
+
+fn known_info_key(key: &str) -> bool {
+    matches!(
+        key,
+        "description" | "language" | "short.title" | "short_title" | "strong_numbers"
+    )
+}
+
+fn info_field_label(key: &str) -> String {
+    key.replace(['_', '.'], " ")
+}
+
+fn editor_rule(ui: &mut egui::Ui, dark: bool) {
+    let palette = theme::palette(dark);
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1.0_f32, hairline(dark, palette)),
+    );
+}
+
+fn form_label(ui: &mut egui::Ui, dark: bool, text: &str) {
+    let palette = theme::palette(dark);
+    ui.label(
+        egui::RichText::new(text.to_uppercase())
+            .size(12.0)
+            .strong()
+            .color(paint::color(palette.ui_text_muted)),
+    );
+}
+
+fn form_line(ui: &mut egui::Ui, value: &mut String, mark: &str) {
+    let response = ui.add(
+        egui::TextEdit::singleline(value)
+            .desired_width(ui.available_width())
+            .font(egui::FontId::proportional(14.0))
+            .margin(egui::Margin::symmetric(12, 10)),
+    );
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, mark, response.rect);
+    #[cfg(not(test))]
+    let _ = mark;
+}
+
+fn form_area(ui: &mut egui::Ui, value: &mut String, rows: usize, mark: &str) {
+    let response = ui.add(
+        egui::TextEdit::multiline(value)
+            .desired_width(ui.available_width())
+            .desired_rows(rows)
+            .font(egui::FontId::proportional(14.0))
+            .margin(egui::Margin::symmetric(12, 10)),
+    );
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, mark, response.rect);
+    #[cfg(not(test))]
+    let _ = mark;
+}
+
+fn fill_button(ui: &mut egui::Ui, dark: bool, label: &str, mark: &str) -> egui::Response {
+    let palette = theme::palette(dark);
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+    let fill = paint::color(if response.hovered() && !dark {
+        palette.ui_border
+    } else {
+        palette.ui_accent_bg
+    });
+    let ink = paint::color(palette.ui_accent_ink);
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(2),
+        fill,
+        egui::Stroke::NONE,
+        egui::StrokeKind::Inside,
+    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(14.0), ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.rect.width() / 2.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, mark, rect);
+    #[cfg(not(test))]
+    let _ = mark;
+    response
+}
+
+fn delete_button_width(ui: &egui::Ui, label: &str) -> f32 {
+    let probe = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(13.0),
+        egui::Color32::WHITE,
+    );
+    (probe.rect.width() + 24.0).max(128.0)
+}
+
+fn delete_module_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let font = egui::FontId::proportional(13.0);
+    let width = delete_button_width(ui, label);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::click());
+    let fill = paint::color(if response.hovered() {
+        "#731b1b"
+    } else {
+        "#8d2222"
+    });
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(2),
+        fill,
+        egui::Stroke::new(1.0_f32, paint::color("#9f2f2f")),
+        egui::StrokeKind::Inside,
+    );
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_string(), font, egui::Color32::WHITE);
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.rect.width() / 2.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        egui::Color32::WHITE,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, "editor-delete", rect);
+    response
+}
+
+fn tab_button(ui: &mut egui::Ui, dark: bool, label: &str, active: bool) -> egui::Response {
+    let palette = theme::palette(dark);
+    let font = egui::FontId::proportional(13.0);
+    let probe =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), font.clone(), egui::Color32::PLACEHOLDER);
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2((probe.rect.width() + 22.0).max(72.0), 32.0),
+        egui::Sense::click(),
+    );
+    let fill = if active {
+        paint::color(palette.ui_accent_bg)
+    } else {
+        paint::color(if dark {
+            palette.ui_surface_muted
+        } else {
+            palette.ui_accent_bg_soft
+        })
+    };
+    let ink = paint::color(if active {
+        palette.ui_accent_ink
+    } else {
+        palette.ui_text_muted
+    });
+    let stroke = paint::color(if active {
+        palette.ui_border_strong
+    } else {
+        palette.ui_border
+    });
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(2),
+        fill,
+        egui::Stroke::new(1.0_f32, stroke),
+        egui::StrokeKind::Inside,
+    );
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.rect.width() / 2.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
+fn form_select(
+    ui: &mut egui::Ui,
+    dark: bool,
+    salt: &str,
+    label: &str,
+    choices: &[(String, String)],
+) -> Option<String> {
+    let palette = theme::palette(dark);
+    ui.push_id(salt, |ui| {
+        let text = paint::color(palette.ui_text);
+        let width = ui.available_width();
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+        let popup_id = egui::Popup::default_response_id(&response);
+        let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+        let stroke = paint::color(if response.hovered() || open {
+            palette.ui_border_strong
+        } else {
+            palette.ui_border
+        });
+        ui.painter().rect(
+            rect,
+            egui::CornerRadius::same(2),
+            card_fill(dark),
+            egui::Stroke::new(1.0_f32, stroke),
+            egui::StrokeKind::Inside,
+        );
+        let shown =
+            ui.painter()
+                .layout_no_wrap(label.to_string(), egui::FontId::proportional(14.0), text);
+        ui.painter().galley(
+            egui::pos2(
+                rect.left() + 12.0,
+                rect.center().y - shown.rect.height() / 2.0,
+            ),
+            shown,
+            text,
+        );
+        paint::draw_icon(
+            ui.painter(),
+            egui::pos2(rect.right() - 16.0, rect.center().y),
+            paint::color(palette.ui_text_subtle),
+            paint::Icon::ChevronDown,
+        );
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        let mut picked = None;
+        egui::Popup::from_toggle_button_response(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .width(width)
+            .show(|ui| {
+                ui.set_min_width(width);
+                egui::ScrollArea::vertical()
+                    .max_height(240.0)
+                    .show(ui, |ui| {
+                        for (id, text) in choices {
+                            if ui.selectable_label(text == label, text.as_str()).clicked() {
+                                picked = Some(id.clone());
+                                egui::Popup::close_id(ui.ctx(), popup_id);
+                            }
+                        }
+                    });
+            });
+        picked
+    })
+    .inner
+}
+
+fn numbered_select(
+    ui: &mut egui::Ui,
+    dark: bool,
+    salt: &str,
+    title: &str,
+    current: &str,
+    choices: &[(String, String)],
+) -> Option<String> {
+    form_label(ui, dark, title);
+    let shown = choices
+        .iter()
+        .find(|(id, _)| id == current)
+        .map(|(_, text)| text.clone())
+        .unwrap_or_else(|| current.to_string());
+    let picked = form_select(ui, dark, salt, &shown, choices);
+    ui.add_space(6.0);
+    picked.filter(|id| id != current)
+}
+
+fn ellipsize_start(
+    ui: &egui::Ui,
+    text: &str,
+    max_width: f32,
+    font: egui::FontId,
+    color: egui::Color32,
+) -> String {
+    if text.is_empty() || max_width <= 8.0 {
+        return String::new();
+    }
+    let full = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font.clone(), color);
+    if full.rect.width() <= max_width {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut start = 1;
+    while start < chars.len() {
+        let tail: String = chars[start..].iter().collect();
+        let shown = format!("…{tail}");
+        let galley = ui
+            .painter()
+            .layout_no_wrap(shown.clone(), font.clone(), color);
+        if galley.rect.width() <= max_width {
+            return shown;
+        }
+        start += 1;
+    }
+    "…".to_string()
+}
+
 const FONT_STEPS: [f32; 7] = [14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 28.0];
 
 enum PaperButton {
@@ -1469,8 +2441,27 @@ fn max_body(ui: &egui::Ui, chrome: f32) -> f32 {
     (screen * 0.85 - chrome).max(160.0)
 }
 
-fn modal_scroll(ui: &mut egui::Ui, salt: &str, max_h: f32, body: impl FnOnce(&mut egui::Ui)) {
-    egui::ScrollArea::vertical()
+/// Gap kept above and below the all-commentaries card.
+pub(crate) const ALL_COMMENTARIES_SCREEN_MARGIN: f32 = 48.0;
+
+fn commentary_body_limit(screen: f32, chrome: f32) -> f32 {
+    let fitted = (screen - ALL_COMMENTARIES_SCREEN_MARGIN * 2.0 - chrome).max(160.0);
+    let room = (screen - chrome - 8.0).max(0.0);
+    fitted.min(room)
+}
+
+struct ModalScroll {
+    content_height: f32,
+    viewport: egui::Rect,
+}
+
+fn modal_scroll(
+    ui: &mut egui::Ui,
+    salt: &str,
+    max_h: f32,
+    body: impl FnOnce(&mut egui::Ui),
+) -> ModalScroll {
+    let output = egui::ScrollArea::vertical()
         .id_salt(("modal-scroll", salt))
         .max_height(max_h)
         .auto_shrink([false, true])
@@ -1483,6 +2474,10 @@ fn modal_scroll(ui: &mut egui::Ui, salt: &str, max_h: f32, body: impl FnOnce(&mu
                     body(ui);
                 });
         });
+    ModalScroll {
+        content_height: output.content_size.y,
+        viewport: output.inner_rect,
+    }
 }
 
 fn footer_shell(

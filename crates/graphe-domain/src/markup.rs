@@ -125,7 +125,13 @@ fn annotation_from(
     segment: &str,
     original: Option<String>,
     transliteration: Option<String>,
-) -> Option<(Option<String>, Option<String>, Option<String>, Vec<String>, Vec<String>)> {
+) -> Option<(
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<String>,
+)> {
     let mut pronunciation = None;
     let mut glosses = Vec::new();
     let mut references = Vec::new();
@@ -147,10 +153,21 @@ fn annotation_from(
             }
         }
     }
-    if original.is_none() && transliteration.is_none() && pronunciation.is_none() && glosses.is_empty() && references.is_empty() {
+    if original.is_none()
+        && transliteration.is_none()
+        && pronunciation.is_none()
+        && glosses.is_empty()
+        && references.is_empty()
+    {
         return None;
     }
-    Some((original, transliteration, pronunciation, glosses, references))
+    Some((
+        original,
+        transliteration,
+        pronunciation,
+        glosses,
+        references,
+    ))
 }
 
 fn x_body(segment: &str) -> Option<String> {
@@ -176,8 +193,14 @@ fn collect_strongs(segment: &str, prefix: &str) -> Vec<VerseSpan> {
         }
         spans.push(VerseSpan::Strong {
             display,
-            morph: caps.get(1).map(|m| m.as_str().to_string()).filter(|s| !s.is_empty()),
-            lemma: caps.get(2).map(|m| m.as_str().to_string()).filter(|s| !s.is_empty()),
+            morph: caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .filter(|s| !s.is_empty()),
+            lemma: caps
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .filter(|s| !s.is_empty()),
         });
     }
     static WORD: OnceLock<Regex> = OnceLock::new();
@@ -268,12 +291,21 @@ fn push_markup(spans: &mut Vec<VerseSpan>, text: &str, show_strongs: bool, stron
     for caps in strong.captures_iter(&prepared) {
         let whole = caps.get(0).unwrap();
         push_text(spans, &strip_tags(&prepared[last..whole.start()]));
-        let display = strong_display(caps.get(3).map(|m| m.as_str()).unwrap_or(""), strongs_prefix);
+        let display = strong_display(
+            caps.get(3).map(|m| m.as_str()).unwrap_or(""),
+            strongs_prefix,
+        );
         if !display.is_empty() {
             spans.push(VerseSpan::Strong {
                 display,
-                morph: caps.get(1).map(|m| m.as_str().to_string()).filter(|s| !s.is_empty()),
-                lemma: caps.get(2).map(|m| m.as_str().to_string()).filter(|s| !s.is_empty()),
+                morph: caps
+                    .get(1)
+                    .map(|m| m.as_str().to_string())
+                    .filter(|s| !s.is_empty()),
+                lemma: caps
+                    .get(2)
+                    .map(|m| m.as_str().to_string())
+                    .filter(|s| !s.is_empty()),
             });
         }
         last = whole.end();
@@ -377,7 +409,8 @@ mod tests {
 
     #[test]
     fn interlinear_tags_stay_annotations_instead_of_verse_text() {
-        let raw = "<E>Word<e><O>Λόγος<o><T>lógos<t><S>3056</S><X>pr=lo-gos|pbr=word|ln=33.1|gk=3364<x>";
+        let raw =
+            "<E>Word<e><O>Λόγος<o><T>lógos<t><S>3056</S><X>pr=lo-gos|pbr=word|ln=33.1|gk=3364<x>";
         let (spans, _) = verse_spans(raw, true, "G");
         let line = visible_verse_line(raw);
         assert_eq!(line, "Word");

@@ -134,18 +134,44 @@ impl GrapheApp {
         };
         let (book, chapter, _) = self.session.reading_location(pane_id);
         ui.push_id(pane_id, |ui| {
-            self.pane_toolbar(ui, pane_id, palette);
-            let body = egui::vec2(ui.available_width(), ui.available_height().max(0.0));
-            ui.allocate_ui_with_layout(body, egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.set_min_size(body);
+            let pane_rect = ui.max_rect();
+            let toolbar_rect = egui::Rect::from_min_size(
+                pane_rect.min,
+                egui::vec2(pane_rect.width(), crate::chrome::TOOLBAR_HEIGHT),
+            );
+            let body_rect = egui::Rect::from_min_max(
+                egui::pos2(pane_rect.left(), toolbar_rect.bottom()),
+                pane_rect.max,
+            );
+            // Paint the chapter first, clipped to the area under the bar, then
+            // paint the bar. Scrolled text stays underneath the controls.
+            {
+                let mut body = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("pane-body")
+                        .max_rect(body_rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                body.set_min_size(body_rect.size());
+                body.shrink_clip_rect(body_rect);
+                paint::clip_scroll_to_viewport(&mut body);
                 #[cfg(test)]
-                crate::chrome::mark_layout(ui, &format!("body:{pane_id}"), ui.max_rect());
+                crate::chrome::mark_layout(&body, &format!("body:{pane_id}"), body.max_rect());
                 if pane.pane_type == graphe_domain::model::PaneType::Commentary {
-                    self.draw_commentary(ui, pane_id, book, chapter, palette);
+                    self.draw_commentary(&mut body, pane_id, book, chapter, palette);
                 } else {
-                    self.draw_bible(ui, pane_id, book, chapter, palette);
+                    self.draw_bible(&mut body, pane_id, book, chapter, palette);
                 }
-            });
+            }
+            {
+                let mut bar = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("pane-bar")
+                        .max_rect(toolbar_rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                self.pane_toolbar(&mut bar, pane_id, palette);
+            }
         });
     }
 
@@ -320,31 +346,56 @@ impl GrapheApp {
         if refs.is_empty() {
             return;
         }
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            for reference in refs {
-                let label = format!(
-                    "{} {}:{}",
-                    i18n::book_name(reference.book_to).short,
-                    reference.chapter_to,
-                    reference.verse_to_start.unwrap_or(1)
-                );
-                let text = egui::RichText::new(label)
-                    .size(self.session.font_size * 0.55)
-                    .color(paint::color(palette.ui_link));
-                let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-                if response.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                }
-                if response.clicked() {
-                    self.follow_ref(
-                        pane_id,
-                        reference.book_to,
-                        reference.chapter_to,
-                        reference.verse_to_start,
-                    );
-                }
-            }
+        let mut ordered = refs.to_vec();
+        order_cross_refs(&mut ordered);
+        // The verse number keeps the left column. References start where the verse text starts.
+        let width = ui.available_width();
+        let wrap = (width - VERSE_NUM_W).max(32.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(VERSE_NUM_W);
+            ui.allocate_ui_with_layout(
+                egui::vec2(wrap, 0.0),
+                egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
+                |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 2.0);
+                    for reference in &ordered {
+                        let label = format!(
+                            "{} {}:{}",
+                            i18n::book_name(reference.book_to).short,
+                            reference.chapter_to,
+                            reference.verse_to_start.unwrap_or(1)
+                        );
+                        let text = egui::RichText::new(label)
+                            .size(self.session.font_size * 0.55)
+                            .color(paint::color(palette.ui_link));
+                        let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                        #[cfg(test)]
+                        crate::chrome::mark_layout(
+                            ui,
+                            &format!(
+                                "ref:{pane_id}:{}:{}:{}:{}",
+                                reference.verse,
+                                reference.book_to,
+                                reference.chapter_to,
+                                reference.verse_to_start.unwrap_or(1)
+                            ),
+                            response.rect,
+                        );
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if response.clicked() {
+                            self.follow_ref(
+                                pane_id,
+                                reference.book_to,
+                                reference.chapter_to,
+                                reference.verse_to_start,
+                            );
+                        }
+                    }
+                },
+            );
         });
     }
 
@@ -995,6 +1046,18 @@ impl ReadingCache {
         paint
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_cross_refs(
+        &mut self,
+        book: i64,
+        chapter: i64,
+        module_ids: &str,
+        grouped: HashMap<i64, Vec<CrossReference>>,
+    ) {
+        let key = format!("{book}:{chapter}:{module_ids}");
+        self.xrefs.insert(key, Arc::new(grouped));
+    }
+
     pub(crate) fn cross_refs(
         &mut self,
         modules: &[InstalledModule],
@@ -1075,6 +1138,24 @@ fn text_fingerprint(verses: &[(i64, String)], show_strongs: bool, prefix: &str) 
         text.hash(&mut hasher);
     }
     hasher.finish()
+}
+
+/// Canon order, then chapter and verse. The same target is shown once.
+fn order_cross_refs(refs: &mut Vec<CrossReference>) {
+    refs.sort_by_key(|reference| {
+        let canon = graphe_domain::books::graphe_to_tw_book(reference.book_to);
+        let canon = if canon < 0 { i64::MAX } else { canon };
+        (
+            canon,
+            reference.chapter_to,
+            reference.verse_to_start.unwrap_or(0),
+        )
+    });
+    refs.dedup_by(|a, b| {
+        a.book_to == b.book_to
+            && a.chapter_to == b.chapter_to
+            && a.verse_to_start == b.verse_to_start
+    });
 }
 
 fn layout_key(fingerprint: u64, font: f32, text_width: f32, xref_key: &str) -> u64 {
@@ -1218,12 +1299,17 @@ fn verse_layout(
     job.break_on_newline = true;
     let mut chars = 0usize;
     let mut strongs = Vec::new();
+    // A body-sized space was just written, so the next number should not add another.
+    let mut separated = false;
     let body = text_format(font, paint::color(palette.ui_text));
     let strong_fmt = text_format(font * 0.55, paint::color(palette.ui_text_subtle));
     let note_fmt = text_format(font * 0.72, paint::color(palette.ui_text_muted));
-    for span in spans {
+    for (index, span) in spans.iter().enumerate() {
         match span {
-            VerseSpan::Text(text) => push_chars(&mut job, &mut chars, text, body.clone()),
+            VerseSpan::Text(text) => {
+                push_chars(&mut job, &mut chars, text, body.clone());
+                separated = false;
+            }
             VerseSpan::Strong {
                 display,
                 morph,
@@ -1232,7 +1318,13 @@ fn verse_layout(
                 if display.is_empty() {
                     continue;
                 }
-                let label = format!(" {display}");
+                // The number is a smaller face. A space in that face vanishes
+                // into the next word, so the gap after it is a word space.
+                let label = if separated {
+                    display.clone()
+                } else {
+                    format!(" {display}")
+                };
                 let start = chars;
                 push_chars(&mut job, &mut chars, &label, strong_fmt.clone());
                 strongs.push(StrongHit {
@@ -1242,6 +1334,11 @@ fn verse_layout(
                     morph: morph.clone(),
                     lemma: lemma.clone(),
                 });
+                separated = false;
+                if gap_after_strong(spans.get(index + 1)) {
+                    push_chars(&mut job, &mut chars, " ", body.clone());
+                    separated = true;
+                }
             }
             VerseSpan::Annotation {
                 original,
@@ -1270,14 +1367,25 @@ fn verse_layout(
                         note_fmt.clone(),
                     );
                 }
+                separated = false;
             }
             VerseSpan::Footnote(note) => {
                 push_chars(&mut job, &mut chars, &format!(" {note}"), note_fmt.clone());
+                separated = false;
             }
         }
     }
     let galley = ui.painter().layout_job(job);
     VerseLayout { galley, strongs }
+}
+
+/// A word follows the number. Punctuation stays against it: `G4228.`
+fn gap_after_strong(next: Option<&VerseSpan>) -> bool {
+    match next {
+        Some(VerseSpan::Strong { display, .. }) => !display.is_empty(),
+        Some(VerseSpan::Text(text)) => text.chars().next().is_some_and(|ch| ch.is_alphanumeric()),
+        _ => false,
+    }
 }
 
 fn measure_verse_height(
@@ -1369,7 +1477,7 @@ fn link_at<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{rows_prefix, visible_row_span};
+    use super::{rows_prefix, verse_layout, visible_row_span, VerseSpan};
 
     #[test]
     fn row_prefix_sums_only_the_rows_above() {
@@ -1392,5 +1500,106 @@ mod tests {
         let heights = vec![20.0; 3];
         assert_eq!(visible_row_span(&heights, 8.0, 0.0, 40.0), (0, 3));
         assert_eq!(visible_row_span(&[], 0.0, 0.0, 40.0), (0, 0));
+    }
+
+    #[test]
+    fn cross_references_follow_bible_order_without_duplicates() {
+        let mut refs = vec![
+            xref(650, 7, 27),
+            xref(20, 29, 38),
+            xref(40, 28, 24),
+            xref(40, 28, 3),
+            xref(20, 29, 38),
+            xref(470, 1, 1),
+        ];
+        super::order_cross_refs(&mut refs);
+        let order: Vec<_> = refs
+            .iter()
+            .map(|reference| {
+                (
+                    reference.book_to,
+                    reference.chapter_to,
+                    reference.verse_to_start,
+                )
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                (20, 29, Some(38)),
+                (40, 28, Some(3)),
+                (40, 28, Some(24)),
+                (470, 1, Some(1)),
+                (650, 7, Some(27)),
+            ]
+        );
+    }
+
+    fn xref(book: i64, chapter: i64, verse: i64) -> super::CrossReference {
+        super::CrossReference {
+            verse: 1,
+            verse_end: None,
+            book_to: book,
+            chapter_to: chapter,
+            verse_to_start: Some(verse),
+            verse_to_end: None,
+            votes: Some(1),
+        }
+    }
+
+    #[test]
+    fn strong_number_keeps_a_word_space_before_the_next_word() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let spans = vec![
+                    VerseSpan::Text("diante".into()),
+                    strong("G3588"),
+                    strong("G3063"),
+                    VerseSpan::Text("esperando".into()),
+                    strong("G4228"),
+                    VerseSpan::Text(".".into()),
+                ];
+                let palette = graphe_domain::theme::palette(false);
+                let layout = verse_layout(ui, &spans, 480.0, 18.0, &palette);
+                assert_eq!(
+                    layout.galley.job.text,
+                    "diante G3588 G3063 esperando G4228."
+                );
+                let before_number = space_advance(&layout.galley, "diante G3588");
+                let after_number = space_advance(&layout.galley, "G3063 esperando");
+                assert!(
+                    after_number > before_number + 0.5,
+                    "gap after the number is {after_number}, the small face space is {before_number}"
+                );
+            });
+        });
+    }
+
+    fn strong(display: &str) -> VerseSpan {
+        VerseSpan::Strong {
+            display: display.into(),
+            morph: None,
+            lemma: None,
+        }
+    }
+
+    fn space_advance(galley: &egui::Galley, sample: &str) -> f32 {
+        let start = galley
+            .job
+            .text
+            .find(sample)
+            .unwrap_or_else(|| panic!("missing {sample} in {}", galley.job.text));
+        let space_at = start + sample.find(' ').unwrap();
+        let mut index = 0usize;
+        for row in &galley.rows {
+            for glyph in &row.glyphs {
+                if index == space_at {
+                    return glyph.advance_width;
+                }
+                index += 1;
+            }
+        }
+        panic!("no glyph at {space_at}");
     }
 }

@@ -17,7 +17,7 @@ use graphe_domain::theme::UiPalette;
 
 const STRIP_HEIGHT: f32 = 35.0;
 const TAB_HEIGHT: f32 = 33.0;
-const TOOLBAR_HEIGHT: f32 = 44.0;
+pub(crate) const TOOLBAR_HEIGHT: f32 = 44.0;
 
 impl GrapheApp {
     pub(crate) fn update_banner(&mut self, ctx: &egui::Context, palette: &UiPalette) {

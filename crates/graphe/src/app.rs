@@ -94,15 +94,7 @@ pub fn run() -> eframe::Result {
                 chapter_span_cache: HashMap::new(),
                 reading: crate::study::ReadingCache::new(),
                 editor_path: None,
-                editor_info_name: "description".into(),
-                editor_info_value: String::new(),
-                editor_book: "10".into(),
-                editor_short: String::new(),
-                editor_long: String::new(),
-                editor_chapter: "1".into(),
-                editor_verse: "1".into(),
-                editor_text: String::new(),
-                editor_armed: false,
+                editor: ModuleEditorForm::default(),
             }))
         }),
     )
@@ -132,15 +124,73 @@ pub(crate) struct GrapheApp {
     chapter_span_cache: HashMap<String, Vec<ChapterSpan>>,
     pub(crate) reading: crate::study::ReadingCache,
     pub(crate) editor_path: Option<PathBuf>,
-    pub(crate) editor_info_name: String,
-    pub(crate) editor_info_value: String,
-    pub(crate) editor_book: String,
-    pub(crate) editor_short: String,
-    pub(crate) editor_long: String,
-    pub(crate) editor_chapter: String,
-    pub(crate) editor_verse: String,
-    pub(crate) editor_text: String,
-    pub(crate) editor_armed: bool,
+    pub(crate) editor: ModuleEditorForm,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorTab {
+    Info,
+    Books,
+    Verses,
+    Commentaries,
+}
+
+pub(crate) struct ModuleEditorForm {
+    pub(crate) loaded: Option<PathBuf>,
+    pub(crate) tab: EditorTab,
+    pub(crate) tables: sqlite::TableAvailability,
+    pub(crate) books: Vec<sqlite::EditableBook>,
+    pub(crate) description: String,
+    pub(crate) language: String,
+    pub(crate) short_title: String,
+    pub(crate) short_key: String,
+    pub(crate) strong: bool,
+    pub(crate) extras: Vec<(String, String)>,
+    pub(crate) book: String,
+    pub(crate) short_name: String,
+    pub(crate) long_name: String,
+    pub(crate) chapter: String,
+    pub(crate) verse: String,
+    pub(crate) verse_text: String,
+    pub(crate) commentary_text: String,
+    pub(crate) chapter_count: i64,
+    pub(crate) verse_numbers: Vec<i64>,
+    pub(crate) verse_cache_key: String,
+    pub(crate) passage_key: String,
+    pub(crate) status: String,
+    pub(crate) status_ok: bool,
+    pub(crate) armed: bool,
+}
+
+impl Default for ModuleEditorForm {
+    fn default() -> Self {
+        Self {
+            loaded: None,
+            tab: EditorTab::Info,
+            tables: sqlite::TableAvailability::default(),
+            books: Vec::new(),
+            description: String::new(),
+            language: String::new(),
+            short_title: String::new(),
+            short_key: "short.title".into(),
+            strong: false,
+            extras: Vec::new(),
+            book: "10".into(),
+            short_name: String::new(),
+            long_name: String::new(),
+            chapter: "1".into(),
+            verse: "1".into(),
+            verse_text: String::new(),
+            commentary_text: String::new(),
+            chapter_count: 0,
+            verse_numbers: Vec::new(),
+            verse_cache_key: String::new(),
+            passage_key: String::new(),
+            status: String::new(),
+            status_ok: true,
+            armed: false,
+        }
+    }
 }
 
 impl eframe::App for GrapheApp {
@@ -674,15 +724,7 @@ mod tests {
             chapter_span_cache: HashMap::new(),
             reading: crate::study::ReadingCache::new(),
             editor_path: None,
-            editor_info_name: String::new(),
-            editor_info_value: String::new(),
-            editor_book: String::new(),
-            editor_short: String::new(),
-            editor_long: String::new(),
-            editor_chapter: String::new(),
-            editor_verse: String::new(),
-            editor_text: String::new(),
-            editor_armed: false,
+            editor: ModuleEditorForm::default(),
         }
     }
 
@@ -732,14 +774,19 @@ mod tests {
         ctx: &egui::Context,
         app: &mut GrapheApp,
     ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
+        dialog_frame_in(ctx, app, egui::vec2(1200.0, 800.0))
+    }
+
+    fn dialog_frame_in(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        screen: egui::Vec2,
+    ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
         let mut style = (*ctx.style()).clone();
         style.animation_time = 0.0;
         ctx.set_style(style);
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(1200.0, 800.0),
-        ));
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
         let mut marks = Vec::new();
         let output = ctx.run(raw, |ctx| {
             ctx.data_mut(|data| {
@@ -1083,6 +1130,138 @@ mod tests {
         }
     }
 
+    fn dictionary_with_strong_entry() -> GrapheApp {
+        let mut app = bare(Session::from_state(&json!({
+            "workbench": {"activeView": "dictionary"}
+        })));
+        app.session.sidebar = "dictionary".into();
+        app.session.dict_query = "G3063".into();
+        app.session.dict_module_id = Some("strong-pt".into());
+        app.modules = vec![graphe_store::catalog::InstalledModule {
+            id: "strong-pt".into(),
+            name: "Strong-PT - Dicionários BDB, Thayer e TVM".into(),
+            kind: "dictionary".into(),
+            path: std::path::PathBuf::from("Strong PT Dicionarios BDB Thayer e TVM.dictionary"),
+            short_title: None,
+            description: None,
+        }];
+        app.session.dict_entry = Some(
+            [
+                ("lexeme".into(), "λοιπόν".into()),
+                ("transliteration".into(), "loipón".into()),
+                ("pronunciation".into(), "loy-pon'".into()),
+                ("short_definition".into(), String::new()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        app.session.dict_morph_code = Some("A-ASN".into());
+        app.session.dict_morph_lemma = Some("λοιπόν".into());
+        app.session.dict_morph_meaning =
+            Some("Classe: Adjetivo | Caso: Acusativo | Número: Singular | Gênero: Neutro".into());
+        app.session.dict_body = format!(
+            "<p>loipon singular neutro do mesmo que G3062 adv n 1 remanescente o resto {} {}</p>",
+            "palavra ".repeat(40),
+            "X".repeat(2000)
+        );
+        app.session.dict_cognates = vec!["G3062".into(), "G3588".into(), "G2240".into()];
+        app
+    }
+
+    fn show_dictionary_frame(ctx: &egui::Context, app: &mut GrapheApp) -> (f32, f32, f32) {
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1400.0, 900.0),
+        ));
+        let mut central_left = 0.0;
+        let output = ctx.run(raw, |ctx| {
+            let palette = theme::palette(false);
+            app.activity_bar(ctx, palette);
+            app.sidebar(ctx, palette);
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().inner_margin(egui::Margin::ZERO))
+                .show(ctx, |ui| {
+                    central_left = ui.max_rect().left();
+                });
+        });
+        let width = egui::containers::panel::PanelState::load(ctx, egui::Id::new("sidebar"))
+            .map(|state| state.rect.width())
+            .unwrap_or(0.0);
+        let mut meaning_right = 0.0_f32;
+        for clipped in &output.shapes {
+            meaning_right = meaning_right.max(text_right(&clipped.shape, "Gênero: Neutro"));
+        }
+        (width, central_left, meaning_right)
+    }
+
+    fn text_right(shape: &egui::Shape, needle: &str) -> f32 {
+        match shape {
+            egui::Shape::Text(text) if text.galley.job.text.contains(needle) => {
+                text.pos.x + text.galley.rect.right()
+            }
+            egui::Shape::Vec(list) => list
+                .iter()
+                .map(|shape| text_right(shape, needle))
+                .fold(0.0, f32::max),
+            _ => 0.0,
+        }
+    }
+
+    #[test]
+    fn strong_lookup_keeps_the_sidebar_width_and_leaves_no_gap() {
+        let ctx = egui::Context::default();
+        let mut app = dictionary_with_strong_entry();
+        let (width, central_left, meaning_right) = show_dictionary_frame(&ctx, &mut app);
+        let side = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"))
+            .expect("sidebar");
+        assert!(
+            (width - 300.0).abs() < 1.0,
+            "opening a Strong's entry resized the sidebar to {width}"
+        );
+        assert!(
+            (central_left - side.rect.right()).abs() < 1.0,
+            "study pane starts at {central_left}, sidebar ends at {}",
+            side.rect.right()
+        );
+        assert!(
+            meaning_right > side.rect.left() && meaning_right <= side.rect.right() + 1.0,
+            "morphology runs to {meaning_right}, outside sidebar {}",
+            side.rect.right()
+        );
+
+        for wanted in [420.0_f32, 260.0] {
+            ctx.data_mut(|data| {
+                data.insert_persisted(
+                    egui::Id::new("sidebar"),
+                    egui::containers::panel::PanelState {
+                        rect: egui::Rect::from_min_size(
+                            egui::pos2(48.0, 0.0),
+                            egui::vec2(wanted, 900.0),
+                        ),
+                    },
+                );
+            });
+            let (width, central_left, meaning_right) = show_dictionary_frame(&ctx, &mut app);
+            let side = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"))
+                .expect("sidebar");
+            assert!(
+                (width - wanted).abs() < 1.0,
+                "sidebar snapped from {wanted} to {width} while a Strong's entry was open"
+            );
+            assert!(
+                (central_left - side.rect.right()).abs() < 1.0,
+                "gap beside a {wanted}px sidebar: study at {central_left}, sidebar at {}",
+                side.rect.right()
+            );
+            assert!(
+                meaning_right > side.rect.left() && meaning_right <= side.rect.right() + 1.0,
+                "morphology runs to {meaning_right}, outside a {wanted}px sidebar ending at {}",
+                side.rect.right()
+            );
+        }
+    }
+
     fn study_frame(
         ctx: &egui::Context,
         app: &mut GrapheApp,
@@ -1216,11 +1395,143 @@ mod tests {
         );
         let scrolled = study_frame(&ctx, &mut app, 0.4, egui::Modifiers::default(), Vec::new());
         let moved = *mark(&scrolled, &format!("commentary-text:{pane}"));
+        let bar = *mark(&scrolled, &format!("toolbar:{pane}"));
         assert!(
             moved[1] < text[1] - 20.0,
             "wheel scrolls the commentary, y {} -> {}",
             text[1],
             moved[1]
+        );
+        assert!(
+            moved[1] < bar[1],
+            "the commentary galley now starts above the toolbar"
+        );
+        let painted = editor_frame(&ctx, &mut app, 0.5);
+        let clip_top = text_clip_top(&painted, "graça").expect("commentary text");
+        assert!(
+            clip_top + 0.5 >= bar[1] + bar[3],
+            "scrolled commentary paints over the toolbar: clip {clip_top}, bar bottom {}",
+            bar[1] + bar[3]
+        );
+    }
+
+    fn editor_frame(ctx: &egui::Context, app: &mut GrapheApp, time: f64) -> egui::FullOutput {
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.time = Some(time);
+        ctx.run(raw, |ctx| {
+            app.editor(ctx, theme::palette(false));
+        })
+    }
+
+    fn painted_text(output: &egui::FullOutput, exact: &str) -> Option<(egui::Rect, egui::Rect)> {
+        fn walk(
+            shape: &egui::Shape,
+            clip: egui::Rect,
+            exact: &str,
+            found: &mut Option<(egui::Rect, egui::Rect)>,
+        ) {
+            match shape {
+                egui::Shape::Text(text) if text.galley.job.text == exact => {
+                    let rect = egui::Rect::from_min_size(text.pos, text.galley.rect.size());
+                    *found = Some((rect, clip));
+                }
+                egui::Shape::Vec(list) => {
+                    for shape in list {
+                        walk(shape, clip, exact, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut found = None;
+        for clipped in &output.shapes {
+            walk(&clipped.shape, clipped.clip_rect, exact, &mut found);
+        }
+        found
+    }
+
+    fn text_clip_top(output: &egui::FullOutput, needle: &str) -> Option<f32> {
+        let mut top = None;
+        for clipped in &output.shapes {
+            note_text_clip(&clipped.shape, clipped.clip_rect, needle, &mut top);
+        }
+        top
+    }
+
+    fn note_text_clip(shape: &egui::Shape, clip: egui::Rect, needle: &str, top: &mut Option<f32>) {
+        match shape {
+            egui::Shape::Text(text) if text.galley.job.text.contains(needle) => {
+                *top = Some(top.map_or(clip.top(), |seen| seen.min(clip.top())));
+            }
+            egui::Shape::Vec(list) => {
+                for shape in list {
+                    note_text_clip(shape, clip, needle, top);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn ref_to(book: i64, chapter: i64, verse: i64) -> graphe_store::sqlite::CrossReference {
+        graphe_store::sqlite::CrossReference {
+            verse: 1,
+            verse_end: None,
+            book_to: book,
+            chapter_to: chapter,
+            verse_to_start: Some(verse),
+            verse_to_end: None,
+            votes: Some(1),
+        }
+    }
+
+    #[test]
+    fn cross_references_start_at_the_verse_text() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.loaded_key = ":10:1:pane-1".into();
+        app.session.chapter_text = vec![(1, "No princípio criou Deus os céus e a terra.".into())];
+        app.session.xref_modules = vec!["xref".into()];
+        let mut grouped = HashMap::new();
+        grouped.insert(
+            1,
+            vec![
+                ref_to(650, 7, 27),
+                ref_to(20, 29, 38),
+                ref_to(20, 29, 38),
+                ref_to(40, 28, 24),
+                ref_to(40, 28, 3),
+            ],
+        );
+        app.reading.insert_cross_refs(10, 1, "xref", grouped);
+        let marks = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let verse = *mark(&marks, "verse:pane-1:1");
+        let exodus = *mark(&marks, "ref:pane-1:1:20:29:38");
+        let numbers_early = *mark(&marks, "ref:pane-1:1:40:28:3");
+        let numbers_late = *mark(&marks, "ref:pane-1:1:40:28:24");
+        let hebrews = *mark(&marks, "ref:pane-1:1:650:7:27");
+        assert_eq!(
+            marks
+                .iter()
+                .filter(|(key, _)| key == "ref:pane-1:1:20:29:38")
+                .count(),
+            1,
+            "a repeated target is shown once"
+        );
+        assert!(
+            (exodus[0] - (verse[0] + 36.0)).abs() < 2.0,
+            "references start with the verse text, not the verse number: verse {verse:?} ref {exodus:?}"
+        );
+        assert!(
+            exodus[0] < numbers_early[0] && numbers_early[0] < numbers_late[0],
+            "Exodus comes before Numbers, and the earlier verse comes first"
+        );
+        assert!(
+            numbers_late[0] < hebrews[0] || numbers_late[1] < hebrews[1],
+            "Hebrews follows the earlier books"
         );
     }
 
@@ -1317,6 +1628,272 @@ mod tests {
             elapsed.as_millis() < 900,
             "scrolling and ctrl-selecting a long chapter took {} ms",
             elapsed.as_millis()
+        );
+        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let bar = *mark(&marks, "toolbar:pane-1");
+        let painted = editor_frame(&ctx, &mut app, time + 0.1);
+        let clip_top = text_clip_top(&painted, "princípio").expect("verse text");
+        assert!(
+            clip_top + 0.5 >= bar[1] + bar[3],
+            "scrolled chapter paints over the toolbar: clip {clip_top}, bar bottom {}",
+            bar[1] + bar[3]
+        );
+    }
+
+    #[test]
+    fn scrolled_commentary_list_stays_under_the_dialog_header() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::AllCommentaries;
+        app.session.commentary_ref = "Hb 10:1".into();
+        app.session.commentary_sections = (0..8)
+            .map(|index| crate::session::CommentarySection {
+                name: format!("Módulo {index}"),
+                body: "A graça e a verdade vieram por Jesus Cristo. ".repeat(20),
+            })
+            .collect();
+        app.session.commentary_open = vec![true; 8];
+        let (_, settled) = dialog_frame(&ctx, &mut app);
+        let header = *mark(&settled, "modal-header");
+        let card = *mark(&settled, "modal-card");
+        let pointer = egui::pos2(card[0] + card[2] * 0.5, header[1] + header[3] + 80.0);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.time = Some(0.2);
+        raw.events = vec![egui::Event::PointerMoved(pointer)];
+        let _ = ctx.run(raw, |ctx| {
+            app.dialogs(ctx);
+        });
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.time = Some(0.3);
+        raw.events = vec![
+            egui::Event::PointerMoved(pointer),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -400.0),
+                modifiers: egui::Modifiers::default(),
+            },
+        ];
+        let _ = ctx.run(raw, |ctx| {
+            app.dialogs(ctx);
+        });
+        let (output, scrolled) = dialog_frame(&ctx, &mut app);
+        let header = *mark(&scrolled, "modal-header");
+        let clip_top = text_clip_top(&output, "graça").expect("commentary section");
+        assert!(
+            clip_top + 0.5 >= header[1] + header[3],
+            "scrolled commentaries paint over the dialog header: clip {clip_top}, header bottom {}",
+            header[1] + header[3]
+        );
+    }
+
+    #[test]
+    fn all_commentaries_grows_when_a_section_opens_and_stops_at_the_screen_margin() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::AllCommentaries;
+        app.session.commentary_ref = "Hb 10:11".into();
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(12);
+        app.session.commentary_sections = (0..6)
+            .map(|index| crate::session::CommentarySection {
+                name: format!("Módulo {index}"),
+                body: paragraph.clone(),
+            })
+            .collect();
+        app.session.commentary_open = vec![false; 6];
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, collapsed_marks) = dialog_frame(&ctx, &mut app);
+        let collapsed = *mark(&collapsed_marks, "modal-card");
+
+        app.session.commentary_open[0] = true;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, opened_marks) = dialog_frame(&ctx, &mut app);
+        let opened = *mark(&opened_marks, "modal-card");
+        assert!(
+            opened[3] > collapsed[3] + 40.0,
+            "opening a comment grows the card, {} -> {}",
+            collapsed[3],
+            opened[3]
+        );
+
+        app.session.commentary_open = vec![true; 6];
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, full_marks) = dialog_frame(&ctx, &mut app);
+        let full = *mark(&full_marks, "modal-card");
+        let scroll = *mark(&full_marks, "modal-scroll");
+        let margin = crate::dialogs::ALL_COMMENTARIES_SCREEN_MARGIN;
+        let screen = 800.0_f32;
+        let below = screen - (full[1] + full[3]);
+        assert!(
+            (full[1] - margin).abs() < 6.0 && (below - margin).abs() < 6.0,
+            "a full comment list keeps {margin}px of space, top {} bottom {below}, card {full:?}",
+            full[1]
+        );
+        assert!(
+            scroll[3] + 8.0 >= full[3] - mark(&full_marks, "modal-header")[3],
+            "the reading area fills the grown card, scroll {scroll:?} card {full:?}"
+        );
+
+        app.session.commentary_open = vec![false; 6];
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, shut_marks) = dialog_frame(&ctx, &mut app);
+        let shut = *mark(&shut_marks, "modal-card");
+        assert!(
+            (shut[3] - collapsed[3]).abs() < 8.0,
+            "closing the comments returns the card to the list height, {} vs {}",
+            shut[3],
+            collapsed[3]
+        );
+    }
+
+    #[test]
+    fn module_editor_fields_are_labeled_and_fill_the_card() {
+        i18n::set_lang("pt");
+        let path = std::env::temp_dir().join(format!(
+            "graphe-editor-{}-strong.sqlite3",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             INSERT INTO info VALUES ('description', 'Dicionários BDB, Thayer e TVM');
+             INSERT INTO info VALUES ('language', 'pt');
+             INSERT INTO info VALUES ('short.title', 'Strong-PT');
+             INSERT INTO info VALUES ('articles_language', 'pt');
+             INSERT INTO info VALUES ('strong_numbers', 'true');",
+        )
+        .expect("module fixture");
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "strong-pt".into(),
+            name: "Strong-PT - Dicionários BDB, Thayer e TVM".into(),
+            kind: "dictionary".into(),
+            path: path.clone(),
+            short_title: Some("Strong-PT".into()),
+            description: Some("Dicionários BDB, Thayer e TVM".into()),
+        });
+        app.editor_path = Some(path.clone());
+        app.session.dialog = Dialog::ModuleEditor;
+        let ctx = egui::Context::default();
+        let _ = dialog_frame(&ctx, &mut app);
+        let (output, marks) = dialog_frame(&ctx, &mut app);
+        let card = *mark(&marks, "modal-card");
+        let description = *mark(&marks, "editor-description");
+        let language = *mark(&marks, "editor-language");
+        let short_title = *mark(&marks, "editor-short-title");
+        let articles = *mark(&marks, "editor-extra:articles_language");
+        let save = *mark(&marks, "editor-save");
+        let delete = *mark(&marks, "editor-delete");
+        assert!(card[2] > 800.0, "the editor is wide, card {card:?}");
+        assert!(
+            card[3] > 480.0,
+            "the editor grows with the form, card {card:?}"
+        );
+        assert!(
+            card[1] > 8.0 && card[1] + card[3] < 792.0,
+            "the card stays inside the window, card {card:?}"
+        );
+        for field in [description, language, short_title, articles, save] {
+            assert!(
+                (field[0] - description[0]).abs() < 2.0,
+                "fields line up on the left, field {field:?} description {description:?}"
+            );
+            assert!(
+                field[2] > card[2] - 80.0,
+                "fields fill the card, field {field:?} card {card:?}"
+            );
+        }
+        assert!(
+            description[3] > language[3] + 20.0,
+            "description is a text area, {description:?} vs {language:?}"
+        );
+        assert!(
+            language[3] >= 32.0,
+            "a line is a full input, language {language:?}"
+        );
+        assert!(
+            description[1] < language[1]
+                && language[1] < short_title[1]
+                && short_title[1] < articles[1]
+                && articles[1] < save[1]
+        );
+        assert!(delete[0] > description[0], "delete sits on the toolbar");
+        assert!(painted_text(&output, &i18n::t("moduleDescription").to_uppercase()).is_some());
+        assert!(painted_text(&output, &i18n::t("moduleLanguage").to_uppercase()).is_some());
+        assert!(painted_text(&output, &i18n::t("moduleShortTitle").to_uppercase()).is_some());
+        assert!(painted_text(&output, "ARTICLES LANGUAGE").is_some());
+        assert!(painted_text(&output, &i18n::t("moduleKindDictionary")).is_some());
+        assert!(text_clip_top(&output, "articles_language = pt").is_none());
+
+        app.editor.language = "en".into();
+        app.editor.extras[0].1 = "en".into();
+        app.save_module_editor_info();
+        let rows = graphe_store::sqlite::info_in_file(&path);
+        let value = |name: &str| {
+            rows.iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, item)| item.clone())
+        };
+        assert_eq!(value("language").as_deref(), Some("en"));
+        assert_eq!(value("articles_language").as_deref(), Some("en"));
+        assert_eq!(value("short.title").as_deref(), Some("Strong-PT"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn coverage_fits_every_book_and_scrolls_only_on_a_short_screen() {
+        i18n::set_lang("pt");
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: std::path::PathBuf::from("missing.commentaries.SQLite3"),
+            short_title: None,
+            description: None,
+        });
+        app.session.coverage_module_id = Some("notes".into());
+        app.session.dialog = Dialog::Coverage;
+
+        let wide = egui::Context::default();
+        let _ = dialog_frame(&wide, &mut app);
+        let (output, marks) = dialog_frame(&wide, &mut app);
+        let (genesis, genesis_clip) = painted_text(&output, "Gn").expect("Genesis");
+        let (revelation, revelation_clip) = painted_text(&output, "Ap").expect("Revelation");
+        assert!(
+            genesis.top() >= genesis_clip.top() - 1.0
+                && revelation.bottom() <= revelation_clip.bottom() + 1.0,
+            "the coverage grid scrolls on a normal screen: Gn {genesis:?} in {genesis_clip:?}, Ap {revelation:?} in {revelation_clip:?}"
+        );
+        let card = *mark(&marks, "modal-card");
+        let margin = crate::dialogs::ALL_COMMENTARIES_SCREEN_MARGIN;
+        let below = 800.0 - (card[1] + card[3]);
+        assert!(
+            card[1] >= margin - 2.0 && below >= margin - 2.0,
+            "the coverage card keeps space around it, top {} bottom {below}",
+            card[1]
+        );
+
+        let short = egui::Context::default();
+        let _ = dialog_frame_in(&short, &mut app, egui::vec2(1200.0, 320.0));
+        let (output, marks) = dialog_frame_in(&short, &mut app, egui::vec2(1200.0, 320.0));
+        let (revelation, revelation_clip) = painted_text(&output, "Ap").expect("Revelation");
+        assert!(
+            revelation.bottom() > revelation_clip.bottom() + 4.0,
+            "a short screen still scrolls the rest of the canon"
+        );
+        let card = *mark(&marks, "modal-card");
+        assert!(
+            card[1] >= -1.0 && card[1] + card[3] <= 321.0,
+            "the short-screen card stays inside the window, {card:?}"
         );
     }
 }

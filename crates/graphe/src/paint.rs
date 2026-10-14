@@ -23,6 +23,9 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     visuals.panel_fill = color(palette.ui_surface);
     visuals.window_fill = color(palette.ui_bg);
     visuals.extreme_bg_color = color(palette.ui_bg);
+    // egui otherwise lets a scroll area paint a few pixels outside its box,
+    // which draws chapter and commentary text across the bar above it.
+    visuals.clip_rect_margin = 0.0;
     ctx.set_visuals(visuals);
     let mut style = (*ctx.style()).clone();
     style
@@ -38,6 +41,11 @@ pub(crate) fn panel(hex: &str) -> egui::Frame {
     egui::Frame::new()
         .fill(color(hex))
         .inner_margin(egui::Margin::same(8))
+}
+
+/// Stop a scroll area from painting into the fixed bar above it.
+pub(crate) fn clip_scroll_to_viewport(ui: &mut egui::Ui) {
+    ui.visuals_mut().clip_rect_margin = 0.0;
 }
 
 pub(crate) fn color(hex: &str) -> egui::Color32 {

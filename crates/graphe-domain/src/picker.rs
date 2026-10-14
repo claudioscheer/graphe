@@ -303,8 +303,7 @@ impl ModulePicker {
         let rest: Vec<_> = all.iter().filter(|item| !item.3).cloned().collect();
         let mut rows = Vec::new();
         let push_item =
-            |rows: &mut Vec<PickerRow>,
-             item: (String, String, Option<String>, bool, bool)| {
+            |rows: &mut Vec<PickerRow>, item: (String, String, Option<String>, bool, bool)| {
                 rows.push(PickerRow::Item {
                     id: item.0,
                     name: item.1,

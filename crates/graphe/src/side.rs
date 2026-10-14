@@ -29,6 +29,7 @@ impl GrapheApp {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
+                paint::clip_scroll_to_viewport(ui);
                 // Shared by search, dictionary, and modules. 34px, padding 0 8px 0 12px.
                 // Align by font line metrics so all tab titles have identical baseline and cap height.
                 let header_height = 34.0;
@@ -484,8 +485,12 @@ impl GrapheApp {
         let entry = self.session.dict_entry.clone();
         let topic = self.session.dict_query.clone();
 
+        // A wide entry must scroll inside the panel. Growing the scroll area
+        // pushes the study pane and leaves an unpainted gap, and the resize
+        // handle then snaps back to that content width.
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
+            .hscroll(true)
             .max_height(ui.available_height())
             .show(ui, |ui| {
                 egui::Frame::new()
@@ -1071,6 +1076,7 @@ fn morphology_box(ui: &mut egui::Ui, code: &str, lemma: &str, meaning: &str, pal
             bottom: 8,
         });
     let resp = frame.show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 3.0;
         ui.label(
             egui::RichText::new("MORFOLOGIA")
@@ -1078,47 +1084,11 @@ fn morphology_box(ui: &mut egui::Ui, code: &str, lemma: &str, meaning: &str, pal
                 .strong()
                 .color(paint::color(palette.ui_text_subtle)),
         );
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("{}:", i18n::t("dictMorphCode")))
-                    .size(12.0)
-                    .strong()
-                    .color(paint::color(palette.ui_text_muted)),
-            );
-            ui.label(
-                egui::RichText::new(code)
-                    .size(12.0)
-                    .color(paint::color(palette.ui_text)),
-            );
-        });
+        morph_line(ui, &i18n::t("dictMorphCode"), code, palette);
         if !lemma.is_empty() {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{}:", i18n::t("dictMorphLemma")))
-                        .size(12.0)
-                        .strong()
-                        .color(paint::color(palette.ui_text_muted)),
-                );
-                ui.label(
-                    egui::RichText::new(lemma)
-                        .size(12.0)
-                        .color(paint::color(palette.ui_text)),
-                );
-            });
+            morph_line(ui, &i18n::t("dictMorphLemma"), lemma, palette);
         }
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("{}:", i18n::t("dictMorphMeaning")))
-                    .size(12.0)
-                    .strong()
-                    .color(paint::color(palette.ui_text_muted)),
-            );
-            ui.label(
-                egui::RichText::new(meaning)
-                    .size(12.0)
-                    .color(paint::color(palette.ui_text)),
-            );
-        });
+        morph_line(ui, &i18n::t("dictMorphMeaning"), meaning, palette);
     });
     // Draw 2.5px solid left border
     let left_border_x = resp.response.rect.left();
@@ -1129,6 +1099,27 @@ fn morphology_box(ui: &mut egui::Ui, code: &str, lemma: &str, meaning: &str, pal
         ],
         egui::Stroke::new(2.5_f32, paint::color(palette.ui_link)),
     );
+}
+
+/// Label and value on one wrapping line. A non-wrapping row is as wide as the
+/// morphology sentence and drags the sidebar open with it.
+fn morph_line(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
+    let width = ui.available_width().max(1.0);
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = width;
+    let label_fmt = egui::TextFormat {
+        font_id: egui::FontId::proportional(12.0),
+        color: paint::color(palette.ui_text_muted),
+        ..Default::default()
+    };
+    let value_fmt = egui::TextFormat {
+        font_id: egui::FontId::proportional(12.0),
+        color: paint::color(palette.ui_text),
+        ..Default::default()
+    };
+    job.append(&format!("{label}:"), 0.0, label_fmt);
+    job.append(value, 6.0, value_fmt);
+    ui.label(job);
 }
 
 fn draw_marked(

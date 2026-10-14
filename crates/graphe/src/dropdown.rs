@@ -517,7 +517,8 @@ impl<'a> ModuleDropdown<'a> {
 
                     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
 
-                    // 3. Scroll area containing the rows
+                    // 3. Scroll area containing the rows. Keep names under the search field.
+                    paint::clip_scroll_to_viewport(ui);
                     egui::ScrollArea::vertical()
                         .id_salt(popup_id.with("scroll"))
                         .max_height(260.0)

@@ -547,4 +547,3 @@ mod search_query_tests {
         );
     }
 }
-
