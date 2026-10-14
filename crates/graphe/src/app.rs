@@ -842,8 +842,8 @@ mod tests {
             "top and right insets differ: top {top_gap} right {right_gap}"
         );
         assert!(
-            (top_gap - 12.0).abs() < 0.6,
-            "close inset is 12px: top {top_gap} right {right_gap}"
+            (top_gap - 20.0).abs() < 0.6,
+            "close inset is 20px: top {top_gap} right {right_gap}"
         );
         assert!(
             (github[1] - issues[1]).abs() < 1.0,

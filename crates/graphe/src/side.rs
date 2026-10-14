@@ -612,40 +612,52 @@ impl GrapheApp {
                                     &self.session.dict_body,
                                     13.0,
                                     paint::color(palette.ui_text),
+                                    paint::color(if self.session.dark {
+                                        palette.ui_text_subtle
+                                    } else {
+                                        palette.ui_text_muted
+                                    }),
                                     paint::color(palette.ui_link),
                                 );
                             }
 
                             // Cognates
                             if !self.session.dict_cognates.is_empty() {
+                                ui.add_space(10.0);
+                                separator_line(ui, palette.ui_border);
                                 ui.add_space(8.0);
                                 ui.label(
-                                    egui::RichText::new(i18n::t("dictCognates"))
-                                        .size(11.0)
+                                    egui::RichText::new(i18n::t("dictCognates").to_uppercase())
+                                        .size(10.0)
                                         .strong()
-                                        .color(paint::color(palette.ui_text_subtle)),
+                                        .color(paint::color(if self.session.dark {
+                                            palette.ui_text_muted
+                                        } else {
+                                            palette.ui_text_subtle
+                                        })),
                                 );
+                                ui.add_space(6.0);
                                 let cognates = self.session.dict_cognates.clone();
+                                let text_hex = if self.session.dark {
+                                    palette.ui_link_softest
+                                } else {
+                                    palette.ui_link
+                                };
+                                let fill_hex = if self.session.dark {
+                                    palette.ui_link_soft
+                                } else {
+                                    palette.ui_link
+                                };
                                 ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
                                     for cognate in cognates {
-                                        if ui.button(&cognate).clicked() {
+                                        if paint::cognate_chip(ui, &cognate, text_hex, fill_hex)
+                                            .clicked()
+                                        {
                                             self.lookup_dict(&cognate);
                                         }
                                     }
                                 });
-                            }
-
-                            // History links
-                            if !self.session.dict_history.is_empty() {
-                                ui.add_space(10.0);
-                                separator_line(ui, palette.ui_border_soft);
-                                ui.add_space(4.0);
-                                let history = self.session.dict_history.clone();
-                                for item in history {
-                                    if ui.small_button(&item).clicked() {
-                                        self.lookup_dict(&item);
-                                    }
-                                }
                             }
                         } else {
                             ui.label(

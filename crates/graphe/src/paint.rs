@@ -874,28 +874,167 @@ pub(crate) fn show_html(
     html: &str,
     size: f32,
     text: egui::Color32,
-    emphasis: egui::Color32,
+    muted: egui::Color32,
+    link: egui::Color32,
 ) {
     let formatted = graphe_domain::dict::format_definition(html);
-    let mut job = egui::text::LayoutJob::default();
-    let mut bold = false;
-    let mut italic = false;
-    let mut rest = formatted.as_str();
-    let flush = |ui: &mut egui::Ui, job: &mut egui::text::LayoutJob| {
-        if job.is_empty() {
-            return;
+    render_definition(ui, formatted.trim(), size, text, muted, link);
+}
+
+/// Pill for a related Strong's number. Electron uses `.dict-cognate-tag`.
+pub(crate) fn cognate_chip(
+    ui: &mut egui::Ui,
+    label: &str,
+    text_hex: &str,
+    fill_hex: &str,
+) -> egui::Response {
+    let ink = color(text_hex);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(11.0), ink);
+    let width = galley.rect.width() + 16.0;
+    let height = (galley.rect.height() + 4.0).max(18.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let alpha = if response.hovered() { 64 } else { 32 };
+    ui.painter().rect_filled(
+        rect,
+        egui::CornerRadius::same((height / 2.0).ceil() as u8),
+        color_alpha(fill_hex, alpha),
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.rect.width() / 2.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
+fn render_definition(
+    ui: &mut egui::Ui,
+    html: &str,
+    size: f32,
+    text: egui::Color32,
+    muted: egui::Color32,
+    link: egui::Color32,
+) {
+    let mut rest = html;
+    while !rest.is_empty() {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            break;
         }
-        let finished = std::mem::take(job);
-        ui.label(finished);
-    };
+        if rest.starts_with("<div") {
+            if let Some((inner, after)) = element_inner(rest, "div") {
+                render_inline_block(ui, inner, 12.0, muted, link, 0.0);
+                ui.add_space(8.0);
+                rest = after;
+                continue;
+            }
+        }
+        if rest.starts_with("<ol") {
+            if let Some((inner, after)) = element_inner(rest, "ol") {
+                render_items(ui, inner, 0, size, text, link);
+                rest = after;
+                continue;
+            }
+        }
+        render_inline_block(ui, rest, size, text, link, 0.0);
+        break;
+    }
+}
+
+fn render_items(
+    ui: &mut egui::Ui,
+    html: &str,
+    depth: u8,
+    size: f32,
+    text: egui::Color32,
+    link: egui::Color32,
+) {
+    let mut rest = html;
+    while let Some((inner, after)) = next_element(rest, "li") {
+        let (head, nested) = split_before_tag(inner, "<ol");
+        if !head.trim().is_empty() {
+            ui.add_space(if depth == 0 { 6.0 } else { 4.0 });
+            render_inline_block(ui, head, size, text, link, depth as f32 * 16.0);
+        }
+        let mut nested = nested;
+        while let Some(start) = nested.find("<ol") {
+            nested = &nested[start..];
+            let Some((ol_inner, after_ol)) = element_inner(nested, "ol") else {
+                break;
+            };
+            render_items(ui, ol_inner, depth + 1, size, text, link);
+            nested = after_ol;
+        }
+        rest = after;
+    }
+}
+
+fn render_inline_block(
+    ui: &mut egui::Ui,
+    html: &str,
+    size: f32,
+    text: egui::Color32,
+    link: egui::Color32,
+    indent: f32,
+) {
+    let label = definition_label(html);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        if indent > 0.0 {
+            ui.add_space(indent);
+        }
+        let width = ui.available_width();
+        ui.vertical(|ui| {
+            ui.set_width(width);
+            let mut job = egui::text::LayoutJob::default();
+            job.wrap.max_width = width;
+            push_inline_html(&mut job, html, size, text, link);
+            let response = ui.label(job);
+            #[cfg(test)]
+            if let Some(label) = &label {
+                crate::chrome::mark_layout(ui, &format!("dict-item:{label}"), response.rect);
+            }
+        });
+    });
+}
+
+fn definition_label(html: &str) -> Option<String> {
+    let marker = "dict-def-label\">";
+    let start = html.find(marker)? + marker.len();
+    let end = html[start..].find('<')? + start;
+    let label = html[start..end].trim();
+    if label.is_empty() {
+        None
+    } else {
+        Some(label.to_string())
+    }
+}
+
+fn push_inline_html(
+    job: &mut egui::text::LayoutJob,
+    html: &str,
+    size: f32,
+    text: egui::Color32,
+    link: egui::Color32,
+) {
+    let mut rest = html;
+    let mut italic = false;
+    let mut label = false;
+    let mut anchor = false;
     while let Some(start) = rest.find('<') {
         push_html_text(
-            &mut job,
+            job,
             &decode_entities(&rest[..start]),
-            size,
-            text,
-            emphasis,
-            bold,
+            if label { 11.0 } else { size },
+            if label || anchor { link } else { text },
             italic,
         );
         let after = &rest[start + 1..];
@@ -911,39 +1050,94 @@ pub(crate) fn show_html(
             .next()
             .unwrap_or("");
         match name {
-            "b" | "strong" => bold = !closing,
             "i" | "em" => italic = !closing,
             "span" => {
-                if tag.contains("dict-def-label") {
-                    bold = true;
+                if !closing && tag.contains("dict-def-label") {
+                    label = true;
                 } else if closing {
-                    bold = false;
+                    label = false;
                 }
             }
-            "br" | "p" | "div" | "li" | "ol" | "ul" => {
-                if name != "br" && !closing && name != "ol" && name != "ul" {
-                    flush(ui, &mut job);
-                }
-                if closing || name == "br" {
-                    flush(ui, &mut job);
-                }
-                if name == "li" && !closing {
-                    push_html_text(&mut job, "    ", size, text, emphasis, false, false);
-                }
-            }
+            "a" => anchor = !closing,
             _ => {}
         }
     }
     push_html_text(
-        &mut job,
+        job,
         &decode_entities(rest),
-        size,
-        text,
-        emphasis,
-        bold,
+        if label { 11.0 } else { size },
+        if label || anchor { link } else { text },
         italic,
     );
-    flush(ui, &mut job);
+}
+
+fn next_element<'a>(html: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
+    let open = format!("<{name}");
+    let Some(start) = html.find(&open) else {
+        return None;
+    };
+    let boundary = html.as_bytes().get(start + open.len()).copied();
+    if !matches!(boundary, Some(b'>' | b' ' | b'/')) {
+        return None;
+    }
+    element_inner(&html[start..], name).map(|(inner, after)| (inner, after))
+}
+
+fn element_inner<'a>(html: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
+    let open = format!("<{name}");
+    if !html.starts_with(&open) {
+        return None;
+    }
+    let boundary = html.as_bytes().get(open.len()).copied();
+    if !matches!(boundary, Some(b'>' | b' ' | b'/')) {
+        return None;
+    }
+    let gt = html.find('>')?;
+    if html[..gt].ends_with('/') {
+        return Some(("", &html[gt + 1..]));
+    }
+    let close = format!("</{name}>");
+    let mut depth = 1i32;
+    let mut index = gt + 1;
+    while depth > 0 {
+        let next_open = find_open(&html[index..], &open).map(|at| index + at);
+        let next_close = html[index..].find(&close).map(|at| index + at);
+        match (next_open, next_close) {
+            (Some(open_at), Some(close_at)) if open_at < close_at => {
+                depth += 1;
+                index = open_at + open.len();
+            }
+            (_, Some(close_at)) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&html[gt + 1..close_at], &html[close_at + close.len()..]));
+                }
+                index = close_at + close.len();
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn find_open(html: &str, open: &str) -> Option<usize> {
+    let mut from = 0usize;
+    while let Some(at) = html[from..].find(open) {
+        let start = from + at;
+        let boundary = html.as_bytes().get(start + open.len()).copied();
+        if matches!(boundary, Some(b'>' | b' ' | b'/')) {
+            return Some(start);
+        }
+        from = start + open.len();
+    }
+    None
+}
+
+fn split_before_tag<'a>(html: &'a str, tag: &str) -> (&'a str, &'a str) {
+    match html.find(tag) {
+        Some(at) => (&html[..at], &html[at..]),
+        None => (html, ""),
+    }
 }
 
 fn push_html_text(
@@ -951,8 +1145,6 @@ fn push_html_text(
     text: &str,
     size: f32,
     color: egui::Color32,
-    emphasis: egui::Color32,
-    bold: bool,
     italic: bool,
 ) {
     if text.is_empty() {
@@ -964,7 +1156,7 @@ fn push_html_text(
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::proportional(size),
-            color: if bold { emphasis } else { color },
+            color,
             italics: italic,
             ..Default::default()
         },
@@ -991,6 +1183,52 @@ pub(crate) fn unescape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dictionary_senses_indent_like_the_electron_outline() {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(280.0, 600.0),
+        ));
+        let output = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_html(
+                    ui,
+                    "biyn uma raiz 1 discernir 1a qal 1a1 perceber 2 ditat",
+                    13.0,
+                    color("#362f27"),
+                    color("#65543f"),
+                    color("#65543f"),
+                );
+            });
+        });
+        let _ = output;
+        let marks = ctx.data(|data| {
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let top = mark_x(&marks, "dict-item:1");
+        let mid = mark_x(&marks, "dict-item:1a");
+        let deep = mark_x(&marks, "dict-item:1a1");
+        assert!(
+            (mid - top - 16.0).abs() < 1.0,
+            "1a is one step in from 1: {top} {mid}"
+        );
+        assert!(
+            (deep - mid - 16.0).abs() < 1.0,
+            "1a1 is one step in from 1a: {mid} {deep}"
+        );
+    }
+
+    fn mark_x(marks: &[(String, [f32; 4])], key: &str) -> f32 {
+        marks
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, rect)| rect[0])
+            .unwrap_or_else(|| panic!("missing {key} in {marks:?}"))
+    }
 
     #[test]
     fn proportional_font_covers_hebrew_points_and_greek() {

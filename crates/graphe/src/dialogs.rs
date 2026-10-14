@@ -2193,46 +2193,30 @@ impl GrapheApp {
         dismiss
     }
 
-    /// Quiet corner icon. Top and right insets match, and hover only enlarges the mark.
+    /// Same X as the Bible and commentary pane close, set in from the corner.
     fn about_close(&self, ui: &mut egui::Ui, card: egui::Rect) -> bool {
         let palette = theme::palette(self.session.dark);
-        let inset = 12.0;
-        let reach = 3.5;
-        let stroke_w = 1.15_f32;
-        let visual = reach + stroke_w / 2.0;
-        let center = egui::pos2(card.right() - inset - visual, card.top() + inset + visual);
-        let hit = egui::Rect::from_center_size(center, egui::vec2(22.0, 22.0));
+        let inset = 20.0;
+        // Icon::Close arms are ±4 with a 1.5 stroke, matching pane_close.
+        let half = 4.0 + 1.5 / 2.0;
+        let center = egui::pos2(card.right() - inset - half, card.top() + inset + half);
+        let hit = egui::Rect::from_center_size(center, egui::vec2(28.0, 28.0));
         let response = ui.interact(hit, ui.id().with("about-close"), egui::Sense::click());
-        let shown = if response.hovered() {
-            reach * 1.25
+        let ink = paint::color(if response.hovered() {
+            palette.ui_text
         } else {
-            reach
-        };
-        let ink = paint::color(palette.ui_text_dim);
-        let stroke = egui::Stroke::new(stroke_w, ink);
-        ui.painter().line_segment(
-            [
-                center + egui::vec2(-shown, -shown),
-                center + egui::vec2(shown, shown),
-            ],
-            stroke,
-        );
-        ui.painter().line_segment(
-            [
-                center + egui::vec2(shown, -shown),
-                center + egui::vec2(-shown, shown),
-            ],
-            stroke,
-        );
+            palette.ui_text_subtle
+        });
+        paint::draw_icon(ui.painter(), center, ink, paint::Icon::Close);
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         #[cfg(test)]
         {
-            let mark = egui::Rect::from_center_size(center, egui::vec2(visual * 2.0, visual * 2.0));
+            let mark = egui::Rect::from_center_size(center, egui::vec2(half * 2.0, half * 2.0));
             crate::chrome::mark_layout(ui, "about-close", mark);
         }
-        response.clicked()
+        paint::hover_tip(response, i18n::t("close")).clicked()
     }
 
     /// The wordmark PNG. `Image::from_bytes` has no loader here, so decode it like the navbar mark.
