@@ -33,6 +33,8 @@ pub enum Dialog {
     AllCommentaries,
     Coverage,
     Picker,
+    /// Dictionary module browser: usage, term count, and prefix paging.
+    DictInfo,
 }
 
 pub struct Session {
@@ -427,7 +429,8 @@ impl Session {
     }
 
     pub fn copy_selection(&self) -> String {
-        let pane = self.panes.get(&self.active_pane_id);
+        let target = self.bible_target(&self.active_pane_id);
+        let pane = self.panes.get(&target);
         let book = pane.map(|pane| pane.book_number).unwrap_or(10);
         let chapter = pane.map(|pane| pane.chapter).unwrap_or(1);
         let short = pane
@@ -895,8 +898,10 @@ impl Session {
             ShortcutAction::SelectAllVerses => self.select_all(),
             ShortcutAction::CopyVerses => {
                 let text = self.copy_selection();
-                self.status = text.clone();
-                self.pending_copy = Some(text);
+                if !text.is_empty() {
+                    self.status = text.clone();
+                    self.pending_copy = Some(text);
+                }
             }
             ShortcutAction::VerseUp => self.move_verse(-1, false),
             ShortcutAction::VerseDown => self.move_verse(1, false),

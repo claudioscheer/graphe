@@ -247,11 +247,17 @@ impl GrapheApp {
         // Keep the vertical bar off the side-by-side divider. The grab strip owns that edge.
         let scroll_width = (ui.available_width() - SPLIT_HIT).max(32.0);
         ui.set_max_width(scroll_width);
-        egui::ScrollArea::vertical()
+        let chapter_scroll = paint::scroll_id(ui, ("chapter", pane_id));
+        paint::scroll_by_wheel(ui, chapter_scroll, 1.45);
+        let chapter_view = egui::ScrollArea::vertical()
             .id_salt(("chapter", pane_id))
             .auto_shrink([false, false])
             .animated(false)
-            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
+            .scroll_source(egui::containers::scroll_area::ScrollSource {
+                scroll_bar: true,
+                drag: true,
+                mouse_wheel: false,
+            })
             .max_height(ui.available_height())
             .show_viewport(ui, |ui, viewport| {
                 let full = ui.available_width();
@@ -367,6 +373,12 @@ impl GrapheApp {
                     ui.ctx().request_repaint();
                 }
             });
+        paint::remember_scroll_extent(
+            ui,
+            chapter_scroll,
+            chapter_view.content_size,
+            chapter_view.inner_rect.size(),
+        );
         if active_bible && scroll_verse.is_some() {
             self.session.scroll_verse = None;
         }
@@ -508,11 +520,17 @@ impl GrapheApp {
         let link_color = paint::color(palette.ui_link);
         let scroll_width = (ui.available_width() - SPLIT_HIT).max(32.0);
         ui.set_max_width(scroll_width);
+        let commentary_scroll = paint::scroll_id(ui, ("commentary", pane_id));
+        paint::scroll_by_wheel(ui, commentary_scroll, 2.1);
         let _output = egui::ScrollArea::vertical()
             .id_salt(("commentary", pane_id))
             .auto_shrink([false, false])
             .animated(false)
-            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
+            .scroll_source(egui::containers::scroll_area::ScrollSource {
+                scroll_bar: true,
+                drag: false,
+                mouse_wheel: false,
+            })
             .max_height(ui.available_height())
             .show(ui, |ui| {
                 let width = ui.available_width();
@@ -533,6 +551,12 @@ impl GrapheApp {
                     _frame.response.rect,
                 );
             });
+        paint::remember_scroll_extent(
+            ui,
+            commentary_scroll,
+            _output.content_size,
+            _output.inner_rect.size(),
+        );
         #[cfg(test)]
         crate::chrome::mark_layout(
             ui,
@@ -857,6 +881,13 @@ impl GrapheApp {
             }
         }
         if response.clicked() {
+            ui.ctx().memory_mut(|mem| mem.stop_text_input());
+            if let Some(plugin) = ui
+                .ctx()
+                .plugin_opt::<egui::text_selection::LabelSelectionState>()
+            {
+                plugin.lock().clear_selection();
+            }
             let (shift, toggle) = click_modifiers(ui);
             self.select_bible_verse(pane_id, verse, active_bible, shift, toggle);
             if !shift && !toggle {
@@ -949,15 +980,24 @@ impl GrapheApp {
             );
             (galley, links)
         };
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(width, galley.rect.height().max(1.0)),
-            egui::Sense::click(),
-        );
+        // Dragging the text selects it. Reuse the shaped galley so a selection
+        // or a wheel step does not wrap the chapter again.
+        let selecting =
+            ui.input(|input| input.pointer.primary_down()) || label_has_selection(ui.ctx());
+        let response = if selecting {
+            ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
+        } else {
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(width, galley.rect.height().max(1.0)),
+                egui::Sense::click(),
+            );
+            ui.painter()
+                .galley(rect.min, Arc::clone(&galley), text_color);
+            response
+        };
+        let rect = response.rect;
         #[cfg(test)]
         crate::chrome::mark_layout(ui, &format!("commentary-text:{pane_id}"), rect);
-        ui.painter()
-            .with_clip_rect(rect)
-            .galley(rect.min, Arc::clone(&galley), text_color);
         if let Some(verse) = self.session.commentary_scroll_verse(pane_id) {
             if let Some(index) = anchor_for_verse(&paint.anchors, verse) {
                 let local = galley.pos_from_cursor(egui::text::CCursor::new(index));
@@ -1103,6 +1143,11 @@ fn click_modifiers(ui: &egui::Ui) -> (bool, bool) {
             input.modifiers.ctrl || input.modifiers.command,
         )
     })
+}
+
+fn label_has_selection(ctx: &egui::Context) -> bool {
+    ctx.plugin_opt::<egui::text_selection::LabelSelectionState>()
+        .is_some_and(|plugin| plugin.lock().has_selection())
 }
 
 /// Grab strip centered on the hairline. It overlaps both panes and does not open a gap.

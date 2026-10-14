@@ -192,10 +192,17 @@ impl GrapheApp {
         // slot left a hole under short verses. The row is clipped to the list
         // so a verse cannot paint over the count or the search field.
         const SEARCH_GAP: f32 = 6.0;
-        egui::ScrollArea::vertical()
+        let search_scroll = paint::scroll_id(ui, "search-hits");
+        paint::scroll_by_wheel(ui, search_scroll, 2.1);
+        let search_view = egui::ScrollArea::vertical()
+            .id_salt("search-hits")
             .auto_shrink([false, false])
             .animated(false)
-            .wheel_scroll_multiplier(egui::vec2(1.0, 1.4))
+            .scroll_source(egui::containers::scroll_area::ScrollSource {
+                scroll_bar: true,
+                drag: false,
+                mouse_wheel: false,
+            })
             .max_height(ui.available_height())
             .show_viewport(ui, |ui, viewport| {
                 let width = ui.available_width();
@@ -203,20 +210,36 @@ impl GrapheApp {
                 let text_width = (card_width - 16.0).max(32.0);
                 let plain = paint::color(palette.ui_text_muted);
                 let mark = paint::color(palette.ui_text);
-                let mut snippets = Vec::with_capacity(hits.len());
-                let mut offsets = Vec::with_capacity(hits.len() + 1);
-                offsets.push(0.0);
-                for hit in &hits {
-                    let snippet =
-                        search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
-                    let galley = ui
-                        .painter()
-                        .layout_job(marked_job(&snippet, text_width, 12.0, plain, mark, palette));
-                    let card = 14.0 + 16.0 + 3.0 + galley.rect.height();
-                    let last = *offsets.last().unwrap_or(&0.0);
-                    offsets.push(last + card + SEARCH_GAP);
-                    snippets.push(snippet);
-                }
+                let cache_id = ui.id().with((
+                    text_width.round() as i32,
+                    self.session.font_size.to_bits(),
+                    self.session.query.clone(),
+                    hits.len(),
+                ));
+                let cached = ui.data(|data| data.get_temp::<SearchRowLayout>(cache_id));
+                let rows = if let Some(cached) = cached {
+                    cached
+                } else {
+                    let mut snippets = Vec::with_capacity(hits.len());
+                    let mut offsets = Vec::with_capacity(hits.len() + 1);
+                    offsets.push(0.0);
+                    for hit in &hits {
+                        let snippet =
+                            search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
+                        let galley = ui.painter().layout_job(marked_job(
+                            &snippet, text_width, 12.0, plain, mark, palette,
+                        ));
+                        let card = 14.0 + 16.0 + 3.0 + galley.rect.height();
+                        let last = *offsets.last().unwrap_or(&0.0);
+                        offsets.push(last + card + SEARCH_GAP);
+                        snippets.push(snippet);
+                    }
+                    let rows = SearchRowLayout { offsets, snippets };
+                    ui.data_mut(|data| data.insert_temp(cache_id, rows.clone()));
+                    rows
+                };
+                let offsets = &rows.offsets;
+                let snippets = &rows.snippets;
                 ui.set_min_height((*offsets.last().unwrap_or(&1.0)).max(1.0));
                 if hits.is_empty() {
                     return;
@@ -312,6 +335,12 @@ impl GrapheApp {
                     }
                 }
             });
+        paint::remember_scroll_extent(
+            ui,
+            search_scroll,
+            search_view.content_size,
+            search_view.inner_rect.size(),
+        );
     }
 
     pub(crate) fn run_search(&mut self) {
@@ -394,8 +423,10 @@ impl GrapheApp {
                         };
                         paint::draw_icon(ui.painter(), i_rect.center(), i_color, paint::Icon::Info);
                         if i_resp.clicked() {
-                            self.session.dialog = Dialog::About;
+                            self.open_dictionary_info();
                         }
+                        #[cfg(test)]
+                        crate::chrome::mark_layout(ui, "dict-info-button", i_rect);
                         paint::hover_tip(i_resp, i18n::t("dictInfoTitle"));
 
                         let has_fwd = self.session.dict_history_index > 0;
@@ -1170,6 +1201,12 @@ fn morph_line(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) 
     let value = graphe_domain::bidi::display_text(value);
     job.append(value.as_ref(), 6.0, value_fmt);
     ui.label(job);
+}
+
+#[derive(Clone)]
+struct SearchRowLayout {
+    offsets: Vec<f32>,
+    snippets: Vec<String>,
 }
 
 fn marked_job(

@@ -96,6 +96,7 @@ pub fn run() -> eframe::Result {
                 reading: crate::study::ReadingCache::new(),
                 editor_path: None,
                 editor: ModuleEditorForm::default(),
+                dict_info: None,
             }))
         }),
     )
@@ -127,6 +128,7 @@ pub(crate) struct GrapheApp {
     pub(crate) reading: crate::study::ReadingCache,
     pub(crate) editor_path: Option<PathBuf>,
     pub(crate) editor: ModuleEditorForm,
+    pub(crate) dict_info: Option<crate::dialogs::DictInfoState>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -229,6 +231,11 @@ impl eframe::App for GrapheApp {
         self.store.advance(1_000);
         let _ = state::save_state(&self.store.state);
     }
+}
+
+fn label_has_selection(ctx: &egui::Context) -> bool {
+    ctx.plugin_opt::<egui::text_selection::LabelSelectionState>()
+        .is_some_and(|plugin| plugin.lock().has_selection())
 }
 
 impl GrapheApp {
@@ -550,9 +557,15 @@ impl GrapheApp {
     fn handle_keys(&mut self, ctx: &egui::Context) {
         let text_focused = ctx.wants_keyboard_input();
         let mut action = None;
+        let mut copy_verses = false;
         ctx.input(|input| {
             let primary = input.modifiers.command || input.modifiers.ctrl;
             for event in &input.events {
+                if matches!(event, egui::Event::Copy) {
+                    // Ctrl+C arrives as a copy event, not as the C key.
+                    copy_verses = true;
+                    continue;
+                }
                 let egui::Event::Key {
                     key,
                     pressed,
@@ -590,6 +603,13 @@ impl GrapheApp {
                 );
             }
         });
+        if copy_verses && !text_focused && !label_has_selection(ctx) {
+            let text = self.session.copy_selection();
+            if !text.is_empty() {
+                self.session.status = text.clone();
+                self.session.pending_copy = Some(text);
+            }
+        }
         match action {
             Some(ShortcutAction::ToggleTranslationPicker) => self.open_picker(),
             Some(ShortcutAction::CycleFavoriteTranslations) => self.cycle_favorite(),
@@ -739,6 +759,7 @@ mod tests {
             reading: crate::study::ReadingCache::new(),
             editor_path: None,
             editor: ModuleEditorForm::default(),
+            dict_info: None,
         }
     }
 
@@ -824,7 +845,7 @@ mod tests {
         let (_, marks) = dialog_frame(&ctx, &mut app);
         let card = *mark(&marks, "about-card");
         let logo = *mark(&marks, "about-logo");
-        let close = *mark(&marks, "about-close");
+        let close = *mark(&marks, "modal-close");
         let github = *mark(&marks, "about-github");
         let issues = *mark(&marks, "about-issues");
         assert!(
@@ -945,6 +966,28 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_c_copies_the_selected_verses() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.show_chapter(vec![
+            (1, "In the beginning".into()),
+            (2, "And the earth".into()),
+        ]);
+        app.session.selected_verses = vec![1, 2];
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        raw.events.push(egui::Event::Copy);
+        let _ = ctx.run(raw, |ctx| app.handle_keys(ctx));
+        assert_eq!(
+            app.session.pending_copy.as_deref(),
+            Some("[Gn 1:1] In the beginning\n[Gn 1:2] And the earth")
+        );
+    }
+
+    #[test]
     fn settings_card_is_fully_visible_on_the_frame_after_it_opens() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -987,10 +1030,10 @@ mod tests {
             .any(|clipped| shape_has_paper(&clipped.shape, paper));
         assert!(painted, "the settings card uses the cream surface");
         let theme = *mark(&marks, "settings-theme");
-        let close = *mark(&marks, "settings-close");
+        close_sits_like_the_about_x(&marks);
         assert!(
-            close[0] + close[2] > card[0] + card[2] - 28.0,
-            "Fechar sits at the right of the footer, card {card:?} close {close:?}"
+            marks.iter().all(|(key, _)| key != "settings-close"),
+            "settings has no footer close button"
         );
         let pos = egui::pos2(theme[0] + theme[2] * 0.5, theme[1] + theme[3] * 0.5);
         let mut raw = egui::RawInput::default();
@@ -1018,6 +1061,77 @@ mod tests {
         });
         assert!(app.session.dark, "the theme control toggles light and dark");
         assert_eq!(app.store.settings()["theme"], "dark");
+    }
+
+    fn close_sits_like_the_about_x(marks: &[(String, [f32; 4])]) {
+        let card = *mark(marks, "modal-card");
+        let close = *mark(marks, "modal-close");
+        let top_gap = close[1] - card[1];
+        let right_gap = (card[0] + card[2]) - (close[0] + close[2]);
+        assert!(
+            (top_gap - right_gap).abs() < 0.6,
+            "top and right insets differ: top {top_gap} right {right_gap} close {close:?} card {card:?}"
+        );
+        assert!(
+            (top_gap - 20.0).abs() < 0.6,
+            "close inset is 20px: top {top_gap} right {right_gap}"
+        );
+    }
+
+    #[test]
+    fn settings_hugs_its_rows_after_a_tall_modal() {
+        i18n::set_lang("pt");
+        let screen = egui::vec2(1400.0, 1000.0);
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: std::path::PathBuf::from("missing.commentaries.SQLite3"),
+            short_title: None,
+            description: None,
+        });
+        app.session.coverage_module_id = Some("notes".into());
+        app.session.dialog = Dialog::Coverage;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, coverage) = dialog_frame_in(&ctx, &mut app, screen);
+        close_sits_like_the_about_x(&coverage);
+        let coverage_h = mark(&coverage, "modal-card")[3];
+
+        app.session.dialog = Dialog::Settings;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, settings) = dialog_frame_in(&ctx, &mut app, screen);
+        close_sits_like_the_about_x(&settings);
+        let settings_h = mark(&settings, "modal-card")[3];
+        assert!(
+            settings_h + 80.0 < coverage_h,
+            "settings kept the coverage card's empty space: settings {settings_h} coverage {coverage_h}"
+        );
+
+        let close = *mark(&settings, "modal-close");
+        let at = egui::pos2(close[0] + close[2] * 0.5, close[1] + close[3] * 0.5);
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
+        raw.events = click(at);
+        let _ = ctx.run(raw, |ctx| app.dialogs(ctx));
+        assert_eq!(app.session.dialog, Dialog::None);
+
+        for dialog in [
+            Dialog::About,
+            Dialog::Convert,
+            Dialog::Navigation,
+            Dialog::Preview,
+            Dialog::AllCommentaries,
+            Dialog::Picker,
+            Dialog::ModuleEditor,
+        ] {
+            app.session.dialog = dialog.clone();
+            let _ = dialog_frame_in(&ctx, &mut app, screen);
+            let (_, marks) = dialog_frame_in(&ctx, &mut app, screen);
+            close_sits_like_the_about_x(&marks);
+        }
     }
 
     #[test]
@@ -1840,6 +1954,271 @@ mod tests {
         }
     }
 
+    fn sidebar_frame(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, [f32; 4])> {
+        let mut style = (*ctx.style()).clone();
+        style.animation_time = 0.0;
+        ctx.set_style(style);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.focused = true;
+        raw.events = events;
+        let mut marks = Vec::new();
+        let _ = ctx.run(raw, |ctx| {
+            let palette = theme::palette(false);
+            app.sidebar(ctx, palette);
+            marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+        });
+        marks
+    }
+
+    fn dialog_events(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        events: Vec<egui::Event>,
+    ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
+        let mut style = (*ctx.style()).clone();
+        style.animation_time = 0.0;
+        ctx.set_style(style);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.focused = true;
+        raw.events = events;
+        let mut marks = Vec::new();
+        let output = ctx.run(raw, |ctx| {
+            ctx.data_mut(|data| {
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+            });
+            app.dialogs(ctx);
+            marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+        });
+        (output, marks)
+    }
+
+    fn galley_has(output: &egui::FullOutput, needle: &str) -> bool {
+        fn walk(shape: &egui::Shape, needle: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) => text.galley.job.text.contains(needle),
+                egui::Shape::Vec(shapes) => shapes.iter().any(|shape| walk(shape, needle)),
+                _ => false,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .any(|clipped| walk(&clipped.shape, needle))
+    }
+
+    fn center_of(rect: &[f32; 4]) -> egui::Pos2 {
+        egui::pos2(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5)
+    }
+
+    fn click_dialog(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        marks: &[(String, [f32; 4])],
+        key: &str,
+    ) {
+        let at = center_of(mark(marks, key));
+        let (_, hovered) = dialog_events(ctx, app, vec![egui::Event::PointerMoved(at)]);
+        let at = center_of(mark(&hovered, key));
+        let _ = dialog_events(ctx, app, click(at));
+    }
+
+    #[test]
+    fn dictionary_info_button_opens_the_dictionary_browser() {
+        i18n::set_lang("pt");
+        let dir = std::env::temp_dir().join(format!("graphe-dict-info-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Strong PT Dicionarios BDB Thayer e TVM.dictionary.SQLite3");
+        sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Strong-PT - Dicionários BDB, Thayer e TVM');
+             INSERT INTO info VALUES ('description', 'Dicionários BDB, Thayer e TVM');
+             INSERT INTO info VALUES ('is_strong', 'true');
+             INSERT INTO dictionary VALUES ('G1', 'um'), ('G10', 'dez'), ('H100', 'cem');",
+        )
+        .expect("dictionary fixture");
+        let mut app = bare(Session::new());
+        app.session.sidebar = "dictionary".into();
+        app.modules = catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 1);
+        let module_name = app.modules[0].name.clone();
+        let module_id = app.modules[0].id.clone();
+        assert_eq!(
+            module_id,
+            "Strong PT Dicionarios BDB Thayer e TVM.dictionary"
+        );
+        let ctx = egui::Context::default();
+        let _ = sidebar_frame(&ctx, &mut app, Vec::new());
+        let marks = sidebar_frame(&ctx, &mut app, Vec::new());
+        let at = center_of(mark(&marks, "dict-info-button"));
+        let _ = sidebar_frame(&ctx, &mut app, vec![egui::Event::PointerMoved(at)]);
+        let _ = sidebar_frame(&ctx, &mut app, click(at));
+        assert_eq!(app.session.dialog, Dialog::DictInfo);
+
+        let _ = dialog_frame(&ctx, &mut app);
+        let _ = dialog_frame(&ctx, &mut app);
+        let (output, marks) = dialog_frame(&ctx, &mut app);
+        assert!(
+            !marks.iter().any(|(key, _)| key == "about-logo"),
+            "the dictionary button must not open About"
+        );
+        let card = *mark(&marks, "modal-card");
+        assert!(
+            (card[2] - 760.0).abs() < 8.0,
+            "the browser is 760px wide: {card:?}"
+        );
+        close_sits_like_the_about_x(&marks);
+        let usage_y = mark(&marks, "dict-info-usage")[1];
+        let available_y = mark(&marks, "dict-info-available")[1];
+        let browse_y = mark(&marks, "dict-info-browse")[1];
+        assert!(
+            usage_y < available_y && available_y < browse_y,
+            "usage, availability, then browse: {usage_y} {available_y} {browse_y}"
+        );
+        let usage_title = i18n::t("dictUsageTitle").to_uppercase();
+        let available_title = i18n::t("dictAvailableTitle").to_uppercase();
+        let browse_title = i18n::t("dictBrowseTitle").to_uppercase();
+        let usage_line = format!(
+            "{} ({})",
+            i18n::t("dictUsageBody"),
+            i18n::t("strongsDictionaries")
+        );
+        let count_line = i18n::t("dictTotalWords").replace("{count}", "3");
+        let random_label = i18n::t("dictRandomSample");
+        let prefix_hint = i18n::t("dictBrowsePlaceholder");
+        for needle in [
+            module_name.as_str(),
+            module_id.as_str(),
+            usage_title.as_str(),
+            available_title.as_str(),
+            browse_title.as_str(),
+            usage_line.as_str(),
+            count_line.as_str(),
+            random_label.as_str(),
+            prefix_hint.as_str(),
+        ] {
+            assert!(
+                galley_has(&output, needle),
+                "missing {needle:?} in the dictionary info modal"
+            );
+        }
+        for topic in ["G1", "G10", "H100"] {
+            assert!(
+                marks
+                    .iter()
+                    .any(|(key, _)| key == &format!("dict-info-topic:{topic}")),
+                "missing topic {topic}: {marks:?}"
+            );
+        }
+        assert!(
+            marks
+                .iter()
+                .any(|(key, _)| key.starts_with("dict-info-chip:")),
+            "the random sample is missing: {marks:?}"
+        );
+
+        let next = *mark(&marks, "dict-info-next");
+        let card_now = *mark(&marks, "modal-card");
+        assert!(
+            next[0] >= card_now[0]
+                && next[0] + next[2] <= card_now[0] + card_now[2] + 1.0
+                && next[1] >= card_now[1]
+                && next[1] + next[3] <= card_now[1] + card_now[3] + 1.0,
+            "next sits inside the card: next {next:?} card {card_now:?}"
+        );
+        click_dialog(&ctx, &mut app, &marks, "dict-info-next");
+        let (_, stayed) = dialog_frame(&ctx, &mut app);
+        assert!(
+            stayed.iter().any(|(key, _)| key == "dict-info-topic:G1"),
+            "next is disabled on a short page; dialog {:?} marks {:?}",
+            app.session.dialog,
+            stayed
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(app.session.dialog, Dialog::DictInfo);
+
+        let chip_key = stayed
+            .iter()
+            .find(|(key, _)| key.starts_with("dict-info-chip:"))
+            .map(|(key, _)| key.clone())
+            .expect("chip");
+        let chip_topic = chip_key.splitn(3, ':').nth(2).unwrap().to_string();
+        click_dialog(&ctx, &mut app, &stayed, &chip_key);
+        assert_eq!(app.session.dialog, Dialog::None);
+        assert!(app.dict_info.is_none());
+        assert_eq!(app.session.dict_query, chip_topic);
+        assert!(app.session.dict_entry.is_some());
+
+        let marks = sidebar_frame(&ctx, &mut app, Vec::new());
+        let at = center_of(mark(&marks, "dict-info-button"));
+        let _ = sidebar_frame(&ctx, &mut app, click(at));
+        assert_eq!(app.session.dialog, Dialog::DictInfo);
+        let _ = dialog_frame(&ctx, &mut app);
+        let _ = dialog_frame(&ctx, &mut app);
+        let (_, marks) = dialog_frame(&ctx, &mut app);
+        click_dialog(&ctx, &mut app, &marks, "dict-info-prefix");
+        let _ = dialog_events(&ctx, &mut app, vec![egui::Event::Text("H".into())]);
+        let (_, filtered) = dialog_frame(&ctx, &mut app);
+        let topics: Vec<_> = filtered
+            .iter()
+            .filter(|(key, _)| key.starts_with("dict-info-topic:"))
+            .map(|(key, _)| key.as_str())
+            .collect();
+        assert_eq!(
+            topics,
+            vec!["dict-info-topic:H100"],
+            "prefix H keeps only H100, got {topics:?}"
+        );
+        click_dialog(&ctx, &mut app, &filtered, "dict-info-topic:H100");
+        assert_eq!(app.session.dialog, Dialog::None);
+        assert_eq!(app.session.dict_query, "H100");
+        assert_eq!(
+            app.session
+                .dict_entry
+                .as_ref()
+                .and_then(|entry| entry.get("definition"))
+                .map(String::as_str),
+            Some("cem")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dictionary_info_without_a_module_stays_closed() {
+        i18n::set_lang("pt");
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar = "dictionary".into();
+        let _ = sidebar_frame(&ctx, &mut app, Vec::new());
+        let marks = sidebar_frame(&ctx, &mut app, Vec::new());
+        let at = center_of(mark(&marks, "dict-info-button"));
+        let _ = sidebar_frame(&ctx, &mut app, click(at));
+        assert_eq!(app.session.dialog, Dialog::None);
+        assert!(app.dict_info.is_none());
+    }
+
     #[test]
     fn each_split_direction_offers_a_bible_and_a_commentary() {
         let ctx = egui::Context::default();
@@ -2071,6 +2450,178 @@ mod tests {
             .find(|(name, _)| name == key)
             .map(|(_, rect)| rect)
             .unwrap_or_else(|| panic!("missing {key} in {marks:?}"))
+    }
+
+    fn wheel_down(at: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(at),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -480.0),
+                modifiers: egui::Modifiers::default(),
+            },
+        ]
+    }
+
+    fn first_text_y(output: &egui::FullOutput, needle: &str) -> f32 {
+        fn walk(shape: &egui::Shape, needle: &str) -> Option<f32> {
+            match shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(needle) => {
+                    Some(text.pos.y)
+                }
+                egui::Shape::Vec(list) => list.iter().find_map(|shape| walk(shape, needle)),
+                _ => None,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| walk(&clipped.shape, needle))
+            .unwrap_or_else(|| panic!("missing text {needle}"))
+    }
+
+    #[test]
+    fn wheel_past_the_end_does_not_jump_the_text() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        app.loaded_key = ":10:1:pane-1".into();
+        app.session.chapter_text = vec![
+            (1, "No princípio.".into()),
+            (2, "E a terra era sem forma.".into()),
+        ];
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let settled = study_frame(&ctx, &mut app, 0.2, egui::Modifiers::default(), Vec::new());
+        let verse = *mark(&settled, "verse:pane-1:1");
+        let body = *mark(&settled, "body:pane-1");
+        let at = egui::pos2(body[0] + 80.0, body[1] + 40.0);
+        let spun = study_frame(
+            &ctx,
+            &mut app,
+            0.3,
+            egui::Modifiers::default(),
+            wheel_down(at),
+        );
+        let again = study_frame(
+            &ctx,
+            &mut app,
+            0.4,
+            egui::Modifiers::default(),
+            wheel_down(at),
+        );
+        let spun_y = mark(&spun, "verse:pane-1:1")[1];
+        let again_y = mark(&again, "verse:pane-1:1")[1];
+        assert!(
+            (spun_y - verse[1]).abs() < 1.0 && (again_y - verse[1]).abs() < 1.0,
+            "a short chapter jumped from {} to {spun_y} then {again_y}",
+            verse[1]
+        );
+
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(30);
+        let mut pieces = Vec::new();
+        for verse in 1..=12 {
+            if verse > 1 {
+                pieces.push(crate::study::CommentaryPiece::Text("\n\n".into()));
+            }
+            pieces.push(crate::study::CommentaryPiece::Text(format!(
+                "{verse} {paragraph}"
+            )));
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+        let _ = study_frame(&ctx, &mut app, 1.0, egui::Modifiers::default(), Vec::new());
+        let start = study_frame(&ctx, &mut app, 1.1, egui::Modifiers::default(), Vec::new());
+        let text_key = format!("commentary-text:{pane}");
+        let view = *mark(&start, &format!("commentary-view:{pane}"));
+        let start_y = mark(&start, &text_key)[1];
+        let at = egui::pos2(view[0] + 40.0, view[1] + 40.0);
+        let mut stuck = start_y;
+        let mut moved = false;
+        let mut time = 1.2;
+        for _ in 0..12 {
+            let frame = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(at),
+            );
+            time += 0.1;
+            let y = mark(&frame, &text_key)[1];
+            if (y - stuck).abs() < 1.0 {
+                if moved {
+                    break;
+                }
+            } else {
+                moved = true;
+                stuck = y;
+            }
+        }
+        assert!(moved, "the commentary never scrolled, still at {start_y}");
+        let held = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            wheel_down(at),
+        );
+        let held_y = mark(&held, &text_key)[1];
+        assert!(
+            (held_y - stuck).abs() < 1.0,
+            "scrolling past the commentary end jumped from {stuck} to {held_y}"
+        );
+
+        let mut app = bare(Session::new());
+        app.session.sidebar = "search".into();
+        app.session.query = "unico".into();
+        app.session.hits = (1..=5)
+            .map(|verse| graphe_domain::search::SearchHit {
+                book_number: 10,
+                chapter: 1,
+                verse,
+                text: format!("unico resultado {verse}"),
+            })
+            .collect();
+        let mut show = |time: f64, events: Vec<egui::Event>| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            ));
+            raw.time = Some(time);
+            raw.events = events;
+            ctx.run(raw, |ctx| {
+                app.sidebar(ctx, theme::palette(false));
+            })
+        };
+        let _ = show(2.0, Vec::new());
+        let settled = show(2.1, Vec::new());
+        let y = first_text_y(&settled, "unico resultado 1");
+        let spun = show(2.2, wheel_down(egui::pos2(140.0, 420.0)));
+        let again = show(2.3, wheel_down(egui::pos2(140.0, 420.0)));
+        let spun_y = first_text_y(&spun, "unico resultado 1");
+        let again_y = first_text_y(&again, "unico resultado 1");
+        assert!(
+            (spun_y - y).abs() < 1.0 && (again_y - y).abs() < 1.0,
+            "five search rows jumped from {y} to {spun_y} then {again_y}"
+        );
     }
 
     #[test]

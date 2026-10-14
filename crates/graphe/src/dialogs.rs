@@ -10,8 +10,10 @@ use graphe_domain::i18n;
 use graphe_domain::navigation::NavScreen;
 use graphe_domain::picker::PickerRow;
 use graphe_domain::theme;
+use graphe_store::catalog::InstalledModule;
 use graphe_store::sqlite;
 use serde_json::json;
+use std::path::PathBuf;
 
 fn coverage_fill(class: &CoverageClass, dark: bool) -> egui::Color32 {
     match (class, dark) {
@@ -22,6 +24,31 @@ fn coverage_fill(class: &CoverageClass, dark: bool) -> egui::Color32 {
         (CoverageClass::None, false) => paint::color("#dc2626"),
         (CoverageClass::None, true) => paint::color("#991b1b"),
     }
+}
+
+const DICT_INFO_PAGE: i64 = 50;
+const DICT_INFO_RANDOM: i64 = 20;
+
+/// Browse state for the dictionary info modal. Loaded when the modal opens,
+/// then again only when the prefix or the page changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DictInfoState {
+    pub(crate) module_id: String,
+    path: PathBuf,
+    title: String,
+    subtitle: String,
+    is_strong: bool,
+    count: i64,
+    random: Vec<String>,
+    prefix: String,
+    offset: i64,
+    topics: Vec<String>,
+}
+
+struct DictInfoEdit {
+    prefix: Option<String>,
+    page_delta: i64,
+    picked: Option<String>,
 }
 
 fn coverage_ink(class: &CoverageClass, dark: bool) -> egui::Color32 {
@@ -52,8 +79,12 @@ impl GrapheApp {
                 let width = self.dialog_width().min(screen_w * 0.92);
                 ui.set_width(width);
                 dismiss = self.dialog_card(ui);
+                let card = ui.min_rect();
                 #[cfg(test)]
-                crate::chrome::mark_layout(ui, "modal-card", ui.min_rect());
+                crate::chrome::mark_layout(ui, "modal-card", card);
+                if self.modal_close_button(ui, card) {
+                    dismiss = true;
+                }
             });
         let popup = egui::Popup::is_any_open(ctx);
         let outside = modal.backdrop_response.clicked() && !popup;
@@ -67,6 +98,7 @@ impl GrapheApp {
 
     fn close_dialog(&mut self) {
         self.session.dialog = Dialog::None;
+        self.dict_info = None;
         self.nav = None;
         self.picker = None;
         self.editor.loaded = None;
@@ -80,6 +112,7 @@ impl GrapheApp {
             Dialog::ModuleEditor => 920.0,
             Dialog::Coverage => 620.0,
             Dialog::Preview | Dialog::AllCommentaries => 720.0,
+            Dialog::DictInfo => 760.0,
             Dialog::None => 520.0,
         }
     }
@@ -114,6 +147,7 @@ impl GrapheApp {
                 let title = i18n::t("workbenchModules");
                 self.titled_card(ui, &title, |app, ui| app.picker_body(ui))
             }
+            Dialog::DictInfo => self.dict_info_card(ui),
             Dialog::None => false,
         }
     }
@@ -124,10 +158,10 @@ impl GrapheApp {
         title: &str,
         body: impl FnOnce(&mut Self, &mut egui::Ui),
     ) -> bool {
-        let dismiss = self.header_bar(ui, title, true);
+        self.header_bar(ui, title);
         let max_h = max_body(ui, 70.0);
         modal_scroll(ui, "titled", max_h, |ui| body(self, ui));
-        dismiss
+        false
     }
 
     /// Grow the card to its content, up to a margin from the screen edges.
@@ -140,7 +174,7 @@ impl GrapheApp {
         title: &str,
         body: impl FnOnce(&mut Self, &mut egui::Ui),
     ) -> bool {
-        let dismiss = self.header_bar(ui, title, true);
+        self.header_bar(ui, title);
         let chrome = ui.min_rect().height();
         let max_h = commentary_body_limit(ui.ctx().content_rect().height(), chrome);
         let output = modal_scroll(ui, "titled", max_h, |ui| body(self, ui));
@@ -152,23 +186,324 @@ impl GrapheApp {
         }
         #[cfg(test)]
         crate::chrome::mark_layout(ui, "modal-scroll", output.viewport);
-        dismiss
+        false
+    }
+
+    pub(crate) fn open_dictionary_info(&mut self) {
+        let Some(module) = self.active_dictionary().cloned() else {
+            return;
+        };
+        let page =
+            sqlite::dictionary_info_page(&module.path, "", DICT_INFO_PAGE, 0, DICT_INFO_RANDOM);
+        self.session.dict_module_id = Some(module.id.clone());
+        self.dict_info = Some(DictInfoState {
+            title: truncate_chars(&module.name, 120),
+            subtitle: module.id.clone(),
+            module_id: module.id,
+            path: module.path,
+            is_strong: page.is_strong,
+            count: page.count,
+            random: page.random,
+            prefix: String::new(),
+            offset: 0,
+            topics: page.topics,
+        });
+        self.session.dialog = Dialog::DictInfo;
+    }
+
+    fn active_dictionary(&self) -> Option<&InstalledModule> {
+        if let Some(id) = self.session.dict_module_id.as_deref() {
+            if let Some(module) = self
+                .modules
+                .iter()
+                .find(|module| module.kind == "dictionary" && module.id == id)
+            {
+                return Some(module);
+            }
+        }
+        self.modules
+            .iter()
+            .find(|module| module.kind == "dictionary")
+    }
+
+    fn dict_info_card(&mut self, ui: &mut egui::Ui) -> bool {
+        let Some(info) = self.dict_info.clone() else {
+            return true;
+        };
+        self.dict_info_header(ui, &info);
+        let max_h = max_body(ui, 80.0);
+        let mut edit = DictInfoEdit {
+            prefix: None,
+            page_delta: 0,
+            picked: None,
+        };
+        let output = egui::ScrollArea::vertical()
+            .id_salt("dict-info-body")
+            .max_height(max_h)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 14.0;
+                        edit = self.dict_info_body(ui, &info);
+                    });
+            });
+        // The shared modal area keeps last frame's height. Grow until the
+        // pager and the topic list sit inside the card, then stop at the screen margin.
+        let shown = output.inner_rect.height();
+        let wanted = output.content_size.y.min(max_h);
+        if wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.inner_rect.top() + wanted);
+            ui.ctx().request_repaint();
+        }
+        if let Some(topic) = edit.picked {
+            self.lookup_dict(&topic);
+            return true;
+        }
+        self.apply_dict_info_edit(edit);
+        false
+    }
+
+    fn apply_dict_info_edit(&mut self, edit: DictInfoEdit) {
+        let reload = {
+            let Some(info) = self.dict_info.as_mut() else {
+                return;
+            };
+            let mut reload = false;
+            if let Some(prefix) = edit.prefix {
+                if prefix != info.prefix {
+                    info.prefix = prefix;
+                    info.offset = 0;
+                    reload = true;
+                }
+            }
+            if edit.page_delta != 0 && !reload {
+                let next = (info.offset + edit.page_delta).max(0);
+                if next != info.offset {
+                    info.offset = next;
+                    reload = true;
+                }
+            }
+            if !reload {
+                return;
+            }
+            (info.path.clone(), info.prefix.clone(), info.offset)
+        };
+        let topics =
+            sqlite::dictionary_topics_page_in_file(&reload.0, &reload.1, DICT_INFO_PAGE, reload.2);
+        if let Some(info) = self.dict_info.as_mut() {
+            info.topics = topics;
+        }
+        // The list painted this frame still has the previous page.
+    }
+
+    fn dict_info_header(&self, ui: &mut egui::Ui, info: &DictInfoState) {
+        let palette = theme::palette(self.session.dark);
+        let text = paint::color(palette.ui_text);
+        let muted = paint::color(palette.ui_text_muted);
+        let border = hairline(self.session.dark, palette);
+        let width = ui.available_width();
+        let title_width = (width - 80.0).max(40.0);
+        let title = fit_title(ui, &info.title, title_width, text, 18.0);
+        let subtitle = fit_title(ui, &info.subtitle, title_width, muted, 12.0);
+        let title_galley =
+            ui.painter()
+                .layout_no_wrap(title, egui::FontId::proportional(18.0), text);
+        let sub_galley =
+            ui.painter()
+                .layout_no_wrap(subtitle, egui::FontId::proportional(12.0), muted);
+        let height = 12.0 + title_galley.rect.height() + 3.0 + sub_galley.rect.height() + 12.0;
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let title_pos = egui::pos2(rect.left() + 16.0, rect.top() + 12.0);
+        let sub_pos = egui::pos2(
+            rect.left() + 16.0,
+            title_pos.y + title_galley.rect.height() + 3.0,
+        );
+        #[cfg(test)]
+        crate::chrome::mark_layout(
+            ui,
+            "dict-info-title",
+            egui::Rect::from_min_size(title_pos, title_galley.rect.size()),
+        );
+        #[cfg(test)]
+        crate::chrome::mark_layout(
+            ui,
+            "dict-info-subtitle",
+            egui::Rect::from_min_size(sub_pos, sub_galley.rect.size()),
+        );
+        ui.painter().galley(title_pos, title_galley, text);
+        ui.painter().galley(sub_pos, sub_galley, muted);
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            egui::Stroke::new(1.0_f32, border),
+        );
+    }
+
+    fn dict_info_body(&self, ui: &mut egui::Ui, info: &DictInfoState) -> DictInfoEdit {
+        let mut edit = DictInfoEdit {
+            prefix: None,
+            page_delta: 0,
+            picked: None,
+        };
+        let dark = self.session.dark;
+        let palette = theme::palette(dark);
+        let kind = if info.is_strong {
+            i18n::t("strongsDictionaries")
+        } else {
+            i18n::t("dictionary")
+        };
+        let usage = format!("{} ({kind})", i18n::t("dictUsageBody"));
+        let count = i18n::t("dictTotalWords").replace("{count}", &info.count.to_string());
+        info_section(ui, dark, "dictUsageTitle", "dict-info-usage", |ui| {
+            ui.label(
+                egui::RichText::new(usage)
+                    .size(13.0)
+                    .color(paint::color(palette.ui_text_muted)),
+            );
+        });
+        let random = info.random.clone();
+        info_section(
+            ui,
+            dark,
+            "dictAvailableTitle",
+            "dict-info-available",
+            |ui| {
+                ui.label(
+                    egui::RichText::new(count)
+                        .size(13.0)
+                        .color(paint::color(palette.ui_text_muted)),
+                );
+                ui.label(
+                    egui::RichText::new(i18n::t("dictRandomSample"))
+                        .size(12.0)
+                        .color(paint::color(palette.ui_text_muted)),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                    let text_hex = if dark {
+                        palette.ui_link_softest
+                    } else {
+                        palette.ui_link
+                    };
+                    let fill_hex = if dark {
+                        palette.ui_link_soft
+                    } else {
+                        palette.ui_link
+                    };
+                    for (index, topic) in random.iter().enumerate() {
+                        let response = paint::cognate_chip(ui, topic, text_hex, fill_hex);
+                        #[cfg(test)]
+                        crate::chrome::mark_layout(
+                            ui,
+                            &format!("dict-info-chip:{index}:{topic}"),
+                            response.rect,
+                        );
+                        #[cfg(not(test))]
+                        let _ = index;
+                        if response.clicked() && edit.picked.is_none() {
+                            edit.picked = Some(topic.clone());
+                        }
+                    }
+                });
+            },
+        );
+        info_section(ui, dark, "dictBrowseTitle", "dict-info-browse", |ui| {
+            let mut prefix = info.prefix.clone();
+            let hint = paint::color(palette.ui_text_dim);
+            let response = ui
+                .scope(|ui| {
+                    let visuals = &mut ui.style_mut().visuals;
+                    visuals.weak_text_color = Some(hint);
+                    visuals.extreme_bg_color = paint::color(if dark {
+                        palette.ui_surface
+                    } else {
+                        palette.ui_bg
+                    });
+                    let border = egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft));
+                    let focus = egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_strong));
+                    visuals.widgets.inactive.bg_stroke = border;
+                    visuals.widgets.hovered.bg_stroke = focus;
+                    visuals.widgets.active.bg_stroke = focus;
+                    let radius = egui::CornerRadius::same(4);
+                    visuals.widgets.inactive.corner_radius = radius;
+                    visuals.widgets.hovered.corner_radius = radius;
+                    visuals.widgets.active.corner_radius = radius;
+                    ui.add(
+                        egui::TextEdit::singleline(&mut prefix)
+                            .id(egui::Id::new("dict-info-prefix"))
+                            .hint_text(
+                                egui::RichText::new(i18n::t("dictBrowsePlaceholder"))
+                                    .color(hint)
+                                    .size(13.0),
+                            )
+                            .desired_width(ui.available_width())
+                            .font(egui::FontId::proportional(13.0))
+                            .margin(egui::Margin::symmetric(10, 8)),
+                    )
+                })
+                .inner;
+            #[cfg(test)]
+            crate::chrome::mark_layout(ui, "dict-info-prefix", response.rect);
+            #[cfg(not(test))]
+            let _ = response;
+            if prefix != info.prefix {
+                edit.prefix = Some(prefix);
+            }
+            ui.add_space(8.0);
+            if info.topics.is_empty() {
+                ui.label(
+                    egui::RichText::new(i18n::t("dictBrowseNoResults"))
+                        .size(13.0)
+                        .color(paint::color(palette.ui_text_muted)),
+                );
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt(("dict-info-topics", &info.prefix, info.offset))
+                    .max_height(240.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        ui.set_min_width(ui.available_width());
+                        for topic in &info.topics {
+                            if topic_row(ui, topic, dark).clicked() && edit.picked.is_none() {
+                                edit.picked = Some(topic.clone());
+                            }
+                        }
+                    });
+            }
+            ui.add_space(8.0);
+            let can_prev = info.offset > 0;
+            let can_next = info.topics.len() as i64 >= DICT_INFO_PAGE;
+            let (row, _) = ui
+                .allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::hover());
+            let next_rect = egui::Rect::from_min_size(
+                egui::pos2(row.right() - 28.0, row.top()),
+                egui::vec2(28.0, 28.0),
+            );
+            let prev_rect = egui::Rect::from_min_size(
+                egui::pos2(row.right() - 62.0, row.top()),
+                egui::vec2(28.0, 28.0),
+            );
+            if page_button(ui, prev_rect, "‹", can_prev, dark, "dict-info-prev") {
+                edit.page_delta = -DICT_INFO_PAGE;
+            }
+            if page_button(ui, next_rect, "›", can_next, dark, "dict-info-next") {
+                edit.page_delta = DICT_INFO_PAGE;
+            }
+        });
+        edit
     }
 
     fn settings_card(&mut self, ui: &mut egui::Ui) -> bool {
-        let _ = self.header_bar(ui, &i18n::t("settings"), false);
-        let max_h = max_body(ui, 130.0);
+        self.header_bar(ui, &i18n::t("settings"));
+        // Hug the rows. A footer that takes the leftover height leaves a gap
+        // under the last option when a taller modal used this area last.
+        let max_h = max_body(ui, 70.0);
         modal_scroll(ui, "settings", max_h, |ui| self.settings_body(ui));
-        let dark = self.session.dark;
-        footer_shell(ui, dark, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let response = self.paper_button(ui, &i18n::t("close"), PaperButton::Quiet);
-                #[cfg(test)]
-                crate::chrome::mark_layout(ui, "settings-close", response.rect);
-                response.clicked()
-            })
-            .inner
-        })
+        false
     }
 
     fn coverage_body(&mut self, ui: &mut egui::Ui) {
@@ -481,26 +816,18 @@ impl GrapheApp {
                         _ => {}
                     });
             });
+        let back_visible = self.nav.as_ref().is_some_and(|nav| nav.back_visible);
+        if !back_visible {
+            return false;
+        }
         let dark = self.session.dark;
         footer_shell(ui, dark, |ui| {
-            let back_visible = self.nav.as_ref().is_some_and(|nav| nav.back_visible);
-            let mut dismiss = false;
-            ui.horizontal(|ui| {
-                if back_visible && self.nav_footer_button(ui, &i18n::t("back"), true).clicked() {
-                    if let Some(nav) = self.nav.as_mut() {
-                        nav.back();
-                    }
+            if self.nav_footer_button(ui, &i18n::t("back"), true).clicked() {
+                if let Some(nav) = self.nav.as_mut() {
+                    nav.back();
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self
-                        .nav_footer_button(ui, &i18n::t("close"), false)
-                        .clicked()
-                    {
-                        dismiss = true;
-                    }
-                });
-            });
-            dismiss
+            }
+            false
         })
     }
 
@@ -513,9 +840,14 @@ impl GrapheApp {
         });
         let width = ui.available_width();
         egui::Frame::new()
-            .inner_margin(egui::Margin::same(16))
+            .inner_margin(egui::Margin {
+                left: 16,
+                right: 48,
+                top: 16,
+                bottom: 16,
+            })
             .show(ui, |ui| {
-                ui.set_min_width((width - 32.0).max(0.0));
+                ui.set_min_width((width - 64.0).max(0.0));
                 let mut input = self
                     .nav
                     .as_ref()
@@ -777,7 +1109,7 @@ impl GrapheApp {
     }
 
     fn convert_card(&mut self, ui: &mut egui::Ui) -> bool {
-        let dismiss = self.header_bar(ui, &i18n::t("convertModules"), true);
+        self.header_bar(ui, &i18n::t("convertModules"));
         let status = self.session.status.clone();
         let dark = self.session.dark;
         // Cap a long result list. The empty state is one paragraph, so the
@@ -841,7 +1173,7 @@ impl GrapheApp {
             );
             false
         });
-        dismiss || clicked
+        clicked
     }
 
     fn convert_paths(&mut self, files: Vec<std::path::PathBuf>) {
@@ -944,7 +1276,7 @@ impl GrapheApp {
         }
         self.load_editor();
         let subtitle = module_kind_label(&self.editor_kind());
-        let dismiss = self.editor_header(ui, &subtitle);
+        self.editor_header(ui, &subtitle);
         let deleted = self.editor_toolbar(ui);
         self.editor_tabs(ui);
         let chrome = ui.min_rect().height() + 36.0;
@@ -962,7 +1294,7 @@ impl GrapheApp {
         #[cfg(test)]
         crate::chrome::mark_layout(ui, "modal-scroll", output.viewport);
         self.editor_status_line(ui);
-        dismiss || deleted
+        deleted
     }
 
     fn editor_kind(&self) -> String {
@@ -1082,7 +1414,7 @@ impl GrapheApp {
         }
     }
 
-    fn editor_header(&self, ui: &mut egui::Ui, subtitle: &str) -> bool {
+    fn editor_header(&self, ui: &mut egui::Ui, subtitle: &str) {
         let palette = theme::palette(self.session.dark);
         let text = paint::color(palette.ui_text);
         let subtle = paint::color(palette.ui_text_subtle);
@@ -1095,6 +1427,7 @@ impl GrapheApp {
             &i18n::t("editModuleData"),
             (rect.width() - 64.0).max(40.0),
             text,
+            18.0,
         );
         let title_galley =
             ui.painter()
@@ -1125,7 +1458,6 @@ impl GrapheApp {
         );
         #[cfg(test)]
         crate::chrome::mark_layout(ui, "modal-header", rect);
-        self.modal_close_button(ui, rect)
     }
 
     fn editor_toolbar(&mut self, ui: &mut egui::Ui) -> bool {
@@ -1745,14 +2077,13 @@ impl GrapheApp {
         visuals.window_corner_radius = egui::CornerRadius::same(0);
     }
 
-    fn header_bar(&self, ui: &mut egui::Ui, title: &str, show_close: bool) -> bool {
+    fn header_bar(&self, ui: &mut egui::Ui, title: &str) {
         let palette = theme::palette(self.session.dark);
         let text = paint::color(palette.ui_text);
         let border = hairline(self.session.dark, palette);
         let width = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 57.0), egui::Sense::hover());
-        let reserve = if show_close { 64.0 } else { 32.0 };
-        let shown = fit_title(ui, title, (rect.width() - reserve).max(40.0), text);
+        let shown = fit_title(ui, title, (rect.width() - 64.0).max(40.0), text, 18.0);
         let galley = ui
             .painter()
             .layout_no_wrap(shown, egui::FontId::proportional(18.0), text);
@@ -1771,38 +2102,31 @@ impl GrapheApp {
         );
         #[cfg(test)]
         crate::chrome::mark_layout(ui, "modal-header", rect);
-        if !show_close {
-            return false;
-        }
-        self.modal_close_button(ui, rect)
     }
 
-    fn modal_close_button(&self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
+    /// The About dialog's X: no fill, same mark as a pane close, equal inset from the top and the right.
+    fn modal_close_button(&self, ui: &mut egui::Ui, card: egui::Rect) -> bool {
         let palette = theme::palette(self.session.dark);
-        let button = egui::Rect::from_center_size(
-            egui::pos2(rect.right() - 28.0, rect.center().y),
-            egui::vec2(28.0, 28.0),
-        );
-        let response = ui.interact(button, ui.id().with("modal-x"), egui::Sense::click());
+        let inset = 20.0;
+        let half = 4.0 + 1.5 / 2.0;
+        let center = egui::pos2(card.right() - inset - half, card.top() + inset + half);
+        let hit = egui::Rect::from_center_size(center, egui::vec2(28.0, 28.0));
+        let response = ui.interact(hit, ui.id().with("modal-x"), egui::Sense::click());
+        let ink = paint::color(if response.hovered() {
+            palette.ui_text
+        } else {
+            palette.ui_text_subtle
+        });
+        paint::draw_icon(ui.painter(), center, ink, paint::Icon::Close);
         if response.hovered() {
-            ui.painter().rect_filled(
-                button,
-                egui::CornerRadius::same(2),
-                paint::color(if self.session.dark {
-                    palette.ui_border
-                } else {
-                    palette.ui_accent_bg
-                }),
-            );
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        paint::draw_icon(
-            ui.painter(),
-            button.center(),
-            paint::color(palette.ui_text_subtle),
-            paint::Icon::Close,
-        );
-        response.clicked()
+        #[cfg(test)]
+        {
+            let mark = egui::Rect::from_center_size(center, egui::vec2(half * 2.0, half * 2.0));
+            crate::chrome::mark_layout(ui, "modal-close", mark);
+        }
+        paint::hover_tip(response, i18n::t("close")).clicked()
     }
 
     fn paper_button(&self, ui: &mut egui::Ui, label: &str, kind: PaperButton) -> egui::Response {
@@ -2125,7 +2449,6 @@ impl GrapheApp {
         } else {
             palette.ui_border_stronger
         });
-        let mut dismiss = false;
         let framed = egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 28,
@@ -2189,36 +2512,9 @@ impl GrapheApp {
         let card = framed.response.rect;
         #[cfg(test)]
         crate::chrome::mark_layout(ui, "about-card", card);
-        if self.about_close(ui, card) {
-            dismiss = true;
-        }
-        dismiss
-    }
-
-    /// Same X as the Bible and commentary pane close, set in from the corner.
-    fn about_close(&self, ui: &mut egui::Ui, card: egui::Rect) -> bool {
-        let palette = theme::palette(self.session.dark);
-        let inset = 20.0;
-        // Icon::Close arms are ±4 with a 1.5 stroke, matching pane_close.
-        let half = 4.0 + 1.5 / 2.0;
-        let center = egui::pos2(card.right() - inset - half, card.top() + inset + half);
-        let hit = egui::Rect::from_center_size(center, egui::vec2(28.0, 28.0));
-        let response = ui.interact(hit, ui.id().with("about-close"), egui::Sense::click());
-        let ink = paint::color(if response.hovered() {
-            palette.ui_text
-        } else {
-            palette.ui_text_subtle
-        });
-        paint::draw_icon(ui.painter(), center, ink, paint::Icon::Close);
-        if response.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        #[cfg(test)]
-        {
-            let mark = egui::Rect::from_center_size(center, egui::vec2(half * 2.0, half * 2.0));
-            crate::chrome::mark_layout(ui, "about-close", mark);
-        }
-        paint::hover_tip(response, i18n::t("close")).clicked()
+        #[cfg(not(test))]
+        let _ = card;
+        false
     }
 
     /// The wordmark PNG. `Image::from_bytes` has no loader here, so decode it like the navbar mark.
@@ -2812,8 +3108,151 @@ fn commentaries_title(reference: &str) -> String {
     }
 }
 
-fn fit_title(ui: &egui::Ui, title: &str, max_width: f32, color: egui::Color32) -> String {
-    let font = egui::FontId::proportional(18.0);
+fn info_section(
+    ui: &mut egui::Ui,
+    dark: bool,
+    title_key: &str,
+    mark: &str,
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    let palette = theme::palette(dark);
+    let shown = egui::Frame::new()
+        .fill(paint::color(palette.ui_surface_elevated))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            paint::color(palette.ui_border_soft),
+        ))
+        .corner_radius(egui::CornerRadius::same(4))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            ui.label(
+                egui::RichText::new(i18n::t(title_key).to_uppercase())
+                    .size(12.0)
+                    .strong()
+                    .extra_letter_spacing(0.6)
+                    .color(paint::color(palette.ui_text_dim)),
+            );
+            body(ui);
+        });
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, mark, shown.response.rect);
+    #[cfg(not(test))]
+    let _ = (mark, shown);
+}
+
+fn topic_row(ui: &mut egui::Ui, topic: &str, dark: bool) -> egui::Response {
+    let palette = theme::palette(dark);
+    let link = paint::color(palette.ui_link);
+    let width = ui.available_width();
+    let galley = ui.painter().layout(
+        topic.to_string(),
+        egui::FontId::proportional(13.0),
+        link,
+        (width - 12.0).max(40.0),
+    );
+    let height = (galley.rect.height() + 8.0).max(22.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let fill = if response.hovered() {
+        paint::color(palette.ui_accent_bg_soft)
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let stroke = if response.hovered() {
+        egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft))
+    } else {
+        egui::Stroke::NONE
+    };
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(4),
+        fill,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + 6.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        link,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, &format!("dict-info-topic:{topic}"), rect);
+    response
+}
+
+fn page_button(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    label: &str,
+    enabled: bool,
+    dark: bool,
+    mark: &str,
+) -> bool {
+    let palette = theme::palette(dark);
+    // A disabled control still takes the click, so it does not fall through to the backdrop.
+    let response = ui.interact(rect, ui.id().with(mark), egui::Sense::click());
+    let mut ink = paint::color(palette.ui_text_muted);
+    let mut border = paint::color(palette.ui_border_soft);
+    let mut fill = if response.hovered() && enabled {
+        paint::color(palette.ui_accent_bg_soft)
+    } else {
+        paint::color(palette.ui_surface)
+    };
+    if !enabled {
+        ink = ink.gamma_multiply(0.45);
+        border = border.gamma_multiply(0.45);
+        fill = fill.gamma_multiply(0.45);
+    }
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(4),
+        fill,
+        egui::Stroke::new(1.0_f32, border),
+        egui::StrokeKind::Inside,
+    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(16.0), ink);
+    ui.painter().galley(
+        egui::pos2(
+            rect.center().x - galley.rect.width() / 2.0,
+            rect.center().y - galley.rect.height() / 2.0,
+        ),
+        galley,
+        ink,
+    );
+    if response.hovered() && enabled {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    #[cfg(test)]
+    crate::chrome::mark_layout(ui, mark, rect);
+    #[cfg(not(test))]
+    let _ = mark;
+    response.clicked() && enabled
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        text.to_string()
+    } else {
+        text.chars().take(max).collect()
+    }
+}
+
+fn fit_title(
+    ui: &egui::Ui,
+    title: &str,
+    max_width: f32,
+    color: egui::Color32,
+    size: f32,
+) -> String {
+    let font = egui::FontId::proportional(size);
     let full = ui
         .painter()
         .layout_no_wrap(title.to_string(), font.clone(), color);

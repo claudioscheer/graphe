@@ -273,6 +273,70 @@ pub fn search_dictionary_topics(db: &Connection, prefix: &str, limit: i64) -> Ve
     .unwrap_or_default()
 }
 
+/// One page of dictionary topics, matching the Electron info modal.
+/// An empty prefix lists every topic. `limit` is clamped to 1..=500.
+pub fn dictionary_topics_page(
+    db: &Connection,
+    prefix: &str,
+    limit: i64,
+    offset: i64,
+) -> Vec<String> {
+    if !table_exists(db, "dictionary") {
+        return Vec::new();
+    }
+    let limit = limit.clamp(1, 500);
+    let offset = offset.max(0);
+    let prefix = prefix.trim();
+    if prefix.is_empty() {
+        let mut stmt =
+            match db.prepare("SELECT topic FROM dictionary ORDER BY topic LIMIT ?1 OFFSET ?2") {
+                Ok(stmt) => stmt,
+                Err(_) => return Vec::new(),
+            };
+        return topic_rows(&mut stmt, rusqlite::params![limit, offset]);
+    }
+    let mut stmt = match db.prepare(
+        "SELECT topic FROM dictionary WHERE topic LIKE ?1 ORDER BY topic LIMIT ?2 OFFSET ?3",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return Vec::new(),
+    };
+    topic_rows(
+        &mut stmt,
+        rusqlite::params![format!("{prefix}%"), limit, offset],
+    )
+}
+
+fn topic_rows(stmt: &mut rusqlite::Statement<'_>, params: impl rusqlite::Params) -> Vec<String> {
+    stmt.query_map(params, |row| row.get(0))
+        .ok()
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+}
+
+pub fn dictionary_topic_count(db: &Connection) -> i64 {
+    if !table_exists(db, "dictionary") {
+        return 0;
+    }
+    db.query_row("SELECT COUNT(*) FROM dictionary", [], |row| row.get(0))
+        .unwrap_or(0)
+}
+
+/// Electron treats `info.is_strong = true` as a Strong's dictionary.
+pub fn dictionary_is_strong(db: &Connection) -> bool {
+    info_rows(db)
+        .iter()
+        .any(|(key, value)| key == "is_strong" && value.trim().eq_ignore_ascii_case("true"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DictionaryInfoPage {
+    pub count: i64,
+    pub is_strong: bool,
+    pub random: Vec<String>,
+    pub topics: Vec<String>,
+}
+
 pub fn lexical_search(
     db: &Connection,
     query: &str,
@@ -636,6 +700,41 @@ pub fn dictionary_topics_in_file(path: &Path, prefix: &str, limit: i64) -> Vec<S
     open_read(path)
         .map(|db| search_dictionary_topics(&db, prefix, limit))
         .unwrap_or_default()
+}
+
+pub fn dictionary_topics_page_in_file(
+    path: &Path,
+    prefix: &str,
+    limit: i64,
+    offset: i64,
+) -> Vec<String> {
+    open_read(path)
+        .map(|db| dictionary_topics_page(&db, prefix, limit, offset))
+        .unwrap_or_default()
+}
+
+pub fn dictionary_info_page(
+    path: &Path,
+    prefix: &str,
+    limit: i64,
+    offset: i64,
+    random_limit: i64,
+) -> DictionaryInfoPage {
+    let Some(db) = open_read(path) else {
+        return DictionaryInfoPage {
+            count: 0,
+            is_strong: false,
+            random: Vec::new(),
+            topics: Vec::new(),
+        };
+    };
+    let random_limit = random_limit.clamp(1, 200);
+    DictionaryInfoPage {
+        count: dictionary_topic_count(&db),
+        is_strong: dictionary_is_strong(&db),
+        random: random_dictionary_topics(&db, random_limit),
+        topics: dictionary_topics_page(&db, prefix, limit, offset),
+    }
 }
 
 pub fn dictionary_entry_in_file(path: &Path, topic: &str) -> Option<BTreeMap<String, String>> {
@@ -1083,5 +1182,68 @@ mod tests {
             Some("H1")
         );
         assert_eq!(random_topics_in_file(&path, 4), vec!["H1".to_string()]);
+    }
+
+    #[test]
+    fn dictionary_info_pages_by_prefix_and_offset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("strong.dictionary.sqlite");
+        let mut sql = String::from(
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('is_strong', 'true');
+             INSERT INTO info VALUES ('short.title', 'Strong-PT');",
+        );
+        for index in 0..52 {
+            sql.push_str(&format!(
+                "INSERT INTO dictionary VALUES ('N{index:02}', 'n');\n"
+            ));
+        }
+        sql.push_str("INSERT INTO dictionary VALUES ('G1', 'g'), ('G10', 'g'), ('H100', 'h');");
+        init_module_sql(&path, &sql).unwrap();
+
+        let page = dictionary_info_page(&path, "", 50, 0, 20);
+        assert!(page.is_strong);
+        assert_eq!(page.count, 55);
+        assert_eq!(page.topics.len(), 50);
+        assert_eq!(page.topics.first().map(String::as_str), Some("G1"));
+        assert_eq!(page.topics.last().map(String::as_str), Some("N46"));
+        assert_eq!(page.random.len(), 20);
+        let known = dictionary_topics_page_in_file(&path, "", 500, 0);
+        assert_eq!(known.len(), 55);
+        assert!(page.random.iter().all(|topic| known.contains(topic)));
+
+        let next = dictionary_topics_page_in_file(&path, "", 50, 50);
+        assert_eq!(
+            next,
+            vec![
+                "N47".to_string(),
+                "N48".to_string(),
+                "N49".to_string(),
+                "N50".to_string(),
+                "N51".to_string(),
+            ]
+        );
+        assert!(dictionary_topics_page_in_file(&path, "", 50, 100).is_empty());
+        assert_eq!(
+            dictionary_topics_page_in_file(&path, " H ", 50, 0),
+            vec!["H100".to_string()]
+        );
+        assert_eq!(
+            dictionary_topics_page_in_file(&path, "g", 2, 1),
+            vec!["G10".to_string()]
+        );
+        assert!(dictionary_topics_page_in_file(&path, "zzz", 50, 0).is_empty());
+
+        let plain = Connection::open_in_memory().unwrap();
+        plain
+            .execute_batch(
+                "CREATE TABLE dictionary (topic TEXT, definition TEXT);
+                 INSERT INTO dictionary VALUES ('amor', 'love');",
+            )
+            .unwrap();
+        assert!(!dictionary_is_strong(&plain));
+        assert_eq!(dictionary_topic_count(&plain), 1);
+        assert_eq!(dictionary_topic_count(&bible()), 0);
     }
 }

@@ -41,8 +41,8 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     // Menus and panels otherwise ease open. A click should show the surface at once.
     style.animation_time = 0.0;
     ctx.set_style(style);
-    // A mouse notch is one line of 40 points, then eased for a fraction of a
-    // second. Dragging the text moves 1:1, so the wheel felt slow.
+    // One notch is 100 points before a view multiplies it. The view applies
+    // that full step at once; egui would otherwise ease it over later frames.
     ctx.options_mut(|options| {
         options.input_options.line_scroll_speed = 100.0;
     });
@@ -104,6 +104,72 @@ pub(crate) fn panel(hex: &str) -> egui::Frame {
 /// Stop a scroll area from painting into the fixed bar above it.
 pub(crate) fn clip_scroll_to_viewport(ui: &mut egui::Ui) {
     ui.visuals_mut().clip_rect_margin = 0.0;
+}
+
+fn scroll_limit_id(scroll_id: egui::Id) -> egui::Id {
+    scroll_id.with("wheel-limit")
+}
+
+/// Remember how far this scroll area can move. The wheel handler reads it
+/// next frame so a notch past the end does not shift the text and snap back.
+pub(crate) fn remember_scroll_extent(
+    ui: &egui::Ui,
+    scroll_id: egui::Id,
+    content: egui::Vec2,
+    viewport: egui::Vec2,
+) {
+    let max = egui::vec2(
+        (content.x - viewport.x).max(0.0),
+        (content.y - viewport.y).max(0.0),
+    );
+    ui.data_mut(|data| data.insert_persisted(scroll_limit_id(scroll_id), max));
+    let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
+        return;
+    };
+    let clamped = egui::vec2(
+        state.offset.x.clamp(0.0, max.x),
+        state.offset.y.clamp(0.0, max.y),
+    );
+    if clamped != state.offset {
+        state.offset = clamped;
+        state.store(ui.ctx(), scroll_id);
+    }
+}
+
+/// Move a scroll area by the whole wheel step. egui eases large notches, which
+/// feels like a delay. `speed` scales the step: 1 keeps it, 2 doubles it.
+/// The offset stays inside the last measured range, including when the content
+/// already fits and the range is zero.
+pub(crate) fn scroll_by_wheel(ui: &egui::Ui, scroll_id: egui::Id, speed: f32) {
+    let raw = ui.input(|input| input.raw_scroll_delta);
+    if raw == egui::Vec2::ZERO {
+        return;
+    }
+    if !ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
+        return;
+    }
+    let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
+        return;
+    };
+    let max = ui
+        .data_mut(|data| data.get_persisted::<egui::Vec2>(scroll_limit_id(scroll_id)))
+        .unwrap_or(egui::Vec2::ZERO);
+    let next = egui::vec2(
+        (state.offset.x - raw.x * speed).clamp(0.0, max.x),
+        (state.offset.y - raw.y * speed).clamp(0.0, max.y),
+    );
+    if next != state.offset {
+        state.offset = next;
+        state.store(ui.ctx(), scroll_id);
+    }
+    ui.input_mut(|input| {
+        input.smooth_scroll_delta = egui::Vec2::ZERO;
+        input.raw_scroll_delta = egui::Vec2::ZERO;
+    });
+}
+
+pub(crate) fn scroll_id(ui: &egui::Ui, salt: impl std::hash::Hash) -> egui::Id {
+    ui.make_persistent_id(egui::Id::new(salt))
 }
 
 pub(crate) fn color(hex: &str) -> egui::Color32 {
