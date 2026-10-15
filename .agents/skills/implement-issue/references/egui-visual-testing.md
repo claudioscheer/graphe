@@ -194,9 +194,14 @@ Pull requests for visual changes must include before (reproduction) and after (f
    cargo run -p graphe
    ```
 2. Capture the window in its bugged state:
-   ```bash
-   powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
-   ```
+   - Linux / Git Bash / macOS:
+     ```bash
+     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-before.png
+     ```
+   - Windows PowerShell:
+     ```powershell
+     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
+     ```
 
 ### After Screenshot (Feature Working)
 1. Run the application with the fix applied:
@@ -204,10 +209,20 @@ Pull requests for visual changes must include before (reproduction) and after (f
    cargo run -p graphe
    ```
 2. Navigate to verify the feature and capture the clean state:
-   ```bash
-   powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
-   ```
+   - Linux / Git Bash / macOS:
+     ```bash
+     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-after.png
+     ```
+   - Windows PowerShell:
+     ```powershell
+     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
+     ```
 
 ### Inclusion in PR
-Commit both images to the branch (`assets/screenshots/<N>-before.png` and `assets/screenshots/<N>-after.png`) and embed them side-by-side in the PR description under `## Notes`.
+Commit both images to the branch (`assets/screenshots/<N>-before.png` and `assets/screenshots/<N>-after.png`) and embed them side-by-side in the PR description under `## Notes` using the commit SHA:
+```markdown
+| Bug Reproduction (Before) | Feature Working (After) |
+| :---: | :---: |
+| ![Bug Reproduction](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png) | ![Feature Working](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png) |
+```
 

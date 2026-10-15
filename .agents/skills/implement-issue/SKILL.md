@@ -52,7 +52,18 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
    ```bash
    gh issue view <N> --json number,title,body,labels,assignees,state,url,comments
    ```
-2. **Inspect comments**: Always read issue comments. Comments often contain vital reproduction steps, screenshots, or user clarification.
+2. **Inspect comments and user attachments**:
+   - Always read issue comments. Comments often contain reproduction steps or clarifications.
+   - **Download User Attachment First**: If the issue description or comments contain user-uploaded bug screenshots (e.g., `https://github.com/user-attachments/assets/<uuid>`), download the authentic image directly:
+     - Linux / Git Bash / macOS:
+       ```bash
+       curl.exe -sL "<attachment_url>" -o assets/screenshots/<N>-before.png
+       ```
+     - Windows PowerShell:
+       ```powershell
+       Invoke-WebRequest -Uri "<attachment_url>" -OutFile "assets/screenshots/<N>-before.png"
+       ```
+     *Benefit*: Captures the exact defect reported by the user, avoids synthetic display simulation errors, and works reliably in headless or remote environments.
 3. Categorize the change:
    - `Domain`: purely business rules, refs, parser, morphology, or math.
    - `Store`: SQLite queries, module parsing, schema, or conversion.
@@ -70,7 +81,7 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
 
 1. Assign the issue to `claudioscheer`:
    ```bash
-   gh issue edit <N> --add-assignee claudioscheer
+   gh issue edit <N> --add-assignee claudioscheer || true
    ```
 2. Check for existing PRs tied to the issue:
    ```bash
@@ -78,7 +89,12 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
    ```
    - If an open PR exists: check out its branch and reuse it. Do not create a duplicate competing PR.
    - If a closed (unmerged) PR exists: reopen it (`gh pr reopen <N>`) and continue on its branch.
-   - If none: create a new branch from `main` (`git checkout -b fix/<n>-<short-slug>` or `feat/<n>-<short-slug>`).
+   - If none: create a new branch from fresh `main`:
+     ```bash
+     git checkout main
+     git pull origin main
+     git checkout -b fix/<n>-<short-slug>
+     ```
 
 ---
 
@@ -92,15 +108,20 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
    - Application shell: `crates/graphe/src/app.rs`, `crates/graphe/src/chrome.rs`.
 2. Pinpoint root cause before modifying code.
 3. **Capture Bug Reproduction Screenshot (Mandatory)**:
-   - Run the application or test harness to reproduce the bug:
-     ```bash
-     cargo run -p graphe
-     ```
-   - While the app exhibits the defect, capture the window screenshot using the helper script:
-     ```bash
-     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
-     ```
-   - Verify that `assets/screenshots/<N>-before.png` clearly displays the reported bug.
+   - If authentic user reproduction image was already downloaded in Phase 0, verify it at `assets/screenshots/<N>-before.png`.
+   - Otherwise, run the application to reproduce the defect and capture via script:
+     - **Linux / Git Bash / macOS**:
+       ```bash
+       bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-before.png
+       ```
+     - **Windows PowerShell**:
+       ```powershell
+       powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
+       ```
+   - *Technical note*:
+     - On Windows, `capture_screenshot.ps1` enumerates top-level visible windows (`FindMainWindow`) to bypass winit's 6x6 hidden helper window, uses `CopyFromScreen` for GPU swapchain capture, and falls back to `PrintWindow`.
+     - On Linux, `capture_screenshot.sh` handles Wayland (`grim` / `gnome-screenshot`) and X11 (`maim` / `import` / `scrot`) with `xdotool` window focus.
+     - Under Git Bash on Windows, `capture_screenshot.sh` automatically bridges paths via `cygpath -w` to the PowerShell script.
 4. Outline a minimal plan in chat.
 
 ---
@@ -132,7 +153,7 @@ Desktop applications require both algorithmic correctness and visual reliability
   ```
 
 ### 4.2 Headless egui Visual & Layout Verification
-When any UI, visual layout, dialog, or scroll behavior is touched, write or run headless egui frame tests. See [`references/egui-visual-testing.md`](file:///C:/Users/water/Projects/graphe/.agents/skills/implement-issue/references/egui-visual-testing.md) for full harness details:
+When any UI layout, card height, verse clipping, dialog, or scroll behavior is touched, write or run headless egui frame tests. See [`references/egui-visual-testing.md`](file:///C:/Users/water/Projects/graphe/.agents/skills/implement-issue/references/egui-visual-testing.md) for full harness details:
 
 - **Instantiate headless app**: Use `tests::bare(Session::from_state(...))` in `crates/graphe/src/app.rs`.
 - **Execute frame passes**: Run `ctx.run(raw_input, |ctx| ...)` with virtual desktop dimensions (e.g., 1200x800).
@@ -140,7 +161,7 @@ When any UI, visual layout, dialog, or scroll behavior is touched, write or run 
 - **Verify Text Galleys**: Use `galley_has(&output, "expected text")` to confirm rendered text shapes.
 - **Verify Paper & Colors**: Use `shape_has_paper(&shape, palette_color)` to verify backgrounds and card borders.
 - **Simulate User Events**: Send `egui::Event::PointerMoved`, `egui::Event::PointerButton`, or keyboard shortcuts to verify interaction transitions.
-- **Scroll & Viewport Verification**: Ensure verse clicks or navigation commands set the correct `target_scroll` and do not disturb sibling panes.
+- **Deterministic & Fast**: Runs in < 0.3s, needs zero display server, and executes reliably on all CI runners.
 
 ### 4.3 Desktop Build & Smoke Check
 - Validate workspace compilation:
@@ -157,10 +178,15 @@ When any UI, visual layout, dialog, or scroll behavior is touched, write or run 
   ```bash
   cargo run -p graphe
   ```
-- Navigate to the affected view, trigger the feature or navigation path, and capture the window screenshot:
-  ```bash
-  powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
-  ```
+- Navigate to the affected view, trigger the feature, and capture the window screenshot:
+  - **Linux / Git Bash / macOS**:
+    ```bash
+    bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-after.png
+    ```
+  - **Windows PowerShell**:
+    ```powershell
+    powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
+    ```
 - Verify that `assets/screenshots/<N>-after.png` clearly displays the feature working cleanly.
 
 ### 4.5 Full Workspace Regression Suite & Lint
@@ -168,7 +194,7 @@ When any UI, visual layout, dialog, or scroll behavior is touched, write or run 
   ```bash
   cargo test
   ```
-  All tests (118 domain, 30 store, 84 graphe) must pass.
+  All workspace tests must pass.
 - Run Clippy for idiom enforcement:
   ```bash
   cargo clippy --workspace --all-targets
@@ -189,6 +215,10 @@ When any UI, visual layout, dialog, or scroll behavior is touched, write or run 
      ```text
      git commit -m "Fix verse scroll alignment when clicking commentary references."
      ```
+3. **Capture Commit SHA**:
+   Save the commit SHA for permanent screenshot URLs in the PR body:
+   - Bash: `COMMIT_SHA=$(git rev-parse HEAD)`
+   - PowerShell: `$commitSha = git rev-parse HEAD`
 
 ---
 
@@ -200,13 +230,22 @@ When any UI, visual layout, dialog, or scroll behavior is touched, write or run 
    ```
 2. Format PR Title:
    `[#<N>] - <Short Description>`
-3. Format PR Body in ASD-STE100 (matching `.github/pull_request_template.md` and `write-from-library` guidelines):
-   - First sentence states problem, fix, or result.
-   - One idea per sentence. 25 words or fewer per sentence.
-   - Active voice. One verb per action. Keep articles.
-   - Include `Closes #<N>`.
-   - Complete the template checklist (`cargo test`, UI change verified).
-   - **Embed the Before & After screenshot table in `## Notes`**:
+3. **CRITICAL PR BODY FORMATTING RULES**:
+   - **Permanent Image URLs via Commit SHA**:
+     ALWAYS reference screenshot images using the commit SHA:
+     `https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png`
+     `https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png`
+     **NEVER use branch names** (`<branch>`) in raw URLs. When a PR is merged with `--delete-branch`, GitHub deletes the branch and breaks all image links with HTTP 404. Commit SHAs never expire.
+   - **Always Use `--body-file`**:
+     NEVER pass inline markdown with backticks and tables via `--body "..."` on the command line. Shell string interpolation corrupts backticks into backslashes (e.g. converting `` `cargo test` `` into `\cargo test\`).
+     Always write the PR body to a temporary file (e.g., `temp_pr_body.md`) and pass `--body-file temp_pr_body.md`. Delete the temporary file afterwards.
+   - **ASD-STE100 Style**:
+     - One idea per sentence. 25 words or fewer per sentence.
+     - Active voice. One verb per action. Keep articles.
+     - Include `Closes #<N>`.
+     - Complete the checklist (`cargo test`, UI change verified).
+
+### PR Body Template
 
 ```markdown
 ## Summary
@@ -235,27 +274,31 @@ Closes #<N>
 
 | Bug Reproduction (Before) | Feature Working (After) |
 | :---: | :---: |
-| ![Bug Reproduction](https://raw.githubusercontent.com/claudioscheer/graphe/<branch>/assets/screenshots/<N>-before.png) | ![Feature Working](https://raw.githubusercontent.com/claudioscheer/graphe/<branch>/assets/screenshots/<N>-after.png) |
+| ![Bug Reproduction](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png) | ![Feature Working](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png) |
 ```
 
-4. Create the PR:
+4. Create the PR using `--body-file`:
    ```bash
-   gh pr create --base main --title "[#<N>] - <title>" --body "..."
+   gh pr create --base main --title "[#<N>] - <title>" --body-file temp_pr_body.md
+   rm -f temp_pr_body.md
    ```
 5. Assign to `claudioscheer`:
    ```bash
-   gh pr edit <PR> --add-assignee claudioscheer
+   gh pr edit <PR> --add-assignee claudioscheer || true
    ```
 
 ---
 
-## Phase 7 — Monitor CI Checks
+## Phase 7 — Monitor CI Checks (Strict Anti-Polling)
 
 1. Watch remote GitHub Actions:
    ```bash
    gh pr checks <PR> --watch
    ```
-2. If checks fail:
+2. **STRICT ANTI-POLLING RULE**:
+   - **NEVER poll `manage_task status` or loop checking CI**.
+   - Launch `gh pr checks <PR> --watch` with sufficient `WaitMsBeforeAsync` or send to background, and rely on reactive system wakeup when the task finishes.
+3. If checks fail:
    - View failure logs: `gh run view --log-failed`.
    - Fix the issue locally.
    - Re-run local tests (`cargo test`).
@@ -264,7 +307,7 @@ Closes #<N>
 
 ---
 
-## Phase 8 — Merge PR & Workspace Cleanup
+## Phase 8 — Merge PR & Safe Workspace Cleanup
 
 Once all CI checks pass:
 
@@ -272,13 +315,14 @@ Once all CI checks pass:
    ```bash
    gh pr merge <PR> --merge --delete-branch
    ```
-2. Clean up local workspace:
+2. Clean up local workspace safely:
    ```bash
    git checkout main
-   git pull
-   git branch -d <branch-name>
+   git pull origin main
+   git branch -d <branch-name> 2>/dev/null || git branch -D <branch-name> 2>/dev/null || true
    git status
    ```
+   *Note*: The fallback to `-D` and error suppression prevents local script failures when GitHub's remote branch deletion desyncs local branch tracking.
 
 ---
 
