@@ -3893,14 +3893,168 @@ pub(crate) mod tests {
         time += 0.1;
         let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
 
-        // Click / follow a reference in commentary to verse 15 of Genesis 1
+        // Middle verse (verse 15) centers the verse toward the middle of the view
         app.follow_ref(&commentary_pane, 10, 1, Some(15));
+        time += 0.1;
+        let frame15 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_15 = mark(&frame15, "chapter-offset:pane-1")[1];
+        assert!(offset_15 > 200.0, "offset was {}", offset_15);
+        assert_eq!(app.session.selected_verses, vec![15]);
 
+        // First verse (verse 1) shows the verse at the top
+        app.follow_ref(&commentary_pane, 10, 1, Some(1));
+        time += 0.1;
+        let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_1 = mark(&frame1, "chapter-offset:pane-1")[1];
+        assert_eq!(offset_1, 0.0);
+        assert_eq!(app.session.selected_verses, vec![1]);
+
+        // Last verse (verse 40) shows the verse at the bottom
+        app.follow_ref(&commentary_pane, 10, 1, Some(40));
+        time += 0.1;
+        let frame40 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_40 = mark(&frame40, "chapter-offset:pane-1")[1];
+        assert!(offset_40 > offset_15, "offset_40 {offset_40} should be greater than offset_15 {offset_15}");
+        assert_eq!(app.session.selected_verses, vec![40]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clicking_search_hit_scrolls_and_selects_verse() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let dir = std::env::temp_dir().join(format!("graphe-search-scroll-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        app.session.sidebar = "search".into();
+        let hits = vec![
+            graphe_domain::search::SearchHit {
+                book_number: 10,
+                chapter: 1,
+                verse: 1,
+                text: "No principio...".into(),
+            },
+            graphe_domain::search::SearchHit {
+                book_number: 10,
+                chapter: 1,
+                verse: 20,
+                text: "No principio...".into(),
+            },
+            graphe_domain::search::SearchHit {
+                book_number: 10,
+                chapter: 1,
+                verse: 40,
+                text: "No principio...".into(),
+            },
+        ];
+        app.session.hits = hits.clone();
+
+        // Click hit 1 (verse 20 - middle verse)
+        app.session.open_search_hit(&hits[1]);
+        let mut time = 0.1;
+        let frame20 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_20 = mark(&frame20, "chapter-offset:pane-1")[1];
+        assert!(offset_20 > 200.0);
+        assert_eq!(app.session.selected_verses, vec![20]);
+
+        // Click hit 0 (verse 1 - first verse)
+        app.session.open_search_hit(&hits[0]);
+        time += 0.1;
+        let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_1 = mark(&frame1, "chapter-offset:pane-1")[1];
+        assert_eq!(offset_1, 0.0);
+        assert_eq!(app.session.selected_verses, vec![1]);
+
+        // Click hit 2 (verse 40 - last verse)
+        app.session.open_search_hit(&hits[2]);
+        time += 0.1;
+        let frame40 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_40 = mark(&frame40, "chapter-offset:pane-1")[1];
+        assert!(offset_40 > offset_20);
+        assert_eq!(app.session.selected_verses, vec![40]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clicking_commentary_reference_link_scrolls_verse() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir = std::env::temp_dir().join(format!("graphe-comm-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        let commentary_pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&commentary_pane) {
+            record.module_id = Some("notes".into());
+        }
+        let pieces = vec![
+            crate::study::CommentaryPiece::Heading("Commentary".into()),
+            crate::study::CommentaryPiece::Break,
+            crate::study::CommentaryPiece::Text("See ".into()),
+            crate::study::CommentaryPiece::Link {
+                label: "Gn 1:25".into(),
+                book: 10,
+                chapter: 1,
+                verse: Some(25),
+            },
+        ];
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading.commentary.insert(key, crate::study::CommentaryPaint::new(pieces));
+
+        let mut time = 0.0;
+        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
+        let link_pos = egui::pos2(text_rect[0] + 35.0, text_rect[1] + 30.0);
+
+        // Hover over link
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerMoved(link_pos)]);
+
+        // Click link: press down at time 0.2, release at time 0.3
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerButton {
+            pos: link_pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::default(),
+        }]);
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerButton {
+            pos: link_pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::default(),
+        }]);
+
+        // Frame after click should have scrolled Bible to verse 25
         time += 0.1;
         let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         let offset = *mark(&frame1, "chapter-offset:pane-1");
         assert!(offset[1] > 200.0, "offset was {}", offset[1]);
-        assert_eq!(app.session.selected_verses, vec![15]);
+        assert_eq!(app.session.selected_verses, vec![25]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
