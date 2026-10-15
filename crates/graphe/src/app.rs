@@ -3266,6 +3266,101 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn search_panel_displays_searching_feedback_and_no_results() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = false;
+        app.session.sidebar = "search".into();
+        app.session.query = "jesus".into();
+        app.session.searching = true;
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let output = ctx.run(raw.clone(), |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+        assert!(
+            galley_has(&output, graphe_domain::i18n::t("searching")),
+            "shows searching indicator while search is in progress"
+        );
+
+        // When search finishes with 0 results
+        app.session.searching = false;
+        app.session.searched_query = "jesus".into();
+        app.session.hits.clear();
+
+        let output2 = ctx.run(raw, |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+        assert!(
+            galley_has(&output2, graphe_domain::i18n::t("searchNoResults")),
+            "shows no results feedback when query returns no verses"
+        );
+    }
+
+    #[test]
+    fn search_rejects_unrelated_names_like_jotao_for_joao_and_jesua_for_jesus() {
+        let dir = std::env::temp_dir().join(format!("graphe-search-names-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+
+        let conn = rusqlite::Connection::open(&bible_path).unwrap();
+        conn.execute(
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO verses VALUES (10, 1, 1, 'Jotão tinha vinte e cinco anos quando começou a reinar.')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO verses VALUES (10, 1, 2, 'Houve um homem enviado de Deus, cujo nome era João.')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO verses VALUES (10, 1, 3, 'Estes são os que subiram com Jesuá e Neemias.')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO verses VALUES (10, 1, 4, 'Jeús, Jalão e Corá, príncipes.')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO verses VALUES (10, 1, 5, 'Livro da genealogia de Jesus Cristo, filho de Davi.')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("names-bible", "Names Bible", bible_path));
+        app.session.search_module_id = Some("names-bible".into());
+
+        // Searching for "joão"
+        app.session.query = "joão".into();
+        app.run_search();
+        assert_eq!(app.session.hits.len(), 1, "only João must match");
+        assert_eq!(app.session.hits[0].verse, 2);
+
+        // Searching for "jesus"
+        app.session.query = "jesus".into();
+        app.run_search();
+        assert_eq!(app.session.hits.len(), 1, "only Jesus must match");
+        assert_eq!(app.session.hits[0].verse, 5);
+    }
+
+    #[test]
     fn commentary_padding_keeps_the_text_inside_a_scrollable_view() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
