@@ -86,13 +86,60 @@ fn collapse_ws(value: &str) -> String {
 }
 
 pub fn strip_search_markup(text: &str) -> String {
-    static RE_S: OnceLock<Regex> = OnceLock::new();
-    static RE_TAG: OnceLock<Regex> = OnceLock::new();
-    let re_s = RE_S.get_or_init(|| Regex::new(r"(?i)<S[^>]*>[\s\S]*?</S>").unwrap());
-    let re_tag = RE_TAG.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
-    re_tag
-        .replace_all(&re_s.replace_all(text, " "), " ")
-        .into_owned()
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'<' {
+            let mut tag_end = i + 1;
+            while tag_end < len && bytes[tag_end] != b'>' {
+                tag_end += 1;
+            }
+            if tag_end < len {
+                let tag_content = &bytes[i + 1..tag_end];
+                if !tag_content.is_empty() && tag_content[0] != b'/' {
+                    let first = tag_content[0].to_ascii_uppercase();
+                    if matches!(first, b'S' | b'F' | b'N' | b'M' | b'L' | b'X' | b'O' | b'T') {
+                        let mut found_close = false;
+                        let mut j = tag_end + 1;
+                        while j + 2 < len {
+                            if bytes[j] == b'<'
+                                && bytes[j + 1] == b'/'
+                                && bytes[j + 2].to_ascii_uppercase() == first
+                            {
+                                let mut close_end = j + 3;
+                                while close_end < len && bytes[close_end] != b'>' {
+                                    close_end += 1;
+                                }
+                                if close_end < len {
+                                    i = close_end + 1;
+                                    out.push(' ');
+                                    found_close = true;
+                                    break;
+                                }
+                            }
+                            j += 1;
+                        }
+                        if found_close {
+                            continue;
+                        }
+                    }
+                }
+                i = tag_end + 1;
+                out.push(' ');
+                continue;
+            }
+        }
+        let next_tag = bytes[i..]
+            .iter()
+            .position(|&b| b == b'<')
+            .map(|offset| i + offset)
+            .unwrap_or(len);
+        out.push_str(&text[i..next_tag]);
+        i = next_tag;
+    }
+    out
 }
 
 /// Plain verse wording for a search hit.
@@ -344,121 +391,58 @@ fn word_boundary(chars: &[char], pos: usize, direction: i32) -> usize {
 }
 
 pub fn normalize_search_text(text: &str) -> String {
-    let folded: String = text
-        .nfd()
-        .filter(|ch| !('\u{0300}'..='\u{036f}').contains(ch))
-        .collect();
-    let lower = folded.to_lowercase();
-    let mut out = String::new();
+    let mut out = String::with_capacity(text.len());
     let mut pending_space = false;
-    for ch in lower.chars() {
-        if ch.is_ascii_alphanumeric() {
-            if pending_space && !out.is_empty() {
-                out.push(' ');
+    for ch in text.nfd() {
+        if ('\u{0300}'..='\u{036f}').contains(&ch) {
+            continue;
+        }
+        for lower_ch in ch.to_lowercase() {
+            if lower_ch.is_ascii_alphanumeric() {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.push(lower_ch);
+            } else {
+                pending_space = true;
             }
-            pending_space = false;
-            out.push(ch);
-        } else {
-            pending_space = true;
         }
     }
     out
-}
-
-fn allowed_edit_distance(term: &str, token: &str) -> usize {
-    let term_len = term.chars().count();
-    let token_len = token.chars().count();
-    let max_len = term_len.max(token_len);
-    if term_len == token_len {
-        if term_len >= 5 {
-            1
-        } else {
-            0
-        }
-    } else if max_len >= 5 {
-        1
-    } else {
-        0
-    }
-}
-
-fn edit_distance_within(a: &str, b: &str, max_distance: usize) -> bool {
-    if a == b {
-        return true;
-    }
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    if a.len().abs_diff(b.len()) > max_distance {
-        return false;
-    }
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    for i in 1..=a.len() {
-        let mut curr = vec![i];
-        let mut row_min = curr[0];
-        for j in 1..=b.len() {
-            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            let value = (curr[j - 1] + 1).min(prev[j] + 1).min(prev[j - 1] + cost);
-            curr.push(value);
-            row_min = row_min.min(value);
-        }
-        if row_min > max_distance {
-            return false;
-        }
-        prev = curr;
-    }
-    prev[b.len()] <= max_distance
-}
-
-fn matches_fuzzy_term(term: &str, tokens: &[&str]) -> bool {
-    if term.is_empty() {
-        return false;
-    }
-    if tokens.iter().any(|token| *token == term) {
-        return true;
-    }
-    let term_first = term.chars().next();
-    tokens.iter().any(|token| {
-        if token.chars().next() != term_first {
-            return false;
-        }
-        let max_distance = allowed_edit_distance(term, token);
-        if max_distance == 0 {
-            return false;
-        }
-        if token.chars().count().abs_diff(term.chars().count()) > max_distance {
-            return false;
-        }
-        edit_distance_within(token, term, max_distance)
-    })
 }
 
 pub fn matches_parsed_search(text: &str, parsed: &ParsedSearchQuery) -> bool {
     if parsed.text_terms.is_empty() && parsed.exact_phrases.is_empty() {
         return true;
     }
-    let normalized_text = normalize_search_text(&strip_search_markup(text));
+    let stripped = strip_search_markup(text);
+    let normalized_text = normalize_search_text(&stripped);
     if normalized_text.is_empty() {
         return false;
     }
-    let padded_text = format!(" {normalized_text} ");
-    for phrase in &parsed.exact_phrases {
-        let normalized_phrase = normalize_search_text(phrase);
-        if normalized_phrase.is_empty() {
-            return false;
-        }
-        let padded_phrase = format!(" {normalized_phrase} ");
-        if !padded_text.contains(&padded_phrase) {
-            return false;
+    if !parsed.exact_phrases.is_empty() {
+        let padded_text = format!(" {normalized_text} ");
+        for phrase in &parsed.exact_phrases {
+            let normalized_phrase = normalize_search_text(phrase);
+            if normalized_phrase.is_empty() {
+                return false;
+            }
+            let padded_phrase = format!(" {normalized_phrase} ");
+            if !padded_text.contains(&padded_phrase) {
+                return false;
+            }
         }
     }
-    let owned: Vec<String> = normalized_text
-        .split(' ')
-        .filter(|t| !t.is_empty())
-        .map(|t| t.to_string())
-        .collect();
-    let tokens: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     for term in &parsed.text_terms {
-        if !matches_fuzzy_term(&normalize_search_text(term), &tokens) {
+        let norm_term = normalize_search_text(term);
+        if norm_term.is_empty() {
+            continue;
+        }
+        if !normalized_text.contains(&norm_term) {
+            return false;
+        }
+        if !normalized_text.split_whitespace().any(|tok| tok == norm_term) {
             return false;
         }
     }
@@ -540,20 +524,9 @@ pub fn highlight_text(text: &str, terms: &[String]) -> String {
 
         if term_words.len() == 1 {
             let single_term = term_words[0];
-            let term_first = single_term.chars().next();
             for span in &spans {
                 if span.norm == single_term {
                     matched_ranges.push((span.start, span.end));
-                } else if let Some(first) = term_first {
-                    if span.norm.chars().next() == Some(first) {
-                        let max_dist = allowed_edit_distance(single_term, &span.norm);
-                        if max_dist > 0
-                            && span.norm.chars().count().abs_diff(single_term.chars().count()) <= max_dist
-                            && edit_distance_within(&span.norm, single_term, max_dist)
-                        {
-                            matched_ranges.push((span.start, span.end));
-                        }
-                    }
                 }
             }
         } else {
@@ -756,13 +729,31 @@ mod search_query_tests {
     }
 
     #[test]
-    fn highlight_text_handles_fuzzy_typo_matches() {
-        let raw = "In the beginning God created the world";
-        let terms = vec!["begnning".into(), "creatd".into(), "wrld".into()];
-        let highlighted = highlight_text(raw, &terms);
+    fn search_matching_and_highlighting_reject_unrelated_similar_names() {
+        let joao_query = parse_search_query(Some("joão"));
+        let jotao_verse = "Jotão tinha vinte e cinco anos quando começou a reinar.";
+        let joao_verse = "Houve um homem enviado de Deus, cujo nome era João.";
+        assert!(!matches_parsed_search(jotao_verse, &joao_query));
+        assert!(matches_parsed_search(joao_verse, &joao_query));
+
+        let highlighted_joao = highlight_text("Jotão e João foram ao templo", &["joao".into()]);
         assert_eq!(
-            highlighted,
-            "In the <mark>beginning</mark> God <mark>created</mark> the <mark>world</mark>"
+            highlighted_joao,
+            "Jotão e <mark>João</mark> foram ao templo"
+        );
+
+        let jesus_query = parse_search_query(Some("jesus"));
+        let jesua_verse = "Estes são os que subiram com Jesuá e Neemias.";
+        let jeus_verse = "Estes foram os filhos de Oolibama: Jeús, Jalão e Corá.";
+        let jesus_verse = "Livro da genealogia de Jesus Cristo, filho de Davi.";
+        assert!(!matches_parsed_search(jesua_verse, &jesus_query));
+        assert!(!matches_parsed_search(jeus_verse, &jesus_query));
+        assert!(matches_parsed_search(jesus_verse, &jesus_query));
+
+        let highlighted_jesus = highlight_text("Jesuá, Jeús e Jesus Cristo", &["jesus".into()]);
+        assert_eq!(
+            highlighted_jesus,
+            "Jesuá, Jeús e <mark>Jesus</mark> Cristo"
         );
     }
 

@@ -48,6 +48,9 @@ pub struct Session {
     pub font_size: f32,
     pub dialog: Dialog,
     pub query: String,
+    pub searched_query: String,
+    #[allow(dead_code)]
+    pub searching: bool,
     pub hits: Vec<SearchHit>,
     pub selected_verses: Vec<i64>,
     /// Verse that starts a shift-click range. Stays put while shift is held.
@@ -117,6 +120,8 @@ impl Session {
             font_size: 20.0,
             dialog: Dialog::None,
             query: String::new(),
+            searched_query: String::new(),
+            searching: false,
             hits: Vec::new(),
             selected_verses: Vec::new(),
             selection_anchor: None,
@@ -200,6 +205,7 @@ impl Session {
         if let Some(search) = state.get("searchPanel").filter(|value| value.is_object()) {
             if let Some(query) = search.get("query").and_then(|value| value.as_str()) {
                 session.query = query.to_string();
+                session.searched_query = query.to_string();
             }
             session.search_module_id = search
                 .get("moduleId")

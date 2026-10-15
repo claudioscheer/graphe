@@ -1135,7 +1135,7 @@ mod tests {
     fn lexical_search_matches_the_sqlite_provider_cases() {
         let db = search_db();
         assert_eq!(
-            lexical_search(&db, "begnning creatd", None).unwrap()[0].verse,
+            lexical_search(&db, "beginning created", None).unwrap()[0].verse,
             1
         );
         assert_eq!(
@@ -1153,9 +1153,42 @@ mod tests {
         assert!(lexical_search(&db, "\"God kingdom\"", None)
             .unwrap()
             .is_empty());
-        let limited = lexical_search(&db, "strong:H1254 wrld", Some(1.0)).unwrap();
+        let limited = lexical_search(&db, "strong:H1254 world", Some(1.0)).unwrap();
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].verse, 4);
+
+        // Issue 28 regression tests: "joão" must not match "jotão", "jesus" must not match "Jesuá" or "Jeús"
+        db.execute(
+            "INSERT INTO verses VALUES (10, 50, 1, 'Jotão tinha vinte e cinco anos')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 50, 2, 'Cujo nome era João')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 50, 3, 'com Jesuá e Neemias')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 50, 4, 'Jeús, Jalão e Corá')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 50, 5, 'Jesus Cristo, filho de Davi')",
+            [],
+        )
+        .unwrap();
+
+        let joao_results = lexical_search(&db, "joão", None).unwrap();
+        assert_eq!(joao_results.iter().map(|h| h.verse).collect::<Vec<_>>(), vec![2]);
+
+        let jesus_results = lexical_search(&db, "jesus", None).unwrap();
+        assert_eq!(jesus_results.iter().map(|h| h.verse).collect::<Vec<_>>(), vec![5]);
 
         // Issue 24 regression test: "amor" must not match "clamor", "Amom", or "amou"
         db.execute(

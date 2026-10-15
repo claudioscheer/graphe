@@ -99,6 +99,7 @@ pub fn run() -> eframe::Result {
                 editor: ModuleEditorForm::default(),
                 dict_info: None,
                 reload_feedback: None,
+                search_debounce: None,
             }))
         }),
     )
@@ -132,6 +133,7 @@ pub(crate) struct GrapheApp {
     pub(crate) editor: ModuleEditorForm,
     pub(crate) dict_info: Option<crate::dialogs::DictInfoState>,
     pub(crate) reload_feedback: Option<std::time::Instant>,
+    pub(crate) search_debounce: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -225,6 +227,7 @@ impl eframe::App for GrapheApp {
         self.update_banner(ctx, palette);
         self.top_strip(ctx, palette);
         self.activity_bar(ctx, palette);
+        self.pump_search(ctx);
         self.sidebar(ctx, palette);
         self.editor(ctx, palette);
         self.dialogs(ctx);
@@ -266,6 +269,18 @@ impl GrapheApp {
             self.save_seen = self.store.save_calls.len();
             let _ = state::save_state(&self.store.state);
             self.persisted = self.store.state.clone();
+        }
+    }
+
+    fn pump_search(&mut self, ctx: &egui::Context) {
+        if let Some(deadline) = self.search_debounce {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                self.search_debounce = None;
+                self.run_search();
+            } else {
+                ctx.request_repaint_after(deadline.saturating_duration_since(now));
+            }
         }
     }
 
@@ -767,6 +782,7 @@ pub(crate) mod tests {
             editor: ModuleEditorForm::default(),
             dict_info: None,
             reload_feedback: None,
+            search_debounce: None,
         }
     }
 
@@ -3099,12 +3115,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn search_panel_highlights_words_with_accents_and_fuzzy_typos() {
+    fn search_panel_highlights_words_with_accents_and_exact_terms() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
         app.session.sidebar_collapsed = false;
         app.session.sidebar = "search".into();
-        app.session.query = "bencao amor begnning".into();
+        app.session.query = "bencao amor beginning".into();
         let verse = "A bênção do SENHOR traz amor desde o beginning.";
         app.session.hits = vec![graphe_domain::search::SearchHit {
             book_number: 10,
@@ -3132,9 +3148,85 @@ pub(crate) mod tests {
         );
         assert!(
             galley_has(&output, "beginning"),
-            "search card displays fuzzy typo-matched word"
+            "search card displays exact matched word"
         );
     }
+
+    #[test]
+    fn search_cards_do_not_overlap() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = false;
+        app.session.sidebar = "search".into();
+        app.session.query = "Jesuá".into();
+        let verse1 = "Então se levantaram Zorobabel , filho de Sealtiel , e Jesuá , filho de Jozadaque , e começaram a edificar a casa de Deus , que está em Jerusalém ; e com eles os profetas de Deus , que os ajudavam .";
+        let verse2 = "E no quarto dia se pesou a prata , o ouro e os utensílios , na casa de nosso Deus , por mão de Meremote , filho do sacerdote Urias ; e com ele Eleazar , filho de Fineias , e com eles Jozabade , filho de Jesuá , e Noadias , filho de Binui , levitas .";
+        let mut hits = Vec::new();
+        for i in 0..50 {
+            hits.push(graphe_domain::search::SearchHit {
+                book_number: 15,
+                chapter: 5,
+                verse: i + 1,
+                text: if i % 2 == 0 { verse1.into() } else { verse2.into() },
+            });
+        }
+        app.session.hits = hits;
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+
+        // Frame 1
+        let _output1 = ctx.run(raw.clone(), |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+
+        // Frame 2
+        let output2 = ctx.run(raw, |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+
+        let mut card_rects: Vec<egui::Rect> = output2
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Rect(r)
+                    if (r.rect.left() - 8.0).abs() < 1.0 && r.rect.width() > 100.0 =>
+                {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .collect();
+
+        card_rects.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        assert!(
+            card_rects.len() >= 2,
+            "Expected at least 2 visible search cards, found {}",
+            card_rects.len()
+        );
+
+        for window in card_rects.windows(2) {
+            let prev = window[0];
+            let next = window[1];
+            assert!(
+                prev.bottom() <= next.top(),
+                "Search cards must not overlap! prev: {:?}, next: {:?}",
+                prev,
+                next
+            );
+            assert!(
+                next.top() - prev.bottom() >= 5.9,
+                "Expected at least 6px gap between search cards, but was {:.2}px (prev: {:?}, next: {:?})",
+                next.top() - prev.bottom(),
+                prev,
+                next
+            );
+        }
+    }
+
 
     #[test]
     fn search_returns_all_results_without_80_cap() {

@@ -207,7 +207,7 @@ impl GrapheApp {
             .show_viewport(ui, |ui, viewport| {
                 let width = ui.available_width();
                 let card_width = (width - 16.0).max(32.0);
-                let text_width = (card_width - 16.0).max(32.0);
+                let text_width = (card_width - 18.0).max(32.0);
                 let plain = paint::color(palette.ui_text_muted);
                 let mark = paint::color(palette.ui_text);
                 let cache_id = ui.id().with((
@@ -329,7 +329,8 @@ impl GrapheApp {
                             );
                             draw_marked(
                                 ui,
-                                &snippet,
+                                snippet,
+                                text_width,
                                 12.0,
                                 paint::color(palette.ui_text_muted),
                                 paint::color(palette.ui_text),
@@ -1336,12 +1337,13 @@ fn marked_job(
 fn draw_marked(
     ui: &mut egui::Ui,
     marked: &str,
+    width: f32,
     size: f32,
     plain: egui::Color32,
     mark: egui::Color32,
     palette: &UiPalette,
 ) {
-    let job = marked_job(marked, ui.available_width(), size, plain, mark, palette);
+    let job = marked_job(marked, width, size, plain, mark, palette);
     ui.label(job);
 }
 
