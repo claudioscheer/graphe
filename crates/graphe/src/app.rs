@@ -3099,6 +3099,44 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn search_panel_highlights_words_with_accents_and_fuzzy_typos() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = false;
+        app.session.sidebar = "search".into();
+        app.session.query = "bencao amor begnning".into();
+        let verse = "A bênção do SENHOR traz amor desde o beginning.";
+        app.session.hits = vec![graphe_domain::search::SearchHit {
+            book_number: 10,
+            chapter: 1,
+            verse: 1,
+            text: verse.into(),
+        }];
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let output = ctx.run(raw, |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+
+        assert!(
+            galley_has(&output, "bênção"),
+            "search card displays accented word"
+        );
+        assert!(
+            galley_has(&output, "amor"),
+            "search card displays exact word"
+        );
+        assert!(
+            galley_has(&output, "beginning"),
+            "search card displays fuzzy typo-matched word"
+        );
+    }
+
+    #[test]
     fn commentary_padding_keeps_the_text_inside_a_scrollable_view() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());

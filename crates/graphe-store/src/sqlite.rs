@@ -1156,6 +1156,37 @@ mod tests {
         let limited = lexical_search(&db, "strong:H1254 wrld", Some(1.0)).unwrap();
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].verse, 4);
+
+        // Issue 24 regression test: "amor" must not match "clamor", "Amom", or "amou"
+        db.execute(
+            "INSERT INTO verses VALUES (10, 19, 13, 'porque o seu clamor tem aumentado')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 19, 38, 'este é o pai dos filhos de Amom')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 24, 67, 'e foi-lhe por mulher, e amou-a')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 26, 7, 'por amor de Rebeca')",
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO verses VALUES (10, 26, 24, 'por amor de Abraão')",
+            [],
+        )
+        .unwrap();
+
+        let results = lexical_search(&db, "amor", None).unwrap();
+        let verses: Vec<i64> = results.iter().map(|h| h.verse).collect();
+        assert_eq!(verses, vec![7, 24]);
     }
 
     #[test]

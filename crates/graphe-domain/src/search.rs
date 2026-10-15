@@ -365,8 +365,17 @@ pub fn normalize_search_text(text: &str) -> String {
     out
 }
 
-fn allowed_edit_distance(term: &str) -> usize {
-    if term.chars().count() >= 4 {
+fn allowed_edit_distance(term: &str, token: &str) -> usize {
+    let term_len = term.chars().count();
+    let token_len = token.chars().count();
+    let max_len = term_len.max(token_len);
+    if term_len == token_len {
+        if term_len >= 5 {
+            1
+        } else {
+            0
+        }
+    } else if max_len >= 5 {
         1
     } else {
         0
@@ -400,23 +409,20 @@ fn edit_distance_within(a: &str, b: &str, max_distance: usize) -> bool {
     prev[b.len()] <= max_distance
 }
 
-fn matches_fuzzy_term(term: &str, normalized_text: &str, tokens: &[&str]) -> bool {
+fn matches_fuzzy_term(term: &str, tokens: &[&str]) -> bool {
     if term.is_empty() {
         return false;
     }
-    if normalized_text.contains(term) {
+    if tokens.iter().any(|token| *token == term) {
         return true;
-    }
-    if tokens.iter().any(|token| token.starts_with(term)) {
-        return true;
-    }
-    let max_distance = allowed_edit_distance(term);
-    if max_distance == 0 {
-        return false;
     }
     let term_first = term.chars().next();
     tokens.iter().any(|token| {
         if token.chars().next() != term_first {
+            return false;
+        }
+        let max_distance = allowed_edit_distance(term, token);
+        if max_distance == 0 {
             return false;
         }
         if token.chars().count().abs_diff(term.chars().count()) > max_distance {
@@ -434,9 +440,14 @@ pub fn matches_parsed_search(text: &str, parsed: &ParsedSearchQuery) -> bool {
     if normalized_text.is_empty() {
         return false;
     }
+    let padded_text = format!(" {normalized_text} ");
     for phrase in &parsed.exact_phrases {
         let normalized_phrase = normalize_search_text(phrase);
-        if normalized_phrase.is_empty() || !normalized_text.contains(&normalized_phrase) {
+        if normalized_phrase.is_empty() {
+            return false;
+        }
+        let padded_phrase = format!(" {normalized_phrase} ");
+        if !padded_text.contains(&padded_phrase) {
             return false;
         }
     }
@@ -447,7 +458,7 @@ pub fn matches_parsed_search(text: &str, parsed: &ParsedSearchQuery) -> bool {
         .collect();
     let tokens: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
     for term in &parsed.text_terms {
-        if !matches_fuzzy_term(&normalize_search_text(term), &normalized_text, &tokens) {
+        if !matches_fuzzy_term(&normalize_search_text(term), &tokens) {
             return false;
         }
     }
@@ -478,16 +489,121 @@ pub fn extract_search_terms(query: &str) -> Vec<String> {
 }
 
 pub fn highlight_text(text: &str, terms: &[String]) -> String {
-    let mut result = escape_html(text);
+    if text.is_empty() || terms.is_empty() {
+        return escape_html(text);
+    }
+
+    struct WordSpan {
+        start: usize,
+        end: usize,
+        norm: String,
+    }
+
+    let mut spans = Vec::new();
+    let mut word_start = None;
+    for (idx, ch) in text.char_indices() {
+        if ch.is_alphanumeric() {
+            if word_start.is_none() {
+                word_start = Some(idx);
+            }
+        } else if let Some(s) = word_start {
+            let slice = &text[s..idx];
+            spans.push(WordSpan {
+                start: s,
+                end: idx,
+                norm: normalize_search_text(slice),
+            });
+            word_start = None;
+        }
+    }
+    if let Some(s) = word_start {
+        let slice = &text[s..];
+        spans.push(WordSpan {
+            start: s,
+            end: text.len(),
+            norm: normalize_search_text(slice),
+        });
+    }
+
+    let mut matched_ranges: Vec<(usize, usize)> = Vec::new();
+
     for term in terms {
-        let escaped = escape_html(term);
-        if escaped.is_empty() {
+        let norm_term = normalize_search_text(term);
+        if norm_term.is_empty() {
             continue;
         }
-        let pattern = format!("(?i)({})", regex::escape(&escaped));
-        if let Ok(re) = Regex::new(&pattern) {
-            result = re.replace_all(&result, "<mark>$1</mark>").into_owned();
+
+        let term_words: Vec<&str> = norm_term.split(' ').filter(|w| !w.is_empty()).collect();
+        if term_words.is_empty() {
+            continue;
         }
+
+        if term_words.len() == 1 {
+            let single_term = term_words[0];
+            let term_first = single_term.chars().next();
+            for span in &spans {
+                if span.norm == single_term {
+                    matched_ranges.push((span.start, span.end));
+                } else if let Some(first) = term_first {
+                    if span.norm.chars().next() == Some(first) {
+                        let max_dist = allowed_edit_distance(single_term, &span.norm);
+                        if max_dist > 0
+                            && span.norm.chars().count().abs_diff(single_term.chars().count()) <= max_dist
+                            && edit_distance_within(&span.norm, single_term, max_dist)
+                        {
+                            matched_ranges.push((span.start, span.end));
+                        }
+                    }
+                }
+            }
+        } else {
+            let phrase_len = term_words.len();
+            if spans.len() >= phrase_len {
+                for i in 0..=(spans.len() - phrase_len) {
+                    let window = &spans[i..i + phrase_len];
+                    let matches_phrase = window
+                        .iter()
+                        .zip(term_words.iter())
+                        .all(|(span, target)| span.norm == **target);
+                    if matches_phrase {
+                        let start = window[0].start;
+                        let end = window[phrase_len - 1].end;
+                        matched_ranges.push((start, end));
+                    }
+                }
+            }
+        }
+    }
+
+    if matched_ranges.is_empty() {
+        return escape_html(text);
+    }
+
+    matched_ranges.sort_by_key(|&(s, _)| s);
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(matched_ranges.len());
+    for (start, end) in matched_ranges {
+        if let Some(last) = merged.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+
+    let mut result = String::with_capacity(text.len() + merged.len() * 15);
+    let mut cursor = 0;
+    for (start, end) in merged {
+        if start > cursor {
+            result.push_str(&escape_html(&text[cursor..start]));
+        }
+        result.push_str("<mark>");
+        result.push_str(&escape_html(&text[start..end]));
+        result.push_str("</mark>");
+        cursor = end;
+    }
+    if cursor < text.len() {
+        result.push_str(&escape_html(&text[cursor..]));
     }
     result
 }
@@ -621,5 +737,69 @@ mod search_query_tests {
             "E eis que estou contigo, e te <mark>guardarei</mark> por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito."
         );
         assert!(!result.contains("..."));
+    }
+
+    #[test]
+    fn highlight_text_handles_diacritics_accent_insensitively() {
+        let raw = "A bênção do SENHOR é que enriquece, e a graça de Deus traz salvação pelo Espírito Santo a João.";
+        let terms = vec![
+            "bencao".into(),
+            "graca".into(),
+            "espirito".into(),
+            "joao".into(),
+        ];
+        let highlighted = highlight_text(raw, &terms);
+        assert_eq!(
+            highlighted,
+            "A <mark>bênção</mark> do SENHOR é que enriquece, e a <mark>graça</mark> de Deus traz salvação pelo <mark>Espírito</mark> Santo a <mark>João</mark>."
+        );
+    }
+
+    #[test]
+    fn highlight_text_handles_fuzzy_typo_matches() {
+        let raw = "In the beginning God created the world";
+        let terms = vec!["begnning".into(), "creatd".into(), "wrld".into()];
+        let highlighted = highlight_text(raw, &terms);
+        assert_eq!(
+            highlighted,
+            "In the <mark>beginning</mark> God <mark>created</mark> the <mark>world</mark>"
+        );
+    }
+
+    #[test]
+    fn search_matching_rejects_unrelated_near_words_and_substrings() {
+        let parsed = parse_search_query(Some("amor"));
+
+        // Unrelated near words that differ by 1 letter on short words must NOT match
+        let gn_19_38 = "E a menor também deu à luz um filho , e chamou o seu nome Ben-Ami ; este é o pai dos filhos de Amom até o dia de hoje .";
+        assert!(!matches_parsed_search(gn_19_38, &parsed));
+
+        let gn_24_67 = "E Isaque trouxe -a para a tenda de sua mãe Sara , e tomou a Rebeca , e foi-lhe por mulher , e amou -a. Assim Isaque foi consolado depois da morte de sua mãe .";
+        assert!(!matches_parsed_search(gn_24_67, &parsed));
+
+        let gn_29_30 = "E possuiu também a Raquel , e amou também a Raquel mais do que a Lia e serviu com ele ainda outros sete anos .";
+        assert!(!matches_parsed_search(gn_29_30, &parsed));
+
+        // Substring inside unrelated words must NOT match
+        let gn_19_13 = "Porque nós vamos destruir este lugar , porque o seu clamor tem aumentado diante da face do SENHOR , e o SENHOR nos enviou a destruí -lo.";
+        assert!(!matches_parsed_search(gn_19_13, &parsed));
+
+        let dt_3_9 = "A Hermom os sidônios chamam Siriom ; porém os amorreus o chamam Senir";
+        assert!(!matches_parsed_search(dt_3_9, &parsed));
+
+        // Actual occurrences of the searched word MUST match
+        let gn_26_7 = "E perguntando -lhe os homens daquele lugar acerca de sua mulher , disse : É minha irmã ; porque temia dizer : É minha mulher ; para que porventura (dizia ele) não me matem os homens daquele lugar por amor de Rebeca ; porque era formosa à vista .";
+        assert!(matches_parsed_search(gn_26_7, &parsed));
+
+        let gn_26_24 = "E apareceu -lhe o SENHOR naquela mesma noite , e disse : Eu sou o Deus de Abraão teu pai ; não temas , porque eu sou contigo , e abençoar -te-ei, e multiplicarei a tua descendência por amor de Abraão meu servo .";
+        assert!(matches_parsed_search(gn_26_24, &parsed));
+    }
+
+    #[test]
+    fn highlight_text_does_not_mark_inside_unrelated_words() {
+        let gn_19_13 = "porque o seu clamor tem aumentado diante da face do SENHOR";
+        let highlighted = highlight_text(gn_19_13, &["amor".into()]);
+        assert_eq!(highlighted, gn_19_13);
+        assert!(!highlighted.contains("<mark>"));
     }
 }
