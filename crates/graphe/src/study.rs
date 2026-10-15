@@ -249,6 +249,8 @@ impl GrapheApp {
         ui.set_max_width(scroll_width);
         let chapter_scroll = paint::scroll_id(ui, ("chapter", pane_id));
         paint::scroll_by_wheel(ui, chapter_scroll, 1.45);
+        let mut scroll_target_reached = false;
+        let mut rows_grew = false;
         let chapter_view = egui::ScrollArea::vertical()
             .id_salt(("chapter", pane_id))
             .auto_shrink([false, false])
@@ -291,13 +293,14 @@ impl GrapheApp {
                         .enumerate()
                         .map(|(index, spans)| {
                             let verse = paint.verses[index].0;
+                            let ref_count = refs.get(&verse).map(Vec::len).unwrap_or(0);
                             self.measure_verse_height(
                                 ui,
                                 spans,
                                 text_width,
                                 font,
                                 palette,
-                                refs.get(&verse).is_some(),
+                                ref_count,
                             )
                         })
                         .collect();
@@ -337,6 +340,19 @@ impl GrapheApp {
                         );
                         ui.scroll_to_rect(rect, align);
                         ui.ctx().request_repaint();
+
+                        let verse_top = BIBLE_PAD_TOP + rows_prefix(&heights, index);
+                        let verse_bottom = verse_top + heights.get(index).copied().unwrap_or(24.0);
+                        let in_view = verse_bottom > viewport.min.y && verse_top < viewport.max.y;
+                        let aligned = if scroll_center && !is_first && !is_last {
+                            let max_offset = (total - viewport.height()).max(0.0);
+                            let target_offset = (verse_top + height * 0.5 - viewport.height() * 0.5)
+                                .clamp(0.0, max_offset);
+                            (viewport.min.y - target_offset).abs() <= 4.0
+                        } else {
+                            in_view
+                        };
+                        scroll_target_reached = aligned;
                     }
                 }
                 let (start, end) =
@@ -391,6 +407,7 @@ impl GrapheApp {
                     }
                 });
                 if grew {
+                    rows_grew = true;
                     ui.ctx().request_repaint();
                 }
             });
@@ -414,10 +431,20 @@ impl GrapheApp {
                 ),
             );
         }
+        let scroll_attempts_id = egui::Id::new(("scroll_attempts", pane_id));
+        let attempts: usize = ui.data(|d| d.get_temp(scroll_attempts_id)).unwrap_or(0);
         if active_bible && scroll_verse.is_some() {
-            if paint.verses.iter().any(|(item, _)| Some(*item) == scroll_verse) {
+            let reached_and_settled = (scroll_target_reached && !rows_grew) || attempts >= 5;
+            let verse_exists = paint.verses.iter().any(|(item, _)| Some(*item) == scroll_verse);
+            if reached_and_settled || !verse_exists {
                 self.session.scroll_verse = None;
+                ui.data_mut(|d| d.remove_temp::<usize>(scroll_attempts_id));
+            } else {
+                ui.data_mut(|d| d.insert_temp(scroll_attempts_id, attempts + 1));
+                ui.ctx().request_repaint();
             }
+        } else {
+            ui.data_mut(|d| d.remove_temp::<usize>(scroll_attempts_id));
         }
     }
 
@@ -941,10 +968,10 @@ impl GrapheApp {
         text_width: f32,
         font: f32,
         palette: &UiPalette,
-        has_refs: bool,
+        ref_count: usize,
     ) -> f32 {
         let layout = self.verse_row_layout(ui, spans, text_width, font, palette);
-        row_height_from_galley(layout.galley.rect.height(), font, has_refs)
+        row_height_from_galley(layout.galley.rect.height(), font, ref_count, text_width)
     }
 
     fn paint_verse_row(
@@ -2155,10 +2182,21 @@ fn gap_after_strong(next: Option<&VerseSpan>) -> bool {
     }
 }
 
-fn row_height_from_galley(layout_height: f32, font: f32, has_refs: bool) -> f32 {
+fn row_height_from_galley(
+    layout_height: f32,
+    font: f32,
+    ref_count: usize,
+    wrap_width: f32,
+) -> f32 {
     let text = layout_height.max(font * 0.8) + 8.0;
-    let refs = if has_refs {
-        (font * 0.7).max(14.0)
+    let refs = if ref_count > 0 {
+        let line_h = (font * 0.7).max(14.0) + 2.0;
+        let approx_ref_w = (font * 3.6).max(48.0);
+        let refs_per_line = ((wrap_width - VERSE_NUM_W).max(approx_ref_w) / approx_ref_w)
+            .floor()
+            .max(1.0);
+        let lines = (ref_count as f32 / refs_per_line).ceil().max(1.0);
+        lines * line_h + 2.0
     } else {
         0.0
     };

@@ -4093,6 +4093,230 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn clicking_search_hit_when_already_in_same_chapter_scrolls_to_selected_verse() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        let dir = std::env::temp_dir().join(format!("graphe-search-scroll-same-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        app.session.sidebar = "search".into();
+        let hit = graphe_domain::search::SearchHit {
+            book_number: 10,
+            chapter: 1,
+            verse: 32,
+            text: "No principio...".into(),
+        };
+        app.session.hits = vec![hit.clone()];
+
+        // Render initial frame - pane is on chapter 1
+        let mut time = 0.1;
+        let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_initial = mark(&frame1, "chapter-offset:pane-1")[1];
+        assert_eq!(offset_initial, 0.0);
+
+        // Now user clicks search hit Gn 1:32 while already in chapter 1
+        app.session.open_search_hit(&hit);
+        time += 0.1;
+        let frame32 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset_32 = mark(&frame32, "chapter-offset:pane-1")[1];
+        assert!(offset_32 > 500.0, "offset_32 was {offset_32}");
+        assert_eq!(app.session.selected_verses, vec![32]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_hit_scrolls_to_selected_verse_with_multiline_cross_references() {
+        let dir = std::env::temp_dir().join(format!("graphe-search-scroll-xrefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(4);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+
+        let xref_path = dir.join("xrefs.SQLite3");
+        let mut sql = String::from(
+            "CREATE TABLE cross_references (book INTEGER, chapter INTEGER, verse INTEGER, verse_end INTEGER, book_to INTEGER, chapter_to INTEGER, verse_to_start INTEGER, verse_to_end INTEGER, votes INTEGER);\n",
+        );
+        // Add 25 cross references to verses 10..25 to cause row height expansion
+        for verse in 10..=25 {
+            for v_to in 1..=25 {
+                sql.push_str(&format!(
+                    "INSERT INTO cross_references VALUES (10, 1, {verse}, NULL, 20, 1, {v_to}, NULL, 1);\n"
+                ));
+            }
+        }
+        graphe_store::sqlite::init_module_sql(&xref_path, &sql).unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "xrefs".into(),
+            name: "Cross References".into(),
+            kind: "crossreference".into(),
+            path: xref_path,
+            short_title: Some("XREF".into()),
+            description: None,
+        });
+        app.session.xref_modules = vec!["xrefs".into()];
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = 10;
+        app.session.panes.get_mut("pane-1").unwrap().chapter = 1;
+        app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+
+        // Render initial frame at top of chapter
+        let _ = ctx.run(raw.clone(), |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+            app.editor(ctx, theme::palette(false));
+        });
+
+        // User clicks search hit for verse 32
+        let hit = graphe_domain::search::SearchHit {
+            book_number: 10,
+            chapter: 1,
+            verse: 32,
+            text: "No principio...".into(),
+        };
+        app.session.open_search_hit(&hit);
+        app.loaded_key.clear();
+        app.sync_active_chapter();
+
+        // Run multi-frame passes for scroll convergence
+        for _ in 0..6 {
+            let _ = ctx.run(raw.clone(), |ctx| {
+                app.sidebar(ctx, theme::palette(false));
+                app.editor(ctx, theme::palette(false));
+            });
+            if app.session.scroll_verse.is_none() {
+                break;
+            }
+        }
+
+        let marks = ctx.data(|data| {
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let v32 = marks.iter().find(|(k, _)| k.contains("verse:pane-1:32"));
+        assert!(v32.is_some(), "verse 32 should be rendered in viewport");
+        let rect = v32.unwrap().1;
+        assert!(
+            rect[1] < 800.0 && rect[1] + rect[3] > 0.0,
+            "verse 32 must be visible in viewport, got y={}..{}",
+            rect[1],
+            rect[1] + rect[3]
+        );
+        assert_eq!(app.session.selected_verses, vec![32]);
+        assert!(app.session.scroll_verse.is_none(), "scroll_verse should have settled to None");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_hit_scrolls_to_gn_18_32_in_acf_with_tsk() {
+        let userprofile = match std::env::var("USERPROFILE") {
+            Ok(val) => std::path::PathBuf::from(val),
+            Err(_) => return,
+        };
+        let acf_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("Almeida Corrigida Fiel 2011 com Strong.bible.SQLite3");
+        if !acf_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("ACF11", "ACF11*", acf_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("ACF11".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = 10;
+        app.session.panes.get_mut("pane-1").unwrap().chapter = 18;
+        app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
+        app.session.sidebar_collapsed = false;
+        app.session.sidebar = "search".into();
+        app.session.show_strongs = true;
+
+        let xref_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("The Treasury of Scripture Knowledge.crossreference.SQLite3");
+        if xref_path.exists() {
+            app.modules.push(graphe_store::catalog::InstalledModule {
+                id: "The Treasury of Scripture Knowledge.crossreference".into(),
+                name: "TSK".into(),
+                kind: "crossreference".into(),
+                path: xref_path,
+                short_title: Some("TSK".into()),
+                description: None,
+            });
+            app.session.xref_modules = vec!["The Treasury of Scripture Knowledge.crossreference".into()];
+        }
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1872.0, 974.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw.clone(), |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+            app.editor(ctx, theme::palette(false));
+        });
+
+        let hit32 = graphe_domain::search::SearchHit {
+            book_number: 10,
+            chapter: 18,
+            verse: 32,
+            text: "Disse mais: Ora...".into(),
+        };
+        app.session.open_search_hit(&hit32);
+        app.loaded_key.clear();
+        app.sync_active_chapter();
+
+        for _ in 0..6 {
+            let _ = ctx.run(raw.clone(), |ctx| {
+                app.sidebar(ctx, theme::palette(false));
+                app.editor(ctx, theme::palette(false));
+            });
+            if app.session.scroll_verse.is_none() {
+                break;
+            }
+        }
+
+        let marks = ctx.data(|data| {
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let v32 = marks.iter().find(|(k, _)| k.contains("verse:pane-1:32"));
+        assert!(v32.is_some(), "Gn 18:32 should be rendered in viewport");
+        let rect = v32.unwrap().1;
+        assert!(
+            rect[1] < 974.0 && rect[1] + rect[3] > 0.0,
+            "Gn 18:32 must be visible in viewport, got y={}..{}",
+            rect[1],
+            rect[1] + rect[3]
+        );
+        assert_eq!(app.session.selected_verses, vec![32]);
+        assert!(app.session.scroll_verse.is_none());
+    }
+
+    #[test]
     fn clicking_commentary_reference_link_scrolls_verse() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
