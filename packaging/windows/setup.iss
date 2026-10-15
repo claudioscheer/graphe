@@ -1,6 +1,6 @@
 #define MyAppName "Graphe"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.13"
+  #define MyAppVersion "1.0.14"
 #endif
 #define MyAppPublisher "Claudio Scheer"
 #define MyAppURL "https://github.com/claudioscheer/graphe"
