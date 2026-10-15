@@ -382,7 +382,7 @@ impl GrapheApp {
                 self.session.search_module_id = Some(found.id.clone());
             }
         }
-        self.session.hits = sqlite::search_in_file(&module, &self.session.query, Some(80.0));
+        self.session.hits = sqlite::search_in_file(&module, &self.session.query, None);
         self.store.set_search_panel(serde_json::json!({
             "moduleId": self.session.search_module_id,
             "query": self.session.query.trim(),
