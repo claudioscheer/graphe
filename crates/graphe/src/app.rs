@@ -3137,6 +3137,43 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn search_returns_all_results_without_80_cap() {
+        let dir = std::env::temp_dir().join(format!("graphe-search-all-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        write_chapter(&bible_path, 120, |v| format!("Versiculo {v} com amor de Deus."));
+
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("test-bible", "Test Bible", bible_path));
+        app.session.search_module_id = Some("test-bible".into());
+        app.session.query = "amor".into();
+        app.run_search();
+
+        assert_eq!(
+            app.session.hits.len(),
+            120,
+            "search must not be capped at 80 results"
+        );
+
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let output = ctx.run(raw, |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+        assert!(
+            galley_has(&output, "120 resultados"),
+            "search results counter shows full count of matching verses"
+        );
+    }
+
+    #[test]
     fn commentary_padding_keeps_the_text_inside_a_scrollable_view() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
