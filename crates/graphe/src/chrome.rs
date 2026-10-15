@@ -287,6 +287,53 @@ impl GrapheApp {
                 break;
             }
             let active = tabs.active_workspace_id.as_deref() == Some(id.as_str());
+            let is_renaming = renaming.as_deref() == Some(id.as_str());
+
+            if is_renaming {
+                ui.painter().rect_filled(
+                    tab_rect,
+                    egui::CornerRadius {
+                        nw: 4,
+                        ne: 4,
+                        sw: 0,
+                        se: 0,
+                    },
+                    paint::workspace_tab_active(self.session.dark),
+                );
+
+                let response = ui.put(
+                    tab_rect,
+                    egui::TextEdit::singleline(&mut self.rename)
+                        .font(egui::FontId::proportional(12.0))
+                        .text_color(paint::color(palette.ui_text))
+                        .frame(false)
+                        .margin(egui::Margin::symmetric(10, 0))
+                        .vertical_align(egui::Align::Center)
+                        .desired_width(tab_rect.width()),
+                );
+                if self.rename_focus {
+                    response.request_focus();
+                    let mut state = egui::text_edit::TextEditState::default();
+                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(0),
+                        egui::text::CCursor::new(self.rename.chars().count()),
+                    )));
+                    state.store(ui.ctx(), response.id);
+                    self.rename_focus = false;
+                } else {
+                    let escape = ui.input(|input| input.key_pressed(egui::Key::Escape));
+                    let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
+                    if escape {
+                        cancel_rename = true;
+                    } else if enter {
+                        commit_rename = true;
+                    } else if response.lost_focus() || response.clicked_elsewhere() {
+                        cancel_rename = true;
+                    }
+                }
+                continue;
+            }
+
             let tab_response = ui.interact(
                 tab_rect,
                 ui.id().with(("workspace", id)),
@@ -314,30 +361,6 @@ impl GrapheApp {
                     },
                     paint::color_alpha(palette.ui_text, 12),
                 );
-            }
-
-            if renaming.as_deref() == Some(id.as_str()) {
-                let edit_rect = tab_rect.shrink2(egui::vec2(6.0, 4.0));
-                let response = ui.put(
-                    edit_rect,
-                    egui::TextEdit::singleline(&mut self.rename)
-                        .font(egui::FontId::proportional(12.0))
-                        .desired_width(edit_rect.width())
-                        .margin(egui::Margin::symmetric(4, 0)),
-                );
-                if self.rename_focus {
-                    response.request_focus();
-                    self.rename_focus = false;
-                }
-                let escape = ui.input(|input| input.key_pressed(egui::Key::Escape));
-                if response.lost_focus() {
-                    if escape {
-                        cancel_rename = true;
-                    } else {
-                        commit_rename = true;
-                    }
-                }
-                continue;
             }
 
             let ink = paint::color(if active || tab_response.hovered() {
@@ -437,6 +460,7 @@ impl GrapheApp {
         let add_clicked = paint::hover_tip(add, i18n::t("workspaceNew")).clicked();
 
         if cancel_rename {
+            self.rename.clear();
             self.renaming = None;
         } else if commit_rename {
             if let Some(id) = self.renaming.clone() {
@@ -444,6 +468,7 @@ impl GrapheApp {
                     self.note_workspaces();
                 }
             }
+            self.rename.clear();
             self.renaming = None;
         }
         if let Some(id) = close {
@@ -453,6 +478,7 @@ impl GrapheApp {
                 self.note_workspaces();
             }
             if self.renaming.as_deref() == Some(id.as_str()) {
+                self.rename.clear();
                 self.renaming = None;
             }
         } else if let Some(id) = start_rename {
@@ -461,8 +487,12 @@ impl GrapheApp {
                 .find(|(item_id, _)| item_id == &id)
                 .map(|(_, item_name)| item_name.clone())
                 .unwrap_or_default();
-            self.renaming = Some(id);
+            self.renaming = Some(id.clone());
             self.rename_focus = true;
+            if self.session.open_workspace(&id) {
+                self.sync_active_chapter();
+                self.note_workspaces();
+            }
         } else if let Some(id) = activate {
             if self.session.open_workspace(&id) {
                 self.sync_active_chapter();
@@ -1377,5 +1407,174 @@ mod tests {
         assert!((toolbar_picker_width(500.0, 1400.0) - 128.0).abs() < 0.1);
         assert!((toolbar_picker_width(400.0, 1400.0) - 80.0).abs() < 0.1);
         assert!((toolbar_picker_width(300.0, 1400.0) - 68.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn tab_rename_cancel_on_escape_and_commit_on_enter() {
+        let ctx = egui::Context::default();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.session.new_workspace();
+        let tabs = app.session.workspaces.get_tab_state();
+        let first_id = tabs.items[0].0.clone();
+        let orig_name = tabs.items[0].1.clone();
+        let palette = graphe_domain::theme::LIGHT;
+
+        // 1. Rename cancelled on Escape
+        app.renaming = Some(first_id.clone());
+        app.rename = "Draft Rename".to_string();
+        app.rename_focus = true;
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+        assert_eq!(app.renaming, Some(first_id.clone()));
+        assert!(!app.rename_focus);
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+        assert!(app.renaming.is_none());
+        assert_eq!(app.session.workspaces.get_tab_state().items[0].1, orig_name);
+
+        // 2. Rename committed on Enter
+        app.renaming = Some(first_id.clone());
+        app.rename = "Renamed Tab".to_string();
+        app.rename_focus = true;
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.events.push(egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+        assert!(app.renaming.is_none());
+        assert_eq!(app.session.workspaces.get_tab_state().items[0].1, "Renamed Tab");
+
+        // 3. Rename cancelled when losing focus (e.g. clicking outside)
+        app.renaming = Some(first_id.clone());
+        app.rename = "Ignored Edit".to_string();
+        app.rename_focus = true;
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+
+        // Click outside on the panel (e.g. at x: 1000, y: 500)
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.events.push(egui::Event::PointerButton {
+            pos: egui::pos2(1000.0, 500.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        raw.events.push(egui::Event::PointerButton {
+            pos: egui::pos2(1000.0, 500.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+        assert!(app.renaming.is_none());
+        assert_eq!(app.session.workspaces.get_tab_state().items[0].1, "Renamed Tab");
+    }
+
+    #[test]
+    fn double_click_starts_tab_rename_and_activates_workspace() {
+        let ctx = egui::Context::default();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.session.new_workspace();
+        let tabs = app.session.workspaces.get_tab_state();
+        let second_id = tabs.items[1].0.clone();
+        let second_name = tabs.items[1].1.clone();
+        let palette = graphe_domain::theme::LIGHT;
+
+        // First click at t = 0.0
+        let pos = egui::pos2(180.0, 25.0);
+        let mut raw = egui::RawInput::default();
+        raw.time = Some(0.0);
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        raw.events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+
+        // Second click at t = 0.1
+        let mut raw = egui::RawInput::default();
+        raw.time = Some(0.1);
+        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        raw.events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.workspace_tabs(ui, &palette);
+            });
+        });
+        assert_eq!(app.renaming, Some(second_id.clone()));
+        assert_eq!(app.rename, second_name);
+        assert!(app.rename_focus);
+        assert_eq!(app.session.workspaces.get_tab_state().active_workspace_id, Some(second_id));
     }
 }

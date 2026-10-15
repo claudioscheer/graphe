@@ -735,10 +735,10 @@ pub(crate) fn language_button(lang: Lang) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn bare(session: Session) -> GrapheApp {
+    pub(crate) fn bare(session: Session) -> GrapheApp {
         GrapheApp {
             session,
             modules: Vec::new(),
