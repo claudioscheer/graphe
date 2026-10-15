@@ -194,6 +194,52 @@ pub fn clean_text_with_strongs(text: &str, strong_terms: &[SearchStrongTerm]) ->
     collapse_ws(&cleaned)
 }
 
+/// The full verse text formatted for search results, with matched Strong's numbers
+/// and search terms highlighted, without truncating the verse.
+pub fn search_result_verse(
+    text: &str,
+    terms: &[String],
+    strong_terms: &[SearchStrongTerm],
+) -> String {
+    if strong_terms.is_empty() {
+        let plain = search_preview_plain(text);
+        if terms.is_empty() {
+            plain
+        } else {
+            highlight_text(&plain, terms)
+        }
+    } else {
+        let with_strongs = clean_text_with_strongs(text, strong_terms);
+        if terms.is_empty() {
+            with_strongs
+        } else {
+            highlight_outside_marks(&with_strongs, terms)
+        }
+    }
+}
+
+fn highlight_outside_marks(text: &str, terms: &[String]) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("<mark>") {
+        let (outside, tail) = rest.split_at(start);
+        result.push_str(&highlight_text(outside, terms));
+        if let Some(end) = tail.find("</mark>") {
+            let mark_end = end + "</mark>".len();
+            result.push_str(&tail[..mark_end]);
+            rest = &tail[mark_end..];
+        } else {
+            result.push_str(tail);
+            rest = "";
+            break;
+        }
+    }
+    if !rest.is_empty() {
+        result.push_str(&highlight_text(rest, terms));
+    }
+    result
+}
+
 /// A short window around the first match, with Strong's tags highlighted.
 pub fn search_preview_rich_snippet(
     text: &str,
@@ -201,6 +247,9 @@ pub fn search_preview_rich_snippet(
     strong_terms: &[SearchStrongTerm],
     max_chars: usize,
 ) -> String {
+    if max_chars == usize::MAX {
+        return search_result_verse(text, terms, strong_terms);
+    }
     if strong_terms.is_empty() {
         let snippet = search_preview_snippet(text, terms, max_chars);
         return highlight_text(&snippet, terms);
@@ -545,5 +594,32 @@ mod search_query_tests {
             snippet,
             "E as <mark>ensinarás [8150]</mark> a teus filhos e delas falarás assentado em tua casa,"
         );
+    }
+
+    #[test]
+    fn search_result_verse_shows_entire_verse_without_clipping_for_strongs() {
+        let raw = "E eis que estou contigo, e te guardarei<S>8104</S> por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito.";
+        let strongs = vec![SearchStrongTerm {
+            prefix: "H".into(),
+            number: "8104".into(),
+        }];
+        let result = search_result_verse(raw, &[], &strongs);
+        assert_eq!(
+            result,
+            "E eis que estou contigo, e te <mark>guardarei [8104]</mark> por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito."
+        );
+        assert!(!result.contains("..."));
+    }
+
+    #[test]
+    fn search_result_verse_shows_entire_verse_without_clipping_for_text_terms() {
+        let raw = "E eis que estou contigo, e te guardarei por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito.";
+        let terms = vec!["guardarei".into()];
+        let result = search_result_verse(raw, &terms, &[]);
+        assert_eq!(
+            result,
+            "E eis que estou contigo, e te <mark>guardarei</mark> por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito."
+        );
+        assert!(!result.contains("..."));
     }
 }

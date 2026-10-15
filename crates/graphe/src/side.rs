@@ -7,7 +7,7 @@ use crate::session::Dialog;
 use graphe_domain::dict::normalize_topic_candidate;
 use graphe_domain::i18n;
 use graphe_domain::search::{
-    extract_search_terms, parse_search_query, search_preview_rich_snippet,
+    extract_search_terms, parse_search_query, search_result_verse,
 };
 use graphe_domain::theme::UiPalette;
 use graphe_store::sqlite;
@@ -214,6 +214,7 @@ impl GrapheApp {
                     text_width.round() as i32,
                     self.session.font_size.to_bits(),
                     self.session.query.clone(),
+                    self.session.search_module_id.clone(),
                     hits.len(),
                 ));
                 let cached = ui.data(|data| data.get_temp::<SearchRowLayout>(cache_id));
@@ -225,11 +226,29 @@ impl GrapheApp {
                     offsets.push(0.0);
                     for hit in &hits {
                         let snippet =
-                            search_preview_rich_snippet(&hit.text, &terms, &parsed.strongs, 160);
+                            search_result_verse(&hit.text, &terms, &parsed.strongs);
+                        let label = format!(
+                            "{} {}:{}",
+                            i18n::book_name(hit.book_number).short,
+                            hit.chapter,
+                            hit.verse
+                        );
+                        let label_galley = egui::WidgetText::from(
+                            egui::RichText::new(&label)
+                                .strong()
+                                .size(12.0)
+                                .color(paint::color(palette.ui_link)),
+                        )
+                        .into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::FontSelection::default(),
+                        );
                         let galley = ui.painter().layout_job(marked_job(
                             &snippet, text_width, 12.0, plain, mark, palette,
                         ));
-                        let card = 14.0 + 16.0 + 3.0 + galley.rect.height();
+                        let card = 14.0 + 2.0 + label_galley.rect.height() + 3.0 + galley.rect.height() + 2.0;
                         let last = *offsets.last().unwrap_or(&0.0);
                         offsets.push(last + card + SEARCH_GAP);
                         snippets.push(snippet);
@@ -275,7 +294,7 @@ impl GrapheApp {
                             .max_rect(rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
-                    row_ui.set_clip_rect(rect.intersect(list_clip));
+                    row_ui.set_clip_rect(list_clip);
                     let label = format!(
                         "{} {}:{}",
                         i18n::book_name(hit.book_number).short,
