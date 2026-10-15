@@ -152,6 +152,9 @@ $updatedCargo = [regex]::Replace(
 )
 Set-Content "Cargo.toml" -Value $updatedCargo -NoNewline
 
+Write-Host "Syncing Cargo.lock via cargo check..."
+cargo check --quiet
+
 $cargoUpdated = (cargo pkgid -p graphe).Split('#')[-1]
 if ($cargoUpdated -ne $newVersion) {
     Write-Error "Failed to update Cargo.toml to $newVersion (still $cargoUpdated)."
@@ -184,9 +187,6 @@ if (Test-Path "packaging/macos/Info.plist") {
     )
     Set-Content "packaging/macos/Info.plist" -Value $updatedPlist -NoNewline
 }
-
-Write-Host "Syncing Cargo.lock via cargo check..."
-cargo check --quiet
 
 # 6. Run tests
 Write-Host "Running tests..."

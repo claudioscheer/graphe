@@ -115,6 +115,9 @@ echo "Updating Cargo.toml..."
 sed -i.bak -E 's/^version = "[^"]+"/version = "'"$NEW_VERSION"'"/' Cargo.toml
 rm -f Cargo.toml.bak
 
+echo "Syncing Cargo.lock..."
+cargo check --quiet
+
 CARGO_UPDATED="$(cargo pkgid -p graphe | awk -F'[@#]' '{print $NF}')"
 if [ "$CARGO_UPDATED" != "$NEW_VERSION" ]; then
   echo "Error: Failed to update Cargo.toml to $NEW_VERSION (still $CARGO_UPDATED)."
@@ -132,9 +135,6 @@ if [ -f "packaging/macos/Info.plist" ]; then
   sed -i.bak -E '/<key>CFBundle(ShortVersionString|Version)<\/key>/{n;s|<string>[^<]+</string>|<string>'"$NEW_VERSION"'</string>|;}' packaging/macos/Info.plist
   rm -f packaging/macos/Info.plist.bak
 fi
-
-echo "Syncing Cargo.lock..."
-cargo check --quiet
 
 # 6. Run tests
 echo "Running tests..."
