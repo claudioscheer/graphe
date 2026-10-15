@@ -3285,7 +3285,7 @@ pub(crate) mod tests {
             app.sidebar(ctx, theme::palette(false));
         });
         assert!(
-            galley_has(&output, graphe_domain::i18n::t("searching")),
+            galley_has(&output, &graphe_domain::i18n::t("searching")),
             "shows searching indicator while search is in progress"
         );
 
@@ -3298,7 +3298,7 @@ pub(crate) mod tests {
             app.sidebar(ctx, theme::palette(false));
         });
         assert!(
-            galley_has(&output2, graphe_domain::i18n::t("searchNoResults")),
+            galley_has(&output2, &graphe_domain::i18n::t("searchNoResults")),
             "shows no results feedback when query returns no verses"
         );
     }
@@ -3310,38 +3310,15 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let bible_path = dir.join("bible.SQLite3");
 
-        let conn = rusqlite::Connection::open(&bible_path).unwrap();
-        conn.execute(
-            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO verses VALUES (10, 1, 1, 'Jotão tinha vinte e cinco anos quando começou a reinar.')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO verses VALUES (10, 1, 2, 'Houve um homem enviado de Deus, cujo nome era João.')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO verses VALUES (10, 1, 3, 'Estes são os que subiram com Jesuá e Neemias.')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO verses VALUES (10, 1, 4, 'Jeús, Jalão e Corá, príncipes.')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO verses VALUES (10, 1, 5, 'Livro da genealogia de Jesus Cristo, filho de Davi.')",
-            [],
-        )
-        .unwrap();
-        drop(conn);
+        let mut sql = String::from(
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);\n",
+        );
+        sql.push_str("INSERT INTO verses VALUES (10, 1, 1, 'Jotão tinha vinte e cinco anos quando começou a reinar.');\n");
+        sql.push_str("INSERT INTO verses VALUES (10, 1, 2, 'Houve um homem enviado de Deus, cujo nome era João.');\n");
+        sql.push_str("INSERT INTO verses VALUES (10, 1, 3, 'Estes são os que subiram com Jesuá e Neemias.');\n");
+        sql.push_str("INSERT INTO verses VALUES (10, 1, 4, 'Jeús, Jalão e Corá, príncipes.');\n");
+        sql.push_str("INSERT INTO verses VALUES (10, 1, 5, 'Livro da genealogia de Jesus Cristo, filho de Davi.');\n");
+        graphe_store::sqlite::init_module_sql(&bible_path, &sql).unwrap();
 
         let mut app = bare(Session::new());
         app.modules.push(bible_module("names-bible", "Names Bible", bible_path));
