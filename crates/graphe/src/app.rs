@@ -3773,10 +3773,17 @@ mod tests {
         app.reading.remember_verse_text("k1".into(), vec![(1, "In the beginning".into())]);
         assert!(app.reading.cached_verse_text("k1").is_some());
 
-        // Toggle to dark theme
-        app.session.dark = true;
+        // Initial update in light theme
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let _ = ctx.run(raw.clone(), |ctx| {
+            let mut frame = eframe::Frame::_new_kittest();
+            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+        });
+        let alpha = ctx.style().visuals.text_alpha_from_coverage;
+
+        // Toggle to dark theme
+        app.session.dark = true;
         let _ = ctx.run(raw.clone(), |ctx| {
             let mut frame = eframe::Frame::_new_kittest();
             <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
@@ -3784,6 +3791,7 @@ mod tests {
 
         assert!(app.applied_dark);
         assert!(app.reading.cached_verse_text("k1").is_none());
+        assert_eq!(ctx.style().visuals.text_alpha_from_coverage, alpha);
 
         // Repopulate and toggle back to light theme
         app.reading.remember_verse_text("k2".into(), vec![(2, "God created".into())]);
@@ -3795,6 +3803,7 @@ mod tests {
 
         assert!(!app.applied_dark);
         assert!(app.reading.cached_verse_text("k2").is_none());
+        assert_eq!(ctx.style().visuals.text_alpha_from_coverage, alpha);
     }
 
     #[test]
