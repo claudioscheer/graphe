@@ -310,14 +310,17 @@ impl GrapheApp {
                 ui.set_min_height(total);
                 if let Some(verse) = scroll_verse {
                     if let Some(index) = paint.verses.iter().position(|(item, _)| *item == verse) {
-                        let top =
-                            ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, index);
+                        let top = if index == 0 {
+                            ui.max_rect().top()
+                        } else {
+                            ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, index)
+                        };
                         let height = heights.get(index).copied().unwrap_or(24.0);
                         let rect = egui::Rect::from_min_size(
                             egui::pos2(ui.max_rect().left() + BIBLE_PAD_LEFT, top),
                             egui::vec2(row_width, height),
                         );
-                        ui.scroll_to_rect(rect, scroll_center.then_some(egui::Align::Center));
+                        ui.scroll_to_rect(rect, scroll_center.then_some(egui::Align::TOP));
                     }
                 }
                 let (start, end) =
@@ -1139,7 +1142,7 @@ impl GrapheApp {
         }
         if response.clicked() {
             if let Some(hit) = link {
-                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse);
+                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
             }
         }
     }

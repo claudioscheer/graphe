@@ -3870,4 +3870,38 @@ pub(crate) mod tests {
         // Notice should now be None (dismissed)
         assert!(app.update_notice.lock().unwrap().is_none());
     }
+
+    #[test]
+    fn following_commentary_ref_scrolls_verse_to_top() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir = std::env::temp_dir().join(format!("graphe-comm-scroll-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        let mut time = 0.0;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+
+        let commentary_pane = app.session.split_commentary(false);
+
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+
+        // Click / follow a reference in commentary to verse 15 of Genesis 1
+        app.follow_ref(&commentary_pane, 10, 1, Some(15));
+
+        time += 0.1;
+        let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset = *mark(&frame1, "chapter-offset:pane-1");
+        assert!(offset[1] > 200.0, "offset was {}", offset[1]);
+        assert_eq!(app.session.selected_verses, vec![15]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
