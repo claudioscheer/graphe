@@ -54,14 +54,16 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
    ```
 2. **Inspect comments and user attachments**:
    - Always read issue comments. Comments often contain reproduction steps or clarifications.
-   - **Download User Attachment First**: If the issue description or comments contain user-uploaded bug screenshots (e.g., `https://github.com/user-attachments/assets/<uuid>`), download the authentic image directly:
+   - **Download User Attachment First**: If the issue description or comments contain user-uploaded bug screenshots (e.g., `https://github.com/user-attachments/assets/<uuid>`), download the authentic image directly to `temp/screenshots/`:
      - Linux / Git Bash / macOS:
        ```bash
-       curl.exe -sL "<attachment_url>" -o assets/screenshots/<N>-before.png
+       mkdir -p temp/screenshots
+       curl.exe -sL "<attachment_url>" -o temp/screenshots/<N>-before.png
        ```
      - Windows PowerShell:
        ```powershell
-       Invoke-WebRequest -Uri "<attachment_url>" -OutFile "assets/screenshots/<N>-before.png"
+       New-Item -ItemType Directory -Force -Path temp/screenshots | Out-Null
+       Invoke-WebRequest -Uri "<attachment_url>" -OutFile "temp/screenshots/<N>-before.png"
        ```
      *Benefit*: Captures the exact defect reported by the user, avoids synthetic display simulation errors, and works reliably in headless or remote environments.
 3. Categorize the change:
@@ -108,17 +110,18 @@ Always follow the architecture documented in [`AGENTS.md`](file:///C:/Users/wate
    - Application shell: `crates/graphe/src/app.rs`, `crates/graphe/src/chrome.rs`.
 2. Pinpoint root cause before modifying code.
 3. **Capture Bug Reproduction Screenshot (Mandatory)**:
-   - If authentic user reproduction image was already downloaded in Phase 0, verify it at `assets/screenshots/<N>-before.png`.
+   - If authentic user reproduction image was already downloaded in Phase 0, verify it at `temp/screenshots/<N>-before.png`.
    - Otherwise, run the application to reproduce the defect and capture via script:
      - **Linux / Git Bash / macOS**:
        ```bash
-       bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-before.png
+       bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o temp/screenshots/<N>-before.png
        ```
      - **Windows PowerShell**:
        ```powershell
-       powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
+       powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath temp/screenshots/<N>-before.png
        ```
    - *Technical note*:
+     - Screenshots are kept in the gitignored `temp/screenshots/` folder. **Never commit screenshot images to git**.
      - On Windows, `capture_screenshot.ps1` enumerates top-level visible windows (`FindMainWindow`) to bypass winit's 6x6 hidden helper window, uses `CopyFromScreen` for GPU swapchain capture, and falls back to `PrintWindow`.
      - On Linux, `capture_screenshot.sh` handles Wayland (`grim` / `gnome-screenshot`) and X11 (`maim` / `import` / `scrot`) with `xdotool` window focus.
      - Under Git Bash on Windows, `capture_screenshot.sh` automatically bridges paths via `cygpath -w` to the PowerShell script.
@@ -181,13 +184,13 @@ When any UI layout, card height, verse clipping, dialog, or scroll behavior is t
 - Navigate to the affected view, trigger the feature, and capture the window screenshot:
   - **Linux / Git Bash / macOS**:
     ```bash
-    bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-after.png
+    bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o temp/screenshots/<N>-after.png
     ```
   - **Windows PowerShell**:
     ```powershell
-    powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
+    powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath temp/screenshots/<N>-after.png
     ```
-- Verify that `assets/screenshots/<N>-after.png` clearly displays the feature working cleanly.
+- Verify that `temp/screenshots/<N>-after.png` clearly displays the feature working cleanly.
 
 ### 4.5 Full Workspace Regression Suite & Lint
 - Run the full workspace test suite:
@@ -204,10 +207,12 @@ When any UI layout, card height, verse clipping, dialog, or scroll behavior is t
 
 ## Phase 5 — Branch & Commit
 
-1. Stage source files AND both visual screenshots:
+1. **Stage ONLY code and test files**:
    ```bash
-   git add <code-files> assets/screenshots/<N>-before.png assets/screenshots/<N>-after.png
+   git add <code-files>
    ```
+   > [!IMPORTANT]
+   > **Never commit or push screenshot images into git**. Screenshots remain in the gitignored `temp/screenshots/` folder. They will be uploaded directly to GitHub via `--attach` when opening the pull request.
 2. Commit rules from [`AGENTS.md`](file:///C:/Users/water/Projects/graphe/AGENTS.md):
    - Complete sentence explaining why the change exists.
    - **No AI attribution or co-author trailers**.
@@ -215,14 +220,10 @@ When any UI layout, card height, verse clipping, dialog, or scroll behavior is t
      ```text
      git commit -m "Fix verse scroll alignment when clicking commentary references."
      ```
-3. **Capture Commit SHA**:
-   Save the commit SHA for permanent screenshot URLs in the PR body:
-   - Bash: `COMMIT_SHA=$(git rev-parse HEAD)`
-   - PowerShell: `$commitSha = git rev-parse HEAD`
 
 ---
 
-## Phase 6 — Push & Open Ready-for-Review PR with Screenshots
+## Phase 6 — Push & Open Ready-for-Review PR with Uploaded Attachments
 
 1. Push branch to origin:
    ```bash
@@ -231,11 +232,10 @@ When any UI layout, card height, verse clipping, dialog, or scroll behavior is t
 2. Format PR Title:
    `[#<N>] - <Short Description>`
 3. **CRITICAL PR BODY FORMATTING RULES**:
-   - **Permanent Image URLs via Commit SHA**:
-     ALWAYS reference screenshot images using the commit SHA:
-     `https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png`
-     `https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png`
-     **NEVER use branch names** (`<branch>`) in raw URLs. When a PR is merged with `--delete-branch`, GitHub deletes the branch and breaks all image links with HTTP 404. Commit SHAs never expire.
+   - **Upload via `--attach`**:
+     Always pass `--attach "temp/screenshots/<N>-before.png#Bug Reproduction"` and `--attach "temp/screenshots/<N>-after.png#Feature Working"` to `gh pr create`.
+     GitHub CLI automatically uploads the local images to GitHub's user-attachment CDN (`https://github.com/user-attachments/assets/<uuid>`) and rewrites the markdown references in the PR body to point directly to the permanent asset URLs.
+     No images are committed to git, preventing repository bloat.
    - **Always Use `--body-file`**:
      NEVER pass inline markdown with backticks and tables via `--body "..."` on the command line. Shell string interpolation corrupts backticks into backslashes (e.g. converting `` `cargo test` `` into `\cargo test\`).
      Always write the PR body to a temporary file (e.g., `temp_pr_body.md`) and pass `--body-file temp_pr_body.md`. Delete the temporary file afterwards.
@@ -274,12 +274,14 @@ Closes #<N>
 
 | Bug Reproduction (Before) | Feature Working (After) |
 | :---: | :---: |
-| ![Bug Reproduction](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png) | ![Feature Working](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png) |
+| ![Bug Reproduction](temp/screenshots/<N>-before.png) | ![Feature Working](temp/screenshots/<N>-after.png) |
 ```
 
-4. Create the PR using `--body-file`:
+4. Create the PR using `--body-file` and `--attach`:
    ```bash
-   gh pr create --base main --title "[#<N>] - <title>" --body-file temp_pr_body.md
+   gh pr create --base main --title "[#<N>] - <title>" --body-file temp_pr_body.md \
+     --attach "temp/screenshots/<N>-before.png#Bug Reproduction" \
+     --attach "temp/screenshots/<N>-after.png#Feature Working"
    rm -f temp_pr_body.md
    ```
 5. Assign to `claudioscheer`:
@@ -320,6 +322,7 @@ Once all CI checks pass:
    git checkout main
    git pull origin main
    git branch -d <branch-name> 2>/dev/null || git branch -D <branch-name> 2>/dev/null || true
+   rm -rf temp/screenshots
    git status
    ```
    *Note*: The fallback to `-D` and error suppression prevents local script failures when GitHub's remote branch deletion desyncs local branch tracking.

@@ -196,11 +196,11 @@ Pull requests for visual changes must include before (reproduction) and after (f
 2. Capture the window in its bugged state:
    - Linux / Git Bash / macOS:
      ```bash
-     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-before.png
+     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o temp/screenshots/<N>-before.png
      ```
    - Windows PowerShell:
      ```powershell
-     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-before.png
+     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath temp/screenshots/<N>-before.png
      ```
 
 ### After Screenshot (Feature Working)
@@ -211,18 +211,20 @@ Pull requests for visual changes must include before (reproduction) and after (f
 2. Navigate to verify the feature and capture the clean state:
    - Linux / Git Bash / macOS:
      ```bash
-     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o assets/screenshots/<N>-after.png
+     bash .agents/skills/implement-issue/scripts/capture_screenshot.sh -o temp/screenshots/<N>-after.png
      ```
    - Windows PowerShell:
      ```powershell
-     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath assets/screenshots/<N>-after.png
+     powershell -File .agents/skills/implement-issue/scripts/capture_screenshot.ps1 -OutputPath temp/screenshots/<N>-after.png
      ```
 
 ### Inclusion in PR
-Commit both images to the branch (`assets/screenshots/<N>-before.png` and `assets/screenshots/<N>-after.png`) and embed them side-by-side in the PR description under `## Notes` using the commit SHA:
-```markdown
-| Bug Reproduction (Before) | Feature Working (After) |
-| :---: | :---: |
-| ![Bug Reproduction](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-before.png) | ![Feature Working](https://raw.githubusercontent.com/claudioscheer/graphe/<COMMIT_SHA>/assets/screenshots/<N>-after.png) |
+Screenshots remain in the gitignored `temp/screenshots/` folder. **Do not commit images into git**.
+Attach them directly when creating the pull request via GitHub CLI:
+```bash
+gh pr create --base main --title "[#<N>] - <title>" --body-file temp_pr_body.md \
+  --attach "temp/screenshots/<N>-before.png#Bug Reproduction" \
+  --attach "temp/screenshots/<N>-after.png#Feature Working"
 ```
+GitHub CLI uploads the images to GitHub user attachments and automatically rewrites the markdown links in the PR body.
 
