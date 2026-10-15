@@ -12,6 +12,12 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     } else {
         egui::Visuals::light()
     };
+    // Keep text_alpha_from_coverage consistent across theme toggles.
+    // In egui, switching text_alpha_from_coverage (which differs between Visuals::dark
+    // and Visuals::light) causes `begin_pass()` on the subsequent frame to destroy and
+    // recreate the font texture atlas, invalidating UV mappings of pre-existing galleys.
+    visuals.text_alpha_from_coverage =
+        egui::epaint::AlphaFromCoverage::DARK_MODE_DEFAULT;
     visuals.window_corner_radius = egui::CornerRadius::same(theme::RADIUS_SURFACE as u8);
     visuals.widgets.noninteractive.corner_radius =
         egui::CornerRadius::same(theme::RADIUS_INLINE as u8);
@@ -1440,6 +1446,54 @@ mod tests {
                 );
             }
         });
+    }
+
+    #[test]
+    fn theme_switch_does_not_recreate_font_atlas() {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        // Frame 1: Install fonts & apply light theme
+        let _ = ctx.run(raw.clone(), |ctx| {
+            install_fonts(ctx);
+            apply(ctx, false, 16.0);
+        });
+        // Frame 2: Layout some text so font atlas has glyphs
+        let _ = ctx.run(raw.clone(), |ctx| {
+            ctx.fonts_mut(|f| f.layout_no_wrap("In the beginning".to_string(), egui::FontId::proportional(16.0), egui::Color32::BLACK));
+        });
+        let alpha1 = ctx.style().visuals.text_alpha_from_coverage;
+
+        // Frame 3: Switch to dark theme
+        let _ = ctx.run(raw.clone(), |ctx| {
+            apply(ctx, true, 16.0);
+        });
+
+        // Frame 4: Run another frame where the new visuals trigger begin_pass
+        let _ = ctx.run(raw.clone(), |_| {});
+
+        let alpha2 = ctx.style().visuals.text_alpha_from_coverage;
+        assert_eq!(
+            alpha1, alpha2,
+            "text_alpha_from_coverage changed from {alpha1:?} to {alpha2:?}, which forces egui's begin_pass to recreate the font atlas!"
+        );
+
+        // Frame 5: Switch back to light theme
+        let _ = ctx.run(raw.clone(), |ctx| {
+            apply(ctx, false, 16.0);
+        });
+
+        // Frame 6: Run another frame to verify begin_pass keeps alpha coverage
+        let _ = ctx.run(raw, |_| {});
+
+        let alpha3 = ctx.style().visuals.text_alpha_from_coverage;
+        assert_eq!(
+            alpha1, alpha3,
+            "text_alpha_from_coverage changed from {alpha1:?} to {alpha3:?} on switch back to light!"
+        );
     }
 
     #[test]
