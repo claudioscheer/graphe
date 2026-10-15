@@ -143,6 +143,29 @@ impl GrapheApp {
                 );
                 if cleared {
                     self.session.hits.clear();
+                    self.session.searched_query.clear();
+                    self.session.searching = false;
+                    self.search_debounce = None;
+                } else if response.changed() {
+                    let parsed = parse_search_query(Some(&self.session.query));
+                    if self.session.query.trim().is_empty() {
+                        self.session.hits.clear();
+                        self.session.searched_query.clear();
+                        self.session.searching = false;
+                        self.search_debounce = None;
+                    } else if !parsed.strongs.is_empty()
+                        || !parsed.exact_phrases.is_empty()
+                        || !parsed.text_terms.is_empty()
+                    {
+                        self.session.searching = true;
+                        self.search_debounce = Some(
+                            std::time::Instant::now() + std::time::Duration::from_millis(300),
+                        );
+                    } else {
+                        self.session.hits.clear();
+                        self.session.searching = false;
+                        self.search_debounce = None;
+                    }
                 } else if (response.lost_focus() || response.has_focus())
                     && ui.input(|input| input.key_pressed(egui::Key::Enter))
                 {
@@ -151,14 +174,38 @@ impl GrapheApp {
             });
         separator_line(ui, palette.ui_border);
 
+        if let Some(deadline) = self.search_debounce {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                self.run_search();
+            } else {
+                ui.ctx().request_repaint_after(deadline.saturating_duration_since(now));
+            }
+        }
+
         // 2. Status Line
         let parsed = parse_search_query(Some(&self.session.query));
-        if self.session.hits.is_empty()
-            && !self.session.query.trim().is_empty()
-            && parsed.strongs.is_empty()
-            && parsed.exact_phrases.is_empty()
-            && parsed.text_terms.is_empty()
-        {
+        let trimmed = self.session.query.trim();
+        let query_has_terms = !parsed.strongs.is_empty()
+            || !parsed.exact_phrases.is_empty()
+            || !parsed.text_terms.is_empty();
+
+        if self.session.searching {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 5))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        ui.add(egui::Spinner::new().size(12.0));
+                        ui.label(
+                            egui::RichText::new(i18n::t("searching"))
+                                .size(12.0)
+                                .color(paint::color(palette.ui_text_muted)),
+                        );
+                    });
+                });
+            separator_line(ui, palette.ui_border_soft);
+        } else if !trimmed.is_empty() && !query_has_terms {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(12, 5))
                 .show(ui, |ui| {
@@ -183,9 +230,23 @@ impl GrapheApp {
                     );
                 });
             separator_line(ui, palette.ui_border_soft);
+        } else if query_has_terms {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 5))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(i18n::t("searchNoResults"))
+                            .size(12.0)
+                            .color(paint::color(palette.ui_text_muted)),
+                    );
+                });
+            separator_line(ui, palette.ui_border_soft);
         }
 
         // 3. Results List
+        if self.session.searching || self.session.hits.is_empty() {
+            return;
+        }
         let terms = extract_search_terms(&self.session.query);
         let hits = self.session.hits.clone();
         // Each card is only as tall as its verse, with a small gap. A fixed
@@ -207,7 +268,7 @@ impl GrapheApp {
             .show_viewport(ui, |ui, viewport| {
                 let width = ui.available_width();
                 let card_width = (width - 16.0).max(32.0);
-                let text_width = (card_width - 16.0).max(32.0);
+                let text_width = (card_width - 18.0).max(32.0);
                 let plain = paint::color(palette.ui_text_muted);
                 let mark = paint::color(palette.ui_text);
                 let cache_id = ui.id().with((
@@ -329,7 +390,8 @@ impl GrapheApp {
                             );
                             draw_marked(
                                 ui,
-                                &snippet,
+                                snippet,
+                                text_width,
                                 12.0,
                                 paint::color(palette.ui_text_muted),
                                 paint::color(palette.ui_text),
@@ -365,8 +427,11 @@ impl GrapheApp {
     }
 
     pub(crate) fn run_search(&mut self) {
+        self.search_debounce = None;
+        self.session.searching = false;
         let Some(module) = self.active_search_module() else {
             self.session.hits.clear();
+            self.session.searched_query.clear();
             return;
         };
         let parsed = parse_search_query(Some(&self.session.query));
@@ -375,6 +440,7 @@ impl GrapheApp {
             && parsed.exact_phrases.is_empty()
         {
             self.session.hits.clear();
+            self.session.searched_query.clear();
             return;
         }
         if self.session.search_module_id.is_none() {
@@ -382,6 +448,7 @@ impl GrapheApp {
                 self.session.search_module_id = Some(found.id.clone());
             }
         }
+        self.session.searched_query = self.session.query.clone();
         self.session.hits = sqlite::search_in_file(&module, &self.session.query, None);
         self.store.set_search_panel(serde_json::json!({
             "moduleId": self.session.search_module_id,
@@ -1336,12 +1403,13 @@ fn marked_job(
 fn draw_marked(
     ui: &mut egui::Ui,
     marked: &str,
+    width: f32,
     size: f32,
     plain: egui::Color32,
     mark: egui::Color32,
     palette: &UiPalette,
 ) {
-    let job = marked_job(marked, ui.available_width(), size, plain, mark, palette);
+    let job = marked_job(marked, width, size, plain, mark, palette);
     ui.label(job);
 }
 
