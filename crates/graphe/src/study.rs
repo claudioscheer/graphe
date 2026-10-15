@@ -310,17 +310,33 @@ impl GrapheApp {
                 ui.set_min_height(total);
                 if let Some(verse) = scroll_verse {
                     if let Some(index) = paint.verses.iter().position(|(item, _)| *item == verse) {
-                        let top = if index == 0 {
+                        let is_first = index == 0;
+                        let is_last = index + 1 >= paint.verses.len();
+                        let align = if !scroll_center {
+                            None
+                        } else if is_first {
+                            Some(egui::Align::TOP)
+                        } else if is_last {
+                            Some(egui::Align::BOTTOM)
+                        } else {
+                            Some(egui::Align::Center)
+                        };
+                        let top = if is_first {
                             ui.max_rect().top()
                         } else {
                             ui.max_rect().top() + BIBLE_PAD_TOP + rows_prefix(&heights, index)
                         };
-                        let height = heights.get(index).copied().unwrap_or(24.0);
+                        let height = if is_last {
+                            heights.get(index).copied().unwrap_or(24.0) + BIBLE_PAD_BOTTOM
+                        } else {
+                            heights.get(index).copied().unwrap_or(24.0)
+                        };
                         let rect = egui::Rect::from_min_size(
                             egui::pos2(ui.max_rect().left() + BIBLE_PAD_LEFT, top),
                             egui::vec2(row_width, height),
                         );
-                        ui.scroll_to_rect(rect, scroll_center.then_some(egui::Align::TOP));
+                        ui.scroll_to_rect(rect, align);
+                        ui.ctx().request_repaint();
                     }
                 }
                 let (start, end) =
@@ -399,7 +415,9 @@ impl GrapheApp {
             );
         }
         if active_bible && scroll_verse.is_some() {
-            self.session.scroll_verse = None;
+            if paint.verses.iter().any(|(item, _)| Some(*item) == scroll_verse) {
+                self.session.scroll_verse = None;
+            }
         }
     }
 
@@ -482,8 +500,9 @@ impl GrapheApp {
                                 pane_id,
                                 reference.book_to,
                                 reference.chapter_to,
-                                reference.verse_to_start,
+                                reference.verse_to_start.or(Some(1)),
                             );
+                            ui.ctx().request_repaint();
                         }
                     }
                 },
@@ -1108,8 +1127,14 @@ impl GrapheApp {
         };
         // Dragging the text selects it. Reuse the shaped galley so a selection
         // or a wheel step does not wrap the chapter again.
-        let selecting =
-            ui.input(|input| input.pointer.primary_down()) || label_has_selection(ui.ctx());
+        let link_origin = ui.cursor().min;
+        let pointer = ui
+            .input(|input| input.pointer.hover_pos().or_else(|| input.pointer.interact_pos()));
+        let hovering_link = pointer
+            .and_then(|pos| link_at(&galley, link_origin, &links, pos))
+            .is_some();
+        let selecting = !hovering_link
+            && (ui.input(|input| input.pointer.primary_down()) || label_has_selection(ui.ctx()));
         let response = if selecting {
             ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
         } else {
@@ -1143,6 +1168,7 @@ impl GrapheApp {
         if response.clicked() {
             if let Some(hit) = link {
                 self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
+                ui.ctx().request_repaint();
             }
         }
     }

@@ -262,8 +262,16 @@ impl GrapheApp {
                         egui::pos2(ui.max_rect().left() + 8.0, top + offsets[index]),
                         egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
                     );
+                    let hit_id = ui.id().with((
+                        "search-hit",
+                        hit.book_number,
+                        hit.chapter,
+                        hit.verse,
+                        index,
+                    ));
                     let mut row_ui = ui.new_child(
                         egui::UiBuilder::new()
+                            .id_salt(hit_id)
                             .max_rect(rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                     );
@@ -274,13 +282,6 @@ impl GrapheApp {
                         hit.chapter,
                         hit.verse
                     );
-                    let hit_id = row_ui.id().with((
-                        "search-hit",
-                        index,
-                        hit.book_number,
-                        hit.chapter,
-                        hit.verse,
-                    ));
                     let hovered = row_ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
                     let (fill, stroke_color) = if hovered {
                         (
@@ -332,6 +333,7 @@ impl GrapheApp {
                         }
                         self.loaded_key.clear();
                         self.sync_active_chapter();
+                        row_ui.ctx().request_repaint();
                     }
                 }
             });
