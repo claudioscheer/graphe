@@ -3065,6 +3065,40 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn search_panel_displays_entire_verse_without_clipping() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = false;
+        app.session.sidebar = "search".into();
+        app.session.query = "8104".into();
+        let long_verse = "E eis que estou contigo, e te guardarei<S>8104</S> por onde quer que fores, e te farei tornar a esta terra; porque não te deixarei, até que haja cumprido o que te tenho dito.";
+        app.session.hits = vec![graphe_domain::search::SearchHit {
+            book_number: 10,
+            chapter: 28,
+            verse: 15,
+            text: long_verse.into(),
+        }];
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let output = ctx.run(raw, |ctx| {
+            app.sidebar(ctx, theme::palette(false));
+        });
+
+        assert!(
+            galley_has(&output, "cumprido o que te tenho dito"),
+            "search card must display the entire verse text without truncation or clipping"
+        );
+        assert!(
+            !galley_has(&output, "..."),
+            "search card must not truncate with ellipsis"
+        );
+    }
+
+    #[test]
     fn commentary_padding_keeps_the_text_inside_a_scrollable_view() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
