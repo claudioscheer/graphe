@@ -1,7 +1,7 @@
 //! Settings, navigation, conversion, module editor, and preview windows.
 
-use crate::app::{language_button, EditorTab, GrapheApp};
-use crate::dropdown::ModuleDropdown;
+use crate::app::{EditorTab, GrapheApp};
+use crate::dropdown::{DropdownItem, ModuleDropdown};
 use crate::paint;
 use crate::session::Dialog;
 use graphe_domain::books::{GRAPHE_BOOK_NUMBERS, NT_BOOK_OFFSET};
@@ -675,7 +675,7 @@ impl GrapheApp {
             &i18n::t("fontSize"),
             &i18n::t("fontSizeHint"),
             |app, ui| {
-                let current = px_label(app.session.font_size);
+                let current = (app.session.font_size as i32).to_string();
                 let choices: Vec<(String, String)> = FONT_STEPS
                     .iter()
                     .map(|size| {
@@ -702,8 +702,8 @@ impl GrapheApp {
                     ("en".to_string(), "EN".to_string()),
                     ("es".to_string(), "ES".to_string()),
                 ];
-                let current = language_button(i18n::get_current_lang()).to_string();
-                if let Some(lang) = app.mini_select(ui, "language", &current, &choices) {
+                let current = i18n::get_current_lang().as_str();
+                if let Some(lang) = app.mini_select(ui, "language", current, &choices) {
                     i18n::set_lang(&lang);
                     app.patch_settings(json!({ "language": lang }));
                     app.matcher_lang_dirty();
@@ -2335,79 +2335,21 @@ impl GrapheApp {
     }
 
     fn mini_select(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         salt: &str,
-        label: &str,
+        current_id: &str,
         choices: &[(String, String)],
     ) -> Option<String> {
         let palette = theme::palette(self.session.dark);
-        let dark = self.session.dark;
-        ui.push_id(salt, |ui| {
-            let text = paint::color(palette.ui_text);
-            let probe = ui.painter().layout_no_wrap(
-                label.to_string(),
-                egui::FontId::proportional(14.0),
-                text,
-            );
-            let width = (probe.rect.width() + 36.0).max(68.0);
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(width, 32.0), egui::Sense::click());
-            let popup_id = egui::Popup::default_response_id(&response);
-            let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
-            let stroke = paint::color(if response.hovered() || open {
-                palette.ui_border_strong
-            } else if dark {
-                "#5f5f5f"
-            } else {
-                palette.ui_text_dim
-            });
-            let fill = paint::color(if dark {
-                palette.ui_border
-            } else {
-                palette.ui_bg
-            });
-            ui.painter().rect(
-                rect,
-                egui::CornerRadius::same(2),
-                fill,
-                egui::Stroke::new(1.0_f32, stroke),
-                egui::StrokeKind::Inside,
-            );
-            ui.painter().galley(
-                egui::pos2(
-                    rect.left() + 12.0,
-                    rect.center().y - probe.rect.height() / 2.0,
-                ),
-                probe,
-                text,
-            );
-            paint::draw_icon(
-                ui.painter(),
-                egui::pos2(rect.right() - 14.0, rect.center().y),
-                paint::color(palette.ui_text_subtle),
-                paint::Icon::ChevronDown,
-            );
-            if response.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-            let mut picked = None;
-            let popup_width = width.max(88.0);
-            egui::Popup::from_toggle_button_response(&response)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .width(popup_width)
-                .show(|ui| {
-                    ui.set_min_width(popup_width);
-                    for (id, text) in choices {
-                        if ui.selectable_label(text == label, text.as_str()).clicked() {
-                            picked = Some(id.clone());
-                            egui::Popup::close_id(ui.ctx(), popup_id);
-                        }
-                    }
-                });
-            picked
-        })
-        .inner
+        let items: Vec<DropdownItem> = choices
+            .iter()
+            .map(|(id, name)| DropdownItem::new(id, name))
+            .collect();
+        let dropdown = ModuleDropdown::from_items(salt, Some(current_id), items)
+            .width(72.0)
+            .min_dropdown_width(72.0);
+        dropdown.show(ui, &mut self.store, palette, self.session.dark)
     }
 
     fn settings_row(
@@ -3210,10 +3152,6 @@ fn quiet_button_width(ui: &egui::Ui, label: &str) -> f32 {
         egui::Color32::PLACEHOLDER,
     );
     (probe.rect.width() + 32.0).max(64.0)
-}
-
-fn px_label(size: f32) -> String {
-    format!("{}px", size.round() as i32)
 }
 
 fn commentaries_title(reference: &str) -> String {
