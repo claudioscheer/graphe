@@ -2704,6 +2704,30 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn commentary_empty_label_fills_the_pane_body() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let commentary = app.session.split_commentary(false);
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let marks = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let body = *mark(&marks, &format!("body:{commentary}"));
+        let empty = *mark(&marks, &format!("commentary-empty:{commentary}"));
+        assert!(
+            (empty[2] - body[2]).abs() < 4.0,
+            "the empty commentary fills the pane width, body {body:?}, empty {empty:?}"
+        );
+        assert!(
+            (empty[3] - body[3]).abs() < 8.0,
+            "the empty commentary fills the pane height, body {body:?}, empty {empty:?}"
+        );
+        assert!(
+            (empty[0] - body[0]).abs() < 4.0 && (empty[1] - body[1]).abs() < 8.0,
+            "the empty commentary starts at the body origin, body {body:?}, empty {empty:?}"
+        );
+    }
+
     fn mark<'a>(marks: &'a [(String, [f32; 4])], key: &str) -> &'a [f32; 4] {
         marks
             .iter()

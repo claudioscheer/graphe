@@ -537,6 +537,28 @@ impl GrapheApp {
         });
     }
 
+    fn draw_commentary_empty(&self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {
+        let size = ui.available_size().max(egui::vec2(32.0, 32.0));
+        let subtle = paint::color(palette.ui_text_subtle);
+        let response = ui.allocate_ui_with_layout(
+            size,
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(i18n::t("commentaryUnavailable"))
+                        .size((self.session.font_size - 2.0).max(12.0))
+                        .italics()
+                        .color(subtle),
+                );
+            },
+        );
+        crate::chrome::mark_layout(
+            ui,
+            &format!("commentary-empty:{pane_id}"),
+            response.response.rect,
+        );
+    }
+
     fn draw_commentary(
         &mut self,
         ui: &mut egui::Ui,
@@ -565,7 +587,7 @@ impl GrapheApp {
                     .cloned()
             });
         let Some(module) = module else {
-            ui.label(i18n::t("commentaryUnavailable"));
+            self.draw_commentary_empty(ui, pane_id, palette);
             return;
         };
         if self
@@ -581,7 +603,7 @@ impl GrapheApp {
         }
         let paint = self.load_commentary(&module, book, chapter);
         if paint.pieces.is_empty() {
-            ui.label(i18n::t("commentaryUnavailable"));
+            self.draw_commentary_empty(ui, pane_id, palette);
             return;
         }
         let font = self.session.font_size;
