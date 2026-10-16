@@ -546,7 +546,7 @@ impl GrapheApp {
             |ui| {
                 ui.label(
                     egui::RichText::new(i18n::t("commentaryUnavailable"))
-                        .size(self.session.font_size)
+                        .size((self.session.font_size - 2.0).max(12.0))
                         .italics()
                         .color(subtle),
                 );
