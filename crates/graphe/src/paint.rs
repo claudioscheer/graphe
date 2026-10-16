@@ -12,12 +12,6 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     } else {
         egui::Visuals::light()
     };
-    // Keep text_alpha_from_coverage consistent across theme toggles.
-    // In egui, switching text_alpha_from_coverage (which differs between Visuals::dark
-    // and Visuals::light) causes `begin_pass()` on the subsequent frame to destroy and
-    // recreate the font texture atlas, invalidating UV mappings of pre-existing galleys.
-    visuals.text_alpha_from_coverage =
-        egui::epaint::AlphaFromCoverage::DARK_MODE_DEFAULT;
     visuals.window_corner_radius = egui::CornerRadius::same(theme::RADIUS_SURFACE as u8);
     visuals.widgets.noninteractive.corner_radius =
         egui::CornerRadius::same(theme::RADIUS_INLINE as u8);
@@ -29,11 +23,16 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     visuals.panel_fill = color(palette.ui_surface);
     visuals.window_fill = color(palette.ui_bg);
     visuals.extreme_bg_color = color(palette.ui_bg);
+    // Light and dark visuals use different glyph ramps. egui rebuilds the font
+    // atlas when the ramp changes, and the galleys we keep then draw the wrong
+    // letters. One ramp for both themes leaves the atlas in place.
+    visuals.text_options.color_transfer_function =
+        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
     // egui otherwise lets a scroll area paint a few pixels outside its box,
     // which draws chapter and commentary text across the bar above it.
     visuals.clip_rect_margin = 0.0;
     ctx.set_visuals(visuals);
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style
         .text_styles
         .insert(egui::TextStyle::Body, egui::FontId::proportional(font));
@@ -46,7 +45,13 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     style.spacing.scroll.floating_width = style.spacing.scroll.bar_width;
     // Menus and panels otherwise ease open. A click should show the surface at once.
     style.animation_time = 0.0;
-    ctx.set_style(style);
+    ctx.set_global_style(style);
+    // The inactive theme slot still has egui's other default ramp. Pin that
+    // too, so a system-theme change cannot rebuild the atlas either.
+    ctx.all_styles_mut(|style| {
+        style.visuals.text_options.color_transfer_function =
+            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
+    });
     // One notch is 100 points before a view multiplies it. The view applies
     // that full step at once; egui would otherwise ease it over later frames.
     ctx.options_mut(|options| {
@@ -115,6 +120,49 @@ fn scroll_limit_id(scroll_id: egui::Id) -> egui::Id {
     scroll_id.with("wheel-limit")
 }
 
+fn pending_offset_id(scroll_id: egui::Id) -> egui::Id {
+    scroll_id.with("pending-offset")
+}
+
+fn frame_offset_id(scroll_id: egui::Id) -> egui::Id {
+    scroll_id.with("frame-offset")
+}
+
+fn put_vec(ui: &egui::Ui, id: egui::Id, value: egui::Vec2) {
+    ui.data_mut(|data| data.insert_temp(id, value));
+}
+
+fn take_vec(ui: &egui::Ui, id: egui::Id) -> Option<egui::Vec2> {
+    ui.data_mut(|data| {
+        let value = data.get_temp::<egui::Vec2>(id)?;
+        data.remove::<egui::Vec2>(id);
+        Some(value)
+    })
+}
+
+/// This frame's wheel notches, in points. A line unit uses the same
+/// `line_scroll_speed` egui would, so one notch is still one full step.
+fn wheel_points(ui: &egui::Ui) -> egui::Vec2 {
+    let speed = ui
+        .ctx()
+        .options(|options| options.input_options.line_scroll_speed);
+    ui.input(|input| {
+        let page = input.viewport_rect().height();
+        let mut total = egui::Vec2::ZERO;
+        for event in &input.events {
+            let egui::Event::MouseWheel { unit, delta, .. } = event else {
+                continue;
+            };
+            total += match unit {
+                egui::MouseWheelUnit::Point => *delta,
+                egui::MouseWheelUnit::Line => *delta * speed,
+                egui::MouseWheelUnit::Page => egui::vec2(delta.x * page, delta.y * page),
+            };
+        }
+        total
+    })
+}
+
 /// Remember how far this scroll area can move. The wheel handler reads it
 /// next frame so a notch past the end does not shift the text and snap back.
 pub(crate) fn remember_scroll_extent(
@@ -128,16 +176,13 @@ pub(crate) fn remember_scroll_extent(
         (content.y - viewport.y).max(0.0),
     );
     ui.data_mut(|data| data.insert_persisted(scroll_limit_id(scroll_id), max));
-    let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
+    let Some(state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
         return;
     };
-    let clamped = egui::vec2(
-        state.offset.x.clamp(0.0, max.x),
-        state.offset.y.clamp(0.0, max.y),
-    );
-    if clamped != state.offset {
-        state.offset = clamped;
-        state.store(ui.ctx(), scroll_id);
+    let current = state.unclamped_offset();
+    let clamped = egui::vec2(current.x.clamp(0.0, max.x), current.y.clamp(0.0, max.y));
+    if clamped != current {
+        put_vec(ui, pending_offset_id(scroll_id), clamped);
     }
 }
 
@@ -145,36 +190,59 @@ pub(crate) fn remember_scroll_extent(
 /// feels like a delay. `speed` scales the step: 1 keeps it, 2 doubles it.
 /// The offset stays inside the last measured range, including when the content
 /// already fits and the range is zero.
+///
+/// The scroll area's offset is private. [`with_scroll_override`] applies the
+/// result on the builder for this frame only, so a scrollbar drag still works
+/// on the frames the wheel did not move.
 pub(crate) fn scroll_by_wheel(ui: &egui::Ui, scroll_id: egui::Id, speed: f32) {
-    let raw = ui.input(|input| input.raw_scroll_delta);
-    if raw == egui::Vec2::ZERO {
+    let pending = take_vec(ui, pending_offset_id(scroll_id));
+    let raw = wheel_points(ui);
+    let hovered =
+        raw != egui::Vec2::ZERO && ui.rect_contains_pointer(ui.available_rect_before_wrap());
+    if !hovered {
+        if let Some(offset) = pending {
+            put_vec(ui, frame_offset_id(scroll_id), offset);
+        }
         return;
     }
-    if !ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
-        return;
-    }
-    let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
+    let Some(state) = egui::containers::scroll_area::State::load(ui.ctx(), scroll_id) else {
+        if let Some(offset) = pending {
+            put_vec(ui, pending_offset_id(scroll_id), offset);
+        }
         return;
     };
+    let current = pending.unwrap_or_else(|| state.unclamped_offset());
     let max = ui
         .data_mut(|data| data.get_persisted::<egui::Vec2>(scroll_limit_id(scroll_id)))
         .unwrap_or(egui::Vec2::ZERO);
     let next = egui::vec2(
-        (state.offset.x - raw.x * speed).clamp(0.0, max.x),
-        (state.offset.y - raw.y * speed).clamp(0.0, max.y),
+        (current.x - raw.x * speed).clamp(0.0, max.x),
+        (current.y - raw.y * speed).clamp(0.0, max.y),
     );
-    if next != state.offset {
-        state.offset = next;
-        state.store(ui.ctx(), scroll_id);
+    if next != state.unclamped_offset() {
+        put_vec(ui, frame_offset_id(scroll_id), next);
     }
     ui.input_mut(|input| {
         input.smooth_scroll_delta = egui::Vec2::ZERO;
-        input.raw_scroll_delta = egui::Vec2::ZERO;
     });
 }
 
-pub(crate) fn scroll_id(ui: &egui::Ui, salt: impl std::hash::Hash) -> egui::Id {
-    ui.make_persistent_id(egui::Id::new(salt))
+/// Apply a wheel step or a clamp from [`scroll_by_wheel`] without locking the
+/// scroll area on later frames.
+pub(crate) fn with_scroll_override(
+    area: egui::ScrollArea,
+    ui: &egui::Ui,
+    scroll_id: egui::Id,
+) -> egui::ScrollArea {
+    match take_vec(ui, frame_offset_id(scroll_id)) {
+        Some(offset) => area.scroll_offset(offset),
+        None => area,
+    }
+}
+
+pub(crate) fn scroll_id(ui: &egui::Ui, salt: impl std::hash::Hash + std::fmt::Debug) -> egui::Id {
+    // Same salt `ScrollArea::id_salt` stores, so the wheel and the area share one id.
+    ui.make_persistent_id(egui::IdSalt::new(salt))
 }
 
 pub(crate) fn color(hex: &str) -> egui::Color32 {
@@ -242,7 +310,7 @@ fn show_hover_tip(response: &egui::Response, text: String, at_pointer: bool) {
     if text.trim().is_empty() {
         return;
     }
-    let dark = response.ctx.style().visuals.dark_mode;
+    let dark = response.ctx.global_style().visuals.dark_mode;
     let mut tip = egui::Tooltip::for_enabled(response);
     tip.popup = tip.popup.frame(tip_frame(dark)).width(TIP_WIDTH);
     tip = if at_pointer {
@@ -949,8 +1017,14 @@ pub(crate) fn draw_icon(
                 let angle = std::f32::consts::PI * (-0.7 + 1.5 * frac);
                 points.push(center + egui::vec2(r * angle.cos(), r * angle.sin()));
             }
-            painter.add(egui::Shape::Path(egui::epaint::PathShape::line(points, stroke)));
-            let tip = center + egui::vec2(r * (-0.7 * std::f32::consts::PI).cos(), r * (-0.7 * std::f32::consts::PI).sin());
+            painter.add(egui::Shape::Path(egui::epaint::PathShape::line(
+                points, stroke,
+            )));
+            let tip = center
+                + egui::vec2(
+                    r * (-0.7 * std::f32::consts::PI).cos(),
+                    r * (-0.7 * std::f32::consts::PI).sin(),
+                );
             painter.line_segment([tip, tip + egui::vec2(2.5, 0.5)], stroke);
             painter.line_segment([tip, tip + egui::vec2(-0.5, -2.5)], stroke);
         }
@@ -1375,6 +1449,7 @@ pub(crate) fn unescape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RunTestUi;
 
     #[test]
     fn dictionary_senses_indent_like_the_electron_outline() {
@@ -1384,7 +1459,7 @@ mod tests {
             egui::Pos2::ZERO,
             egui::vec2(280.0, 600.0),
         ));
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 show_html(
                     ui,
@@ -1430,12 +1505,12 @@ mod tests {
             egui::Pos2::ZERO,
             egui::vec2(800.0, 600.0),
         ));
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             install_fonts(ctx);
             apply(ctx, false, 16.0);
         });
         // New font definitions load at the start of the next pass.
-        let _ = ctx.run(raw, |_| {});
+        let _ = ctx.run_test_ui(raw, |_| {});
         let id = egui::FontId::proportional(16.0);
         ctx.fonts_mut(|fonts| {
             for ch in ['א', 'ֱ', 'ֹ', 'ִ', 'ם', 'λ', 'ἀ', 'ĕ'] {
@@ -1448,6 +1523,20 @@ mod tests {
         });
     }
 
+    fn glyph_ink(ctx: &egui::Context, min: [u16; 2], max: [u16; 2]) -> Vec<egui::Color32> {
+        ctx.fonts(|fonts| {
+            let image = fonts.image();
+            let mut pixels = Vec::new();
+            for y in min[1]..max[1] {
+                for x in min[0]..max[0] {
+                    let index = y as usize * image.size[0] + x as usize;
+                    pixels.push(image.pixels.get(index).copied().unwrap_or_default());
+                }
+            }
+            pixels
+        })
+    }
+
     #[test]
     fn theme_switch_does_not_recreate_font_atlas() {
         let ctx = egui::Context::default();
@@ -1456,43 +1545,72 @@ mod tests {
             egui::Pos2::ZERO,
             egui::vec2(800.0, 600.0),
         ));
-        // Frame 1: Install fonts & apply light theme
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             install_fonts(ctx);
             apply(ctx, false, 16.0);
         });
-        // Frame 2: Layout some text so font atlas has glyphs
-        let _ = ctx.run(raw.clone(), |ctx| {
-            ctx.fonts_mut(|f| f.layout_no_wrap("In the beginning".to_string(), egui::FontId::proportional(16.0), egui::Color32::BLACK));
+        let mut uv = None;
+        let _ = ctx.run_test_ui(raw.clone(), |ui| {
+            let galley = ui.painter().layout_no_wrap(
+                "In the beginning".to_string(),
+                egui::FontId::proportional(16.0),
+                egui::Color32::BLACK,
+            );
+            uv = galley.rows.iter().find_map(|row| {
+                row.glyphs
+                    .iter()
+                    .find(|glyph| glyph.chr == 'I' && !glyph.uv_rect.is_nothing())
+                    .map(|glyph| (glyph.uv_rect.min, glyph.uv_rect.max))
+            });
         });
-        let alpha1 = ctx.style().visuals.text_alpha_from_coverage;
-
-        // Frame 3: Switch to dark theme
-        let _ = ctx.run(raw.clone(), |ctx| {
-            apply(ctx, true, 16.0);
-        });
-
-        // Frame 4: Run another frame where the new visuals trigger begin_pass
-        let _ = ctx.run(raw.clone(), |_| {});
-
-        let alpha2 = ctx.style().visuals.text_alpha_from_coverage;
+        let (uv_min, uv_max) = uv.expect("the letter I was rasterized");
+        let before = glyph_ink(&ctx, uv_min, uv_max);
+        assert!(
+            before.iter().any(|pixel| pixel.a() > 0),
+            "the letter I has ink in the atlas"
+        );
+        let ramp = egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
         assert_eq!(
-            alpha1, alpha2,
-            "text_alpha_from_coverage changed from {alpha1:?} to {alpha2:?}, which forces egui's begin_pass to recreate the font atlas!"
+            ctx.global_style()
+                .visuals
+                .text_options
+                .color_transfer_function,
+            ramp
         );
 
-        // Frame 5: Switch back to light theme
-        let _ = ctx.run(raw.clone(), |ctx| {
-            apply(ctx, false, 16.0);
-        });
-
-        // Frame 6: Run another frame to verify begin_pass keeps alpha coverage
-        let _ = ctx.run(raw, |_| {});
-
-        let alpha3 = ctx.style().visuals.text_alpha_from_coverage;
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| apply(ctx, true, 16.0));
+        // begin_pass on this frame is where a changed ramp would wipe the atlas.
+        let _ = ctx.run_test_ui(raw.clone(), |_| {});
+        assert!(ctx.global_style().visuals.dark_mode);
         assert_eq!(
-            alpha1, alpha3,
-            "text_alpha_from_coverage changed from {alpha1:?} to {alpha3:?} on switch back to light!"
+            ctx.global_style()
+                .visuals
+                .text_options
+                .color_transfer_function,
+            ramp,
+            "dark theme changed the glyph ramp"
+        );
+        assert_eq!(
+            glyph_ink(&ctx, uv_min, uv_max),
+            before,
+            "dark theme rebuilt the font atlas under the letters already shaped"
+        );
+
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| apply(ctx, false, 16.0));
+        let _ = ctx.run_test_ui(raw, |_| {});
+        assert!(!ctx.global_style().visuals.dark_mode);
+        assert_eq!(
+            ctx.global_style()
+                .visuals
+                .text_options
+                .color_transfer_function,
+            ramp,
+            "light theme changed the glyph ramp"
+        );
+        assert_eq!(
+            glyph_ink(&ctx, uv_min, uv_max),
+            before,
+            "light theme rebuilt the font atlas under the letters already shaped"
         );
     }
 
@@ -1582,11 +1700,11 @@ mod tests {
     #[test]
     fn hover_tip_paints_a_small_warm_card() {
         let ctx = egui::Context::default();
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         style.visuals = egui::Visuals::light();
         style.interaction.tooltip_delay = 0.0;
         style.interaction.show_tooltips_only_when_still = false;
-        ctx.set_style(style);
+        ctx.set_global_style(style);
 
         let mut pointer = egui::pos2(80.0, 40.0);
         let mut output = None;
@@ -1598,7 +1716,7 @@ mod tests {
             ));
             raw.time = Some(time);
             raw.events.push(egui::Event::PointerMoved(pointer));
-            output = Some(ctx.run(raw, |ctx| {
+            output = Some(ctx.run_test_ui(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let (rect, response) =
                         ui.allocate_exact_size(egui::vec2(160.0, 32.0), egui::Sense::click());

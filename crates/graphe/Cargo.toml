@@ -13,13 +13,16 @@ path = "src/main.rs"
 [dependencies]
 graphe-domain = { path = "../graphe-domain" }
 graphe-store = { path = "../graphe-store" }
-eframe = "0.33"
-egui = "0.33"
+eframe = "0.37"
+egui = "0.37"
 open = "5"
 rfd = "0.15"
 indexmap = "2"
 serde_json = "1"
 ureq = "2"
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["snapshot", "wgpu"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

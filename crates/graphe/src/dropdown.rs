@@ -454,8 +454,11 @@ impl<'a> ModuleDropdown<'a> {
                         let text_resp = ui.put(
                             text_edit_rect,
                             egui::TextEdit::singleline(&mut search_query)
-                                .hint_text(i18n::t("searchPlaceholder"))
-                                .frame(false)
+                                // The hint matches the 11px row subtitle. Typed text stays at 13.
+                                .hint_text(
+                                    egui::RichText::new(i18n::t("searchPlaceholder")).size(11.0),
+                                )
+                                .frame(egui::Frame::NONE)
                                 .margin(egui::Margin::ZERO)
                                 .vertical_align(egui::Align::Center)
                                 .font(egui::FontId::proportional(13.0)),
@@ -470,8 +473,11 @@ impl<'a> ModuleDropdown<'a> {
                                 egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
                                 egui::vec2(18.0, 18.0),
                             );
-                            let clear_resp =
-                                ui.interact(clear_rect, popup_id.with("clear"), egui::Sense::click());
+                            let clear_resp = ui.interact(
+                                clear_rect,
+                                popup_id.with("clear"),
+                                egui::Sense::click(),
+                            );
                             if clear_resp.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
@@ -861,6 +867,7 @@ pub(crate) fn draw_star(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RunTestUi;
     use std::path::PathBuf;
 
     fn sample_modules() -> Vec<InstalledModule> {
@@ -982,5 +989,104 @@ mod tests {
         let items = vec![DropdownItem::new("pt", "PT")];
         let dd = ModuleDropdown::from_items("lang", Some("pt"), items).show_search(true);
         assert!(dd.show_search);
+    }
+
+    #[test]
+    fn search_placeholder_is_smaller_than_the_row_title() {
+        let ctx = egui::Context::default();
+        let mut store = AppStateStore::new();
+        let mods = sample_modules();
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+        let trigger = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown:bible-test")
+            .map(|(_, rect)| rect)
+            .expect("dropdown trigger");
+        let pos = egui::pos2(trigger[0] + trigger[2] * 0.5, trigger[1] + trigger[3] * 0.5);
+        let _ = dropdown_frame(&ctx, &mut store, &mods, click(pos));
+        let open = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        let hint = placeholder_size(&open).expect("open dropdown paints the search hint");
+        let title = galley_font_size(&open, "Nova Almeida Atualizada")
+            .expect("open dropdown paints the module name");
+        assert_eq!(hint, 11.0, "the search hint matches the row subtitle");
+        assert_eq!(title, 13.0, "the row title stays at the field size");
+        assert!(hint < title, "the empty hint is quieter than the list");
+    }
+
+    fn dropdown_frame(
+        ctx: &egui::Context,
+        store: &mut AppStateStore,
+        mods: &[InstalledModule],
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(480.0, 640.0),
+        ));
+        raw.events = events;
+        ctx.run_test_ui(raw, |ui| {
+            ui.ctx().data_mut(|data| {
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+            });
+            let palette = theme::palette(false);
+            let dropdown = ModuleDropdown::from_installed("bible-test", "bible", Some("naa"), mods);
+            let _ = dropdown.show(ui, store, palette, false);
+        })
+    }
+
+    fn click(pos: egui::Pos2) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ]
+    }
+
+    fn marks(ctx: &egui::Context) -> Vec<(String, [f32; 4])> {
+        ctx.data(|data| {
+            data.get_temp(egui::Id::new("pane-layout-marks"))
+                .unwrap_or_default()
+        })
+    }
+
+    fn placeholder_size(output: &egui::FullOutput) -> Option<f32> {
+        const HINTS: [&str; 4] = [
+            "Buscar por palavra...",
+            "Search by word...",
+            "Buscar por palabra...",
+            "searchPlaceholder",
+        ];
+        HINTS.iter().find_map(|hint| galley_font_size(output, hint))
+    }
+
+    fn galley_font_size(output: &egui::FullOutput, needle: &str) -> Option<f32> {
+        fn walk(shape: &egui::Shape, needle: &str) -> Option<f32> {
+            match shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(needle) => text
+                    .galley
+                    .job
+                    .sections
+                    .first()
+                    .map(|section| section.format.font_id.size),
+                egui::Shape::Vec(list) => list.iter().find_map(|shape| walk(shape, needle)),
+                _ => None,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| walk(&clipped.shape, needle))
     }
 }

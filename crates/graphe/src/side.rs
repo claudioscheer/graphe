@@ -6,29 +6,27 @@ use crate::paint;
 use crate::session::Dialog;
 use graphe_domain::dict::normalize_topic_candidate;
 use graphe_domain::i18n;
-use graphe_domain::search::{
-    extract_search_terms, parse_search_query, search_result_verse,
-};
+use graphe_domain::search::{extract_search_terms, parse_search_query, search_result_verse};
 use graphe_domain::theme::UiPalette;
 use graphe_store::sqlite;
 use std::path::{Path, PathBuf};
 
 impl GrapheApp {
-    pub(crate) fn sidebar(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+    pub(crate) fn sidebar(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         if self.session.sidebar_collapsed {
             return;
         }
-        egui::SidePanel::left("sidebar")
+        egui::Panel::left("sidebar")
             .resizable(true)
-            .default_width(300.0)
-            .min_width(220.0)
-            .max_width(600.0)
+            .default_size(300.0)
+            .min_size(220.0)
+            .max_size(600.0)
             .frame(
                 egui::Frame::new()
                     .fill(paint::color(palette.ui_surface_muted))
                     .inner_margin(egui::Margin::ZERO),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 paint::clip_scroll_to_viewport(ui);
                 // Shared by search, dictionary, and modules. 34px, padding 0 8px 0 12px.
                 // Align by font line metrics so all tab titles have identical baseline and cap height.
@@ -158,9 +156,8 @@ impl GrapheApp {
                         || !parsed.text_terms.is_empty()
                     {
                         self.session.searching = true;
-                        self.search_debounce = Some(
-                            std::time::Instant::now() + std::time::Duration::from_millis(300),
-                        );
+                        self.search_debounce =
+                            Some(std::time::Instant::now() + std::time::Duration::from_millis(300));
                     } else {
                         self.session.hits.clear();
                         self.session.searching = false;
@@ -179,7 +176,8 @@ impl GrapheApp {
             if now >= deadline {
                 self.run_search();
             } else {
-                ui.ctx().request_repaint_after(deadline.saturating_duration_since(now));
+                ui.ctx()
+                    .request_repaint_after(deadline.saturating_duration_since(now));
             }
         }
 
@@ -255,169 +253,170 @@ impl GrapheApp {
         const SEARCH_GAP: f32 = 6.0;
         let search_scroll = paint::scroll_id(ui, "search-hits");
         paint::scroll_by_wheel(ui, search_scroll, 2.1);
-        let search_view = egui::ScrollArea::vertical()
-            .id_salt("search-hits")
-            .auto_shrink([false, false])
-            .animated(false)
-            .scroll_source(egui::containers::scroll_area::ScrollSource {
-                scroll_bar: true,
-                drag: false,
-                mouse_wheel: false,
-            })
-            .max_height(ui.available_height())
-            .show_viewport(ui, |ui, viewport| {
-                let width = ui.available_width();
-                let card_width = (width - 16.0).max(32.0);
-                let text_width = (card_width - 18.0).max(32.0);
-                let plain = paint::color(palette.ui_text_muted);
-                let mark = paint::color(palette.ui_text);
-                let cache_id = ui.id().with((
-                    text_width.round() as i32,
-                    self.session.font_size.to_bits(),
-                    self.session.query.clone(),
-                    self.session.search_module_id.clone(),
-                    hits.len(),
-                ));
-                let cached = ui.data(|data| data.get_temp::<SearchRowLayout>(cache_id));
-                let rows = if let Some(cached) = cached {
-                    cached
-                } else {
-                    let mut snippets = Vec::with_capacity(hits.len());
-                    let mut offsets = Vec::with_capacity(hits.len() + 1);
-                    offsets.push(0.0);
-                    for hit in &hits {
-                        let snippet =
-                            search_result_verse(&hit.text, &terms, &parsed.strongs);
-                        let label = format!(
-                            "{} {}:{}",
-                            i18n::book_name(hit.book_number).short,
-                            hit.chapter,
-                            hit.verse
-                        );
-                        let label_galley = egui::WidgetText::from(
-                            egui::RichText::new(&label)
-                                .strong()
-                                .size(12.0)
-                                .color(paint::color(palette.ui_link)),
-                        )
-                        .into_galley(
-                            ui,
-                            Some(egui::TextWrapMode::Extend),
-                            f32::INFINITY,
-                            egui::FontSelection::default(),
-                        );
-                        let galley = ui.painter().layout_job(marked_job(
-                            &snippet, text_width, 12.0, plain, mark, palette,
-                        ));
-                        let card = 14.0 + 2.0 + label_galley.rect.height() + 3.0 + galley.rect.height() + 2.0;
-                        let last = *offsets.last().unwrap_or(&0.0);
-                        offsets.push(last + card + SEARCH_GAP);
-                        snippets.push(snippet);
-                    }
-                    let rows = SearchRowLayout { offsets, snippets };
-                    ui.data_mut(|data| data.insert_temp(cache_id, rows.clone()));
-                    rows
-                };
-                let offsets = &rows.offsets;
-                let snippets = &rows.snippets;
-                ui.set_min_height((*offsets.last().unwrap_or(&1.0)).max(1.0));
-                if hits.is_empty() {
-                    return;
-                }
-                let first = offsets
-                    .partition_point(|y| *y <= viewport.min.y)
-                    .saturating_sub(1)
-                    .min(hits.len());
-                let mut last = offsets.partition_point(|y| *y < viewport.max.y);
-                if last > hits.len() {
-                    last = hits.len();
-                }
-                let first = first.min(last);
-                let top = ui.max_rect().top();
-                let list_clip = ui.clip_rect();
-                for index in first..last {
-                    let hit = &hits[index];
-                    let snippet = &snippets[index];
-                    let rect = egui::Rect::from_min_size(
-                        egui::pos2(ui.max_rect().left() + 8.0, top + offsets[index]),
-                        egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
-                    );
-                    let hit_id = ui.id().with((
-                        "search-hit",
-                        hit.book_number,
-                        hit.chapter,
-                        hit.verse,
-                        index,
-                    ));
-                    let mut row_ui = ui.new_child(
-                        egui::UiBuilder::new()
-                            .id_salt(hit_id)
-                            .max_rect(rect)
-                            .layout(egui::Layout::top_down(egui::Align::Min)),
-                    );
-                    row_ui.set_clip_rect(list_clip);
+        let search_view = paint::with_scroll_override(
+            egui::ScrollArea::vertical()
+                .id_salt("search-hits")
+                .auto_shrink([false, false])
+                .animated(false)
+                .scroll_source(egui::containers::scroll_area::ScrollSource {
+                    scroll_bar: true,
+                    drag: egui::containers::scroll_area::DragScroll::Never,
+                    mouse_wheel: false,
+                })
+                .max_height(ui.available_height()),
+            ui,
+            search_scroll,
+        )
+        .show_viewport(ui, |ui, viewport| {
+            let width = ui.available_width();
+            let card_width = (width - 16.0).max(32.0);
+            let text_width = (card_width - 18.0).max(32.0);
+            let plain = paint::color(palette.ui_text_muted);
+            let mark = paint::color(palette.ui_text);
+            // The cards are 12px. Leaving the Bible font out of the key
+            // keeps a font click from wrapping every hit.
+            let cache_id = ui.id().with((
+                text_width.round() as i32,
+                self.session.query.clone(),
+                self.session.search_module_id.clone(),
+                hits.len(),
+            ));
+            let cached = ui.data(|data| data.get_temp::<SearchRowLayout>(cache_id));
+            let rows = if let Some(cached) = cached {
+                cached
+            } else {
+                let mut snippets = Vec::with_capacity(hits.len());
+                let mut offsets = Vec::with_capacity(hits.len() + 1);
+                offsets.push(0.0);
+                for hit in &hits {
+                    let snippet = search_result_verse(&hit.text, &terms, &parsed.strongs);
                     let label = format!(
                         "{} {}:{}",
                         i18n::book_name(hit.book_number).short,
                         hit.chapter,
                         hit.verse
                     );
-                    let hovered = row_ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
-                    let (fill, stroke_color) = if hovered {
-                        (
-                            paint::color(palette.ui_accent_bg_soft),
-                            paint::color(palette.ui_border),
-                        )
-                    } else {
-                        (
-                            paint::color(palette.ui_surface),
-                            paint::color(palette.ui_border_soft),
-                        )
-                    };
-                    let row = egui::Frame::new()
-                        .fill(fill)
-                        .stroke(egui::Stroke::new(1.0_f32, stroke_color))
-                        .inner_margin(egui::Margin::symmetric(8, 7))
-                        .corner_radius(egui::CornerRadius::same(2))
-                        .show(&mut row_ui, |ui| {
-                            ui.set_min_width(ui.available_width());
-                            ui.spacing_mut().item_spacing.y = 3.0;
-                            ui.label(
-                                egui::RichText::new(label)
-                                    .strong()
-                                    .size(12.0)
-                                    .color(paint::color(palette.ui_link)),
-                            );
-                            draw_marked(
-                                ui,
-                                snippet,
-                                text_width,
-                                12.0,
-                                paint::color(palette.ui_text_muted),
-                                paint::color(palette.ui_text),
-                                palette,
-                            );
-                        });
-                    let response = row_ui.interact(row.response.rect, hit_id, egui::Sense::click());
-                    let hovered = response.hovered();
-                    let clicked = response.clicked();
-                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    row_ui.data_mut(|data| data.insert_temp(hit_id, hovered));
-                    if clicked {
-                        let primary =
-                            row_ui.input(|input| input.modifiers.command || input.modifiers.ctrl);
-                        if primary {
-                            self.session.open_search_hit_in_new_study(hit);
-                            self.note_workspaces();
-                        } else {
-                            self.session.open_search_hit(hit);
-                        }
-                        self.loaded_key.clear();
-                        self.sync_active_chapter();
-                        row_ui.ctx().request_repaint();
-                    }
+                    let label_galley = egui::WidgetText::from(
+                        egui::RichText::new(&label)
+                            .strong()
+                            .size(12.0)
+                            .color(paint::color(palette.ui_link)),
+                    )
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Extend),
+                        f32::INFINITY,
+                        egui::FontSelection::default(),
+                    );
+                    let galley = ui
+                        .painter()
+                        .layout_job(marked_job(&snippet, text_width, 12.0, plain, mark, palette));
+                    let card =
+                        14.0 + 2.0 + label_galley.rect.height() + 3.0 + galley.rect.height() + 2.0;
+                    let last = *offsets.last().unwrap_or(&0.0);
+                    offsets.push(last + card + SEARCH_GAP);
+                    snippets.push(snippet);
                 }
-            });
+                let rows = SearchRowLayout { offsets, snippets };
+                ui.data_mut(|data| data.insert_temp(cache_id, rows.clone()));
+                rows
+            };
+            let offsets = &rows.offsets;
+            let snippets = &rows.snippets;
+            ui.set_min_height((*offsets.last().unwrap_or(&1.0)).max(1.0));
+            if hits.is_empty() {
+                return;
+            }
+            let first = offsets
+                .partition_point(|y| *y <= viewport.min.y)
+                .saturating_sub(1)
+                .min(hits.len());
+            let mut last = offsets.partition_point(|y| *y < viewport.max.y);
+            if last > hits.len() {
+                last = hits.len();
+            }
+            let first = first.min(last);
+            let top = ui.max_rect().top();
+            let list_clip = ui.clip_rect();
+            for index in first..last {
+                let hit = &hits[index];
+                let snippet = &snippets[index];
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(ui.max_rect().left() + 8.0, top + offsets[index]),
+                    egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
+                );
+                let hit_id =
+                    ui.id()
+                        .with(("search-hit", hit.book_number, hit.chapter, hit.verse, index));
+                let mut row_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt(hit_id)
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                row_ui.set_clip_rect(list_clip);
+                let label = format!(
+                    "{} {}:{}",
+                    i18n::book_name(hit.book_number).short,
+                    hit.chapter,
+                    hit.verse
+                );
+                let hovered = row_ui.data(|data| data.get_temp(hit_id).unwrap_or(false));
+                let (fill, stroke_color) = if hovered {
+                    (
+                        paint::color(palette.ui_accent_bg_soft),
+                        paint::color(palette.ui_border),
+                    )
+                } else {
+                    (
+                        paint::color(palette.ui_surface),
+                        paint::color(palette.ui_border_soft),
+                    )
+                };
+                let row = egui::Frame::new()
+                    .fill(fill)
+                    .stroke(egui::Stroke::new(1.0_f32, stroke_color))
+                    .inner_margin(egui::Margin::symmetric(8, 7))
+                    .corner_radius(egui::CornerRadius::same(2))
+                    .show(&mut row_ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        ui.label(
+                            egui::RichText::new(label)
+                                .strong()
+                                .size(12.0)
+                                .color(paint::color(palette.ui_link)),
+                        );
+                        draw_marked(
+                            ui,
+                            snippet,
+                            text_width,
+                            12.0,
+                            paint::color(palette.ui_text_muted),
+                            paint::color(palette.ui_text),
+                            palette,
+                        );
+                    });
+                let response = row_ui.interact(row.response.rect, hit_id, egui::Sense::click());
+                let hovered = response.hovered();
+                let clicked = response.clicked();
+                response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                row_ui.data_mut(|data| data.insert_temp(hit_id, hovered));
+                if clicked {
+                    let primary =
+                        row_ui.input(|input| input.modifiers.command || input.modifiers.ctrl);
+                    if primary {
+                        self.session.open_search_hit_in_new_study(hit);
+                        self.note_workspaces();
+                    } else {
+                        self.session.open_search_hit(hit);
+                    }
+                    self.loaded_key.clear();
+                    self.sync_active_chapter();
+                    row_ui.ctx().request_repaint();
+                }
+            }
+        });
         paint::remember_scroll_extent(
             ui,
             search_scroll,
@@ -1245,7 +1244,7 @@ fn search_input_box(
             };
             let text_edit = ui.add(
                 egui::TextEdit::singleline(query)
-                    .frame(false)
+                    .frame(egui::Frame::NONE)
                     .margin(egui::Margin::ZERO)
                     .vertical_align(egui::Align::Center)
                     .hint_text(hint)
@@ -1490,9 +1489,17 @@ fn is_pseudo_strong(topic: &str) -> bool {
 
 fn reload_feedback_status(elapsed_ms: u128) -> (&'static str, bool, Option<std::time::Duration>) {
     if elapsed_ms < 400 {
-        ("reloadingModules", true, Some(std::time::Duration::from_millis(50)))
+        (
+            "reloadingModules",
+            true,
+            Some(std::time::Duration::from_millis(50)),
+        )
     } else if elapsed_ms < 1600 {
-        ("modulesReloaded", false, Some(std::time::Duration::from_millis(100)))
+        (
+            "modulesReloaded",
+            false,
+            Some(std::time::Duration::from_millis(100)),
+        )
     } else {
         ("reloadModules", false, None)
     }
@@ -1500,10 +1507,12 @@ fn reload_feedback_status(elapsed_ms: u128) -> (&'static str, bool, Option<std::
 
 #[cfg(test)]
 mod tests {
+    use crate::RunTestUi;
+
     #[test]
     fn test_header_galley_consistency() {
         let ctx = egui::Context::default();
-        let _ = ctx.run(Default::default(), |ctx| {
+        let _ = ctx.run_test_ui(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let tabs = ["DICIONÁRIO", "PESQUISAR", "MÓDULOS"];
                 let heights: Vec<f32> = tabs

@@ -20,7 +20,7 @@ const TAB_HEIGHT: f32 = 33.0;
 pub(crate) const TOOLBAR_HEIGHT: f32 = 44.0;
 
 impl GrapheApp {
-    pub(crate) fn update_banner(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+    pub(crate) fn update_banner(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         let version = self
             .update_notice
             .lock()
@@ -30,14 +30,14 @@ impl GrapheApp {
             return;
         };
         let mut dismiss = false;
-        egui::TopBottomPanel::top("update-banner")
-            .exact_height(28.0)
+        egui::Panel::top("update-banner")
+            .exact_size(28.0)
             .frame(
                 egui::Frame::new()
                     .fill(paint::color(palette.ui_link))
                     .inner_margin(egui::Margin::symmetric(12, 3)),
             )
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.label(
                         egui::RichText::new(i18n::t_fmt(
@@ -55,7 +55,10 @@ impl GrapheApp {
                             .color(egui::Color32::WHITE),
                     )
                     .fill(egui::Color32::from_white_alpha(38))
-                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(128)))
+                    .stroke(egui::Stroke::new(
+                        1.0_f32,
+                        egui::Color32::from_white_alpha(128),
+                    ))
                     .corner_radius(egui::CornerRadius::same(2));
                     let response = ui.add(download_btn);
                     mark_layout(ui, "update-download", response.rect);
@@ -89,17 +92,17 @@ impl GrapheApp {
         }
     }
 
-    pub(crate) fn top_strip(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+    pub(crate) fn top_strip(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         let bg = paint::top_strip_bg(self.session.dark, palette);
         let border = if self.session.dark {
             "#2b2b2b"
         } else {
             palette.ui_border
         };
-        egui::TopBottomPanel::top("command")
-            .exact_height(34.0)
+        egui::Panel::top("command")
+            .exact_size(34.0)
             .frame(egui::Frame::new().fill(bg).inner_margin(egui::Margin::ZERO))
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let rect = ui.max_rect();
                 ui.painter().line_segment(
                     [rect.left_bottom(), rect.right_bottom()],
@@ -306,7 +309,7 @@ impl GrapheApp {
                     egui::TextEdit::singleline(&mut self.rename)
                         .font(egui::FontId::proportional(12.0))
                         .text_color(paint::color(palette.ui_text))
-                        .frame(false)
+                        .frame(egui::Frame::NONE)
                         .margin(egui::Margin::symmetric(10, 0))
                         .vertical_align(egui::Align::Center)
                         .desired_width(tab_rect.width()),
@@ -314,10 +317,12 @@ impl GrapheApp {
                 if self.rename_focus {
                     response.request_focus();
                     let mut state = egui::text_edit::TextEditState::default();
-                    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                        egui::text::CCursor::new(0),
-                        egui::text::CCursor::new(self.rename.chars().count()),
-                    )));
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::two(
+                            egui::text::CCursor::new(0),
+                            egui::text::CCursor::new(self.rename.chars().count()),
+                        )));
                     state.store(ui.ctx(), response.id);
                     self.rename_focus = false;
                 } else {
@@ -1399,6 +1404,7 @@ fn menu_item(
 #[cfg(test)]
 mod tests {
     use super::toolbar_picker_width;
+    use crate::RunTestUi;
 
     #[test]
     fn picker_width_follows_the_pane() {
@@ -1425,8 +1431,11 @@ mod tests {
         app.rename_focus = true;
 
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
-        let _ = ctx.run(raw, |ctx| {
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
@@ -1435,7 +1444,10 @@ mod tests {
         assert!(!app.rename_focus);
 
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
         raw.events.push(egui::Event::Key {
             key: egui::Key::Escape,
             physical_key: None,
@@ -1443,7 +1455,7 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
@@ -1457,15 +1469,21 @@ mod tests {
         app.rename_focus = true;
 
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
-        let _ = ctx.run(raw, |ctx| {
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
         });
 
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
         raw.events.push(egui::Event::Key {
             key: egui::Key::Enter,
             physical_key: None,
@@ -1473,13 +1491,16 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
         });
         assert!(app.renaming.is_none());
-        assert_eq!(app.session.workspaces.get_tab_state().items[0].1, "Renamed Tab");
+        assert_eq!(
+            app.session.workspaces.get_tab_state().items[0].1,
+            "Renamed Tab"
+        );
 
         // 3. Rename cancelled when losing focus (e.g. clicking outside)
         app.renaming = Some(first_id.clone());
@@ -1487,8 +1508,11 @@ mod tests {
         app.rename_focus = true;
 
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
-        let _ = ctx.run(raw, |ctx| {
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
@@ -1496,7 +1520,10 @@ mod tests {
 
         // Click outside on the panel (e.g. at x: 1000, y: 500)
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
         raw.events.push(egui::Event::PointerButton {
             pos: egui::pos2(1000.0, 500.0),
             button: egui::PointerButton::Primary,
@@ -1509,13 +1536,16 @@ mod tests {
             pressed: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
         });
         assert!(app.renaming.is_none());
-        assert_eq!(app.session.workspaces.get_tab_state().items[0].1, "Renamed Tab");
+        assert_eq!(
+            app.session.workspaces.get_tab_state().items[0].1,
+            "Renamed Tab"
+        );
     }
 
     #[test]
@@ -1532,7 +1562,10 @@ mod tests {
         let pos = egui::pos2(180.0, 25.0);
         let mut raw = egui::RawInput::default();
         raw.time = Some(0.0);
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
         raw.events.push(egui::Event::PointerButton {
             pos,
             button: egui::PointerButton::Primary,
@@ -1545,7 +1578,7 @@ mod tests {
             pressed: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
@@ -1554,7 +1587,10 @@ mod tests {
         // Second click at t = 0.1
         let mut raw = egui::RawInput::default();
         raw.time = Some(0.1);
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
         raw.events.push(egui::Event::PointerButton {
             pos,
             button: egui::PointerButton::Primary,
@@ -1567,7 +1603,7 @@ mod tests {
             pressed: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.workspace_tabs(ui, &palette);
             });
@@ -1575,6 +1611,9 @@ mod tests {
         assert_eq!(app.renaming, Some(second_id.clone()));
         assert_eq!(app.rename, second_name);
         assert!(app.rename_focus);
-        assert_eq!(app.session.workspaces.get_tab_state().active_workspace_id, Some(second_id));
+        assert_eq!(
+            app.session.workspaces.get_tab_state().active_workspace_id,
+            Some(second_id)
+        );
     }
 }

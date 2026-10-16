@@ -155,16 +155,12 @@ Desktop applications require both algorithmic correctness and visual reliability
   cargo test -p graphe <test_name>
   ```
 
-### 4.2 Headless egui Visual & Layout Verification
-When any UI layout, card height, verse clipping, dialog, or scroll behavior is touched, write or run headless egui frame tests. See [`references/egui-visual-testing.md`](file:///C:/Users/water/Projects/graphe/.agents/skills/implement-issue/references/egui-visual-testing.md) for full harness details:
+### 4.2 Headless egui verification
+When a change touches layout, clipping, scrolling, a dialog, or a control the user clicks, verify it in-process. The harness, the frame-pass helpers, and the screenshot split are in [`references/egui-visual-testing.md`](file:///C:/Users/water/Projects/graphe/.agents/skills/implement-issue/references/egui-visual-testing.md).
 
-- **Instantiate headless app**: Use `tests::bare(Session::from_state(...))` in `crates/graphe/src/app.rs`.
-- **Execute frame passes**: Run `ctx.run(raw_input, |ctx| ...)` with virtual desktop dimensions (e.g., 1200x800).
-- **Inspect Layout Marks**: Check bounding boxes recorded via `mark_layout(ui, key, rect)` and stored in `pane-layout-marks`.
-- **Verify Text Galleys**: Use `galley_has(&output, "expected text")` to confirm rendered text shapes.
-- **Verify Paper & Colors**: Use `shape_has_paper(&shape, palette_color)` to verify backgrounds and card borders.
-- **Simulate User Events**: Send `egui::Event::PointerMoved`, `egui::Event::PointerButton`, or keyboard shortcuts to verify interaction transitions.
-- **Deterministic & Fast**: Runs in < 0.3s, needs zero display server, and executes reliably on all CI runners.
+- **Named control**: use `egui_kittest`. Build `GrapheApp` with `tests::bare`, draw `show_workbench`, then `get_by_label(...).click()` and `harness.run()`. Assert `Session` state. `crates/graphe/src/kit.rs` is the copyable harness. Name an icon-only button with `WidgetInfo::labeled` or the query cannot see it.
+- **Geometry, clipping, theme**: keep layout marks, galley walks, and shape colors. Drive those frames with `RunTestUi::run_test_ui`. Do not replace those checks with a full-window image diff.
+- **Renderer**: `harness.render()` checks that wgpu returned a frame. Do not check in a full-window golden. CI runs on Ubuntu, Windows, and macOS.
 
 ### 4.3 Desktop Build & Smoke Check
 - Validate workspace compilation:

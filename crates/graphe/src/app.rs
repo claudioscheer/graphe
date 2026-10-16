@@ -207,40 +207,55 @@ impl Default for ModuleEditorForm {
 }
 
 impl eframe::App for GrapheApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show_workbench(ui);
+    }
+
+    fn on_exit(&mut self) {
+        self.note_workspaces();
+        self.store.advance(1_000);
+        let _ = state::save_state(&self.store.state);
+    }
+}
+
+impl GrapheApp {
+    /// Draw one workbench frame. Tests and `egui_kittest` call this directly.
+    pub(crate) fn show_workbench(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         self.pump_update();
         self.flush_saves();
-        if !self.theme_ready
-            || self.applied_dark != self.session.dark
-            || (self.applied_font - self.session.font_size).abs() > 0.1
-        {
-            paint::apply(ctx, self.session.dark, self.session.font_size);
+        let theme_changed = self.theme_ready && self.applied_dark != self.session.dark;
+        let font_changed =
+            self.theme_ready && (self.applied_font - self.session.font_size).abs() > 0.1;
+        if !self.theme_ready || theme_changed || font_changed {
+            paint::apply(&ctx, self.session.dark, self.session.font_size);
             self.applied_dark = self.session.dark;
             self.applied_font = self.session.font_size;
             self.theme_ready = true;
-            self.reading.clear();
+            // A font step only changes the shaped lines. Parsed chapters, cross
+            // references, and commentary text stay, and the open rows keep a
+            // scaled height so the click does not wrap the whole chapter.
+            if font_changed && !theme_changed {
+                self.reading.drop_shaped();
+            } else {
+                self.reading.clear();
+            }
         }
         if let Some(text) = self.session.pending_copy.take() {
             ctx.copy_text(text);
         }
         self.restore_saved_panels();
-        self.handle_keys(ctx);
+        self.handle_keys(&ctx);
         let palette = theme::palette(self.session.dark);
-        self.update_banner(ctx, palette);
-        self.top_strip(ctx, palette);
-        self.activity_bar(ctx, palette);
-        self.pump_search(ctx);
-        self.sidebar(ctx, palette);
-        self.editor(ctx, palette);
-        self.dialogs(ctx);
+        self.update_banner(ui, &palette);
+        self.top_strip(ui, &palette);
+        self.activity_bar(ui, &palette);
+        self.pump_search(&ctx);
+        self.sidebar(ui, &palette);
+        self.editor(ui, &palette);
+        self.dialogs(&ctx);
         self.drain_navigation();
         self.drain_picker();
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.note_workspaces();
-        self.store.advance(1_000);
-        let _ = state::save_state(&self.store.state);
     }
 }
 
@@ -578,7 +593,7 @@ impl GrapheApp {
     }
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
-        let text_focused = ctx.wants_keyboard_input();
+        let text_focused = ctx.egui_wants_keyboard_input();
         let mut action = None;
         let mut copy_verses = false;
         ctx.input(|input| {
@@ -652,14 +667,14 @@ impl GrapheApp {
         }
     }
 
-    fn activity_bar(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+    fn activity_bar(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         let bar = if self.session.dark {
             "#181818"
         } else {
             "#f2f0ea"
         };
-        egui::SidePanel::left("activity")
-            .exact_width(48.0)
+        egui::Panel::left("activity")
+            .exact_size(48.0)
             .resizable(false)
             .frame(paint::panel(bar).inner_margin(egui::Margin {
                 left: 2,
@@ -667,7 +682,7 @@ impl GrapheApp {
                 top: 6,
                 bottom: 6,
             }))
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let border_x = ui.max_rect().right() + 2.0;
                 ui.painter().line_segment(
                     [
@@ -684,20 +699,30 @@ impl GrapheApp {
                         ("modules", paint::Icon::Library),
                     ] {
                         let selected = self.session.sidebar == view;
+                        let label = label_for(view);
                         let response = paint::icon_button(ui, icon, selected, palette);
+                        let accessible = label.clone();
+                        response.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::Role::Button, true, accessible.clone())
+                        });
                         if response.clicked() {
                             self.session.focus_sidebar(view);
                             self.note_workspaces();
                         }
-                        paint::hover_tip(response, label_for(view));
+                        paint::hover_tip(response, label);
                     }
                     let gap = (ui.available_height() - 48.0).max(0.0);
                     ui.allocate_space(egui::vec2(0.0, gap));
+                    let label = i18n::t("settings");
                     let response = paint::icon_button(ui, paint::Icon::Settings, false, palette);
+                    let accessible = label.clone();
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, accessible.clone())
+                    });
                     if response.clicked() {
                         self.session.dialog = Dialog::Settings;
                     }
-                    paint::hover_tip(response, i18n::t("settings"));
+                    paint::hover_tip(response, label);
                 });
             });
     }
@@ -746,6 +771,7 @@ fn verse_numbers(modules: &[InstalledModule], book: i64, chapter: i64) -> Vec<i6
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::RunTestUi;
 
     pub(crate) fn bare(session: Session) -> GrapheApp {
         GrapheApp {
@@ -835,13 +861,13 @@ pub(crate) mod tests {
         app: &mut GrapheApp,
         screen: egui::Vec2,
     ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         style.animation_time = 0.0;
-        ctx.set_style(style);
+        ctx.set_global_style(style);
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
         let mut marks = Vec::new();
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             ctx.data_mut(|data| {
                 data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
             });
@@ -959,7 +985,7 @@ pub(crate) mod tests {
                 modifiers: egui::Modifiers::default(),
             },
         ];
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.dialogs(ctx);
         });
         let (_, chapter_marks) = dialog_frame(&ctx, &mut app);
@@ -1043,7 +1069,7 @@ pub(crate) mod tests {
             egui::vec2(800.0, 600.0),
         ));
         raw.events.push(egui::Event::Copy);
-        let _ = ctx.run(raw, |ctx| app.handle_keys(ctx));
+        let _ = ctx.run_test_ui(raw, |ctx| app.handle_keys(ctx));
         assert_eq!(
             app.session.pending_copy.as_deref(),
             Some("[Gn 1:1] In the beginning\n[Gn 1:2] And the earth")
@@ -1059,7 +1085,7 @@ pub(crate) mod tests {
         let show = |ctx: &egui::Context, app: &mut GrapheApp| {
             let mut raw = egui::RawInput::default();
             raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
-            ctx.run(raw, |ctx| app.dialogs(ctx))
+            ctx.run_test_ui(raw, |ctx| app.dialogs(ctx))
         };
         let _ = show(&ctx, &mut app);
         let output = show(&ctx, &mut app);
@@ -1164,7 +1190,7 @@ pub(crate) mod tests {
                 modifiers: egui::Modifiers::default(),
             },
         ];
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.dialogs(ctx);
         });
         assert!(app.session.dark, "the theme control toggles light and dark");
@@ -1181,12 +1207,24 @@ pub(crate) mod tests {
 
         let font_dd = mark(&marks, "dropdown:font-size");
         let lang_dd = mark(&marks, "dropdown:language");
-        assert_eq!(font_dd[2], 72.0, "font size dropdown has consistent 72px width");
-        assert_eq!(lang_dd[2], 72.0, "language dropdown has consistent 72px width");
+        assert_eq!(
+            font_dd[2], 72.0,
+            "font size dropdown has consistent 72px width"
+        );
+        assert_eq!(
+            lang_dd[2], 72.0,
+            "language dropdown has consistent 72px width"
+        );
 
         // Verify active label is painted on the trigger
-        assert!(galley_has(&output, "20px"), "active font size is displayed on dropdown");
-        assert!(galley_has(&output, "PT"), "active language is displayed on dropdown");
+        assert!(
+            galley_has(&output, "20px"),
+            "active font size is displayed on dropdown"
+        );
+        assert!(
+            galley_has(&output, "PT"),
+            "active language is displayed on dropdown"
+        );
 
         // Click language dropdown to open popup
         let pos = egui::pos2(lang_dd[0] + lang_dd[2] * 0.5, lang_dd[1] + lang_dd[3] * 0.5);
@@ -1210,27 +1248,39 @@ pub(crate) mod tests {
                 modifiers: egui::Modifiers::default(),
             },
         ];
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.dialogs(ctx);
         });
-        let frame_output = ctx.run(egui::RawInput::default(), |ctx| {
+        let frame_output = ctx.run_test_ui(egui::RawInput::default(), |ctx| {
             app.dialogs(ctx);
         });
 
         // The dropdown popup is open and renders options with the unified elevated surface
         let palette = theme::palette(app.session.dark);
         let elevated = paint::color(palette.ui_surface_elevated);
-        let painted_elevated = frame_output.shapes.iter().any(|clipped| match &clipped.shape {
-            egui::Shape::Rect(rect) => rect.fill == elevated,
-            egui::Shape::Vec(shapes) => shapes.iter().any(|s| match s {
-                egui::Shape::Rect(r) => r.fill == elevated,
+        let painted_elevated = frame_output
+            .shapes
+            .iter()
+            .any(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect) => rect.fill == elevated,
+                egui::Shape::Vec(shapes) => shapes.iter().any(|s| match s {
+                    egui::Shape::Rect(r) => r.fill == elevated,
+                    _ => false,
+                }),
                 _ => false,
-            }),
-            _ => false,
-        });
-        assert!(painted_elevated, "language dropdown popup uses elevated surface paper");
-        assert!(galley_has(&frame_output, "EN"), "language dropdown displays EN option");
-        assert!(galley_has(&frame_output, "ES"), "language dropdown displays ES option");
+            });
+        assert!(
+            painted_elevated,
+            "language dropdown popup uses elevated surface paper"
+        );
+        assert!(
+            galley_has(&frame_output, "EN"),
+            "language dropdown displays EN option"
+        );
+        assert!(
+            galley_has(&frame_output, "ES"),
+            "language dropdown displays ES option"
+        );
     }
 
     fn close_sits_like_the_about_x(marks: &[(String, [f32; 4])]) {
@@ -1359,7 +1409,7 @@ pub(crate) mod tests {
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
         raw.events = click(at);
-        let _ = ctx.run(raw, |ctx| app.dialogs(ctx));
+        let _ = ctx.run_test_ui(raw, |ctx| app.dialogs(ctx));
         assert_eq!(app.session.dialog, Dialog::None);
 
         for dialog in [
@@ -1483,7 +1533,7 @@ pub(crate) mod tests {
         let palette = theme::palette(false);
         let mut marks = Vec::new();
         for _ in 0..2 {
-            let _ = ctx.run(raw.clone(), |ctx| {
+            let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
                     data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
@@ -1611,7 +1661,7 @@ pub(crate) mod tests {
             raw.time = Some(time);
             raw.events = events;
             let mut marks = Vec::new();
-            let _ = ctx.run(raw, |ctx| {
+            let _ = ctx.run_test_ui(raw, |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
                     data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
@@ -1739,7 +1789,7 @@ pub(crate) mod tests {
             ));
             raw.time = Some(time);
             raw.events = events;
-            let _ = ctx.run(raw, |ctx| {
+            let _ = ctx.run_test_ui(raw, |ctx| {
                 app.editor(ctx, theme::palette(false));
             });
         };
@@ -1874,7 +1924,7 @@ pub(crate) mod tests {
                 egui::vec2(1200.0, 800.0),
             ));
             raw.time = Some(time);
-            let _ = ctx.run(raw, |ctx| {
+            let _ = ctx.run_test_ui(raw, |ctx| {
                 app.editor(ctx, theme::palette(false));
             });
         };
@@ -1913,7 +1963,7 @@ pub(crate) mod tests {
         let palette = theme::palette(false);
         let mut marks = Vec::new();
         for _ in 0..2 {
-            let _ = ctx.run(raw.clone(), |ctx| {
+            let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
                     data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
@@ -2065,14 +2115,13 @@ pub(crate) mod tests {
                     150.0 + frame as f32,
                     150.0,
                 )));
-                let _ = ctx.run(raw, |ctx| {
+                let _ = ctx.run_test_ui(raw, |ctx| {
                     let palette = theme::palette(app.session.dark);
                     app.sidebar(ctx, palette);
                 });
-                let state =
-                    egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"));
+                let state = egui::containers::panel::PanelState::load(&ctx, sidebar_panel_id());
                 assert_eq!(
-                    state.map(|s| s.rect.width()),
+                    state.map(|s| s.outer_rect.width()),
                     Some(300.0),
                     "View {} grew at frame {}",
                     view,
@@ -2127,7 +2176,7 @@ pub(crate) mod tests {
             egui::vec2(1400.0, 900.0),
         ));
         let mut central_left = 0.0;
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             let palette = theme::palette(false);
             app.activity_bar(ctx, palette);
             app.sidebar(ctx, palette);
@@ -2137,8 +2186,8 @@ pub(crate) mod tests {
                     central_left = ui.max_rect().left();
                 });
         });
-        let width = egui::containers::panel::PanelState::load(ctx, egui::Id::new("sidebar"))
-            .map(|state| state.rect.width())
+        let width = egui::containers::panel::PanelState::load(ctx, sidebar_panel_id())
+            .map(|state| state.outer_rect.width())
             .unwrap_or(0.0);
         let mut meaning_right = 0.0_f32;
         for clipped in &output.shapes {
@@ -2165,29 +2214,30 @@ pub(crate) mod tests {
         let ctx = egui::Context::default();
         let mut app = dictionary_with_strong_entry();
         let (width, central_left, meaning_right) = show_dictionary_frame(&ctx, &mut app);
-        let side = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"))
-            .expect("sidebar");
+        let side =
+            egui::containers::panel::PanelState::load(&ctx, sidebar_panel_id()).expect("sidebar");
         assert!(
             (width - 300.0).abs() < 1.0,
             "opening a Strong's entry resized the sidebar to {width}"
         );
         assert!(
-            (central_left - side.rect.right()).abs() < 1.0,
+            (central_left - side.outer_rect.right()).abs() < 1.0,
             "study pane starts at {central_left}, sidebar ends at {}",
-            side.rect.right()
+            side.outer_rect.right()
         );
         assert!(
-            meaning_right > side.rect.left() && meaning_right <= side.rect.right() + 1.0,
+            meaning_right > side.outer_rect.left()
+                && meaning_right <= side.outer_rect.right() + 1.0,
             "morphology runs to {meaning_right}, outside sidebar {}",
-            side.rect.right()
+            side.outer_rect.right()
         );
 
         for wanted in [420.0_f32, 260.0] {
             ctx.data_mut(|data| {
                 data.insert_persisted(
-                    egui::Id::new("sidebar"),
+                    sidebar_panel_id(),
                     egui::containers::panel::PanelState {
-                        rect: egui::Rect::from_min_size(
+                        outer_rect: egui::Rect::from_min_size(
                             egui::pos2(48.0, 0.0),
                             egui::vec2(wanted, 900.0),
                         ),
@@ -2195,23 +2245,29 @@ pub(crate) mod tests {
                 );
             });
             let (width, central_left, meaning_right) = show_dictionary_frame(&ctx, &mut app);
-            let side = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("sidebar"))
+            let side = egui::containers::panel::PanelState::load(&ctx, sidebar_panel_id())
                 .expect("sidebar");
             assert!(
                 (width - wanted).abs() < 1.0,
                 "sidebar snapped from {wanted} to {width} while a Strong's entry was open"
             );
             assert!(
-                (central_left - side.rect.right()).abs() < 1.0,
+                (central_left - side.outer_rect.right()).abs() < 1.0,
                 "gap beside a {wanted}px sidebar: study at {central_left}, sidebar at {}",
-                side.rect.right()
+                side.outer_rect.right()
             );
             assert!(
-                meaning_right > side.rect.left() && meaning_right <= side.rect.right() + 1.0,
+                meaning_right > side.outer_rect.left()
+                    && meaning_right <= side.outer_rect.right() + 1.0,
                 "morphology runs to {meaning_right}, outside a {wanted}px sidebar ending at {}",
-                side.rect.right()
+                side.outer_rect.right()
             );
         }
+    }
+
+    /// egui 0.37 panel ids are children of the root `Ui`, not `Id::new("sidebar")`.
+    fn sidebar_panel_id() -> egui::Id {
+        egui::ViewportId::ROOT.root_ui_id().with("sidebar")
     }
 
     fn sidebar_frame(
@@ -2219,9 +2275,9 @@ pub(crate) mod tests {
         app: &mut GrapheApp,
         events: Vec<egui::Event>,
     ) -> Vec<(String, [f32; 4])> {
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         style.animation_time = 0.0;
-        ctx.set_style(style);
+        ctx.set_global_style(style);
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -2230,7 +2286,7 @@ pub(crate) mod tests {
         raw.focused = true;
         raw.events = events;
         let mut marks = Vec::new();
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             let palette = theme::palette(false);
             app.sidebar(ctx, palette);
             marks = ctx.data(|data| {
@@ -2246,9 +2302,9 @@ pub(crate) mod tests {
         app: &mut GrapheApp,
         events: Vec<egui::Event>,
     ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         style.animation_time = 0.0;
-        ctx.set_style(style);
+        ctx.set_global_style(style);
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -2257,7 +2313,7 @@ pub(crate) mod tests {
         raw.focused = true;
         raw.events = events;
         let mut marks = Vec::new();
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             ctx.data_mut(|data| {
                 data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
             });
@@ -2653,11 +2709,11 @@ pub(crate) mod tests {
             egui::vec2(1200.0, 800.0),
         ));
         raw.time = Some(time);
-        raw.modifiers = modifiers;
-        raw.events = events;
+        raw.events.push(egui::Event::ModifiersChanged(modifiers));
+        raw.events.extend(events);
         let palette = theme::palette(false);
         let mut marks = Vec::new();
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.editor(ctx, palette);
             marks = ctx.data(|data| {
                 data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
@@ -2742,6 +2798,8 @@ pub(crate) mod tests {
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -480.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
                 modifiers: egui::Modifiers::default(),
             },
         ]
@@ -3205,7 +3263,7 @@ pub(crate) mod tests {
             ));
             raw.time = Some(time);
             raw.events = events;
-            ctx.run(raw, |ctx| {
+            ctx.run_test_ui(raw, |ctx| {
                 app.sidebar(ctx, theme::palette(false));
             })
         };
@@ -3242,7 +3300,7 @@ pub(crate) mod tests {
             egui::Pos2::ZERO,
             egui::vec2(1200.0, 800.0),
         ));
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
 
@@ -3276,7 +3334,7 @@ pub(crate) mod tests {
             egui::Pos2::ZERO,
             egui::vec2(1200.0, 800.0),
         ));
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
 
@@ -3309,7 +3367,11 @@ pub(crate) mod tests {
                 book_number: 15,
                 chapter: 5,
                 verse: i + 1,
-                text: if i % 2 == 0 { verse1.into() } else { verse2.into() },
+                text: if i % 2 == 0 {
+                    verse1.into()
+                } else {
+                    verse2.into()
+                },
             });
         }
         app.session.hits = hits;
@@ -3321,12 +3383,12 @@ pub(crate) mod tests {
         ));
 
         // Frame 1
-        let _output1 = ctx.run(raw.clone(), |ctx| {
+        let _output1 = ctx.run_test_ui(raw.clone(), |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
 
         // Frame 2
-        let output2 = ctx.run(raw, |ctx| {
+        let output2 = ctx.run_test_ui(raw, |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
 
@@ -3369,17 +3431,19 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn search_returns_all_results_without_80_cap() {
         let dir = std::env::temp_dir().join(format!("graphe-search-all-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let bible_path = dir.join("bible.SQLite3");
-        write_chapter(&bible_path, 120, |v| format!("Versiculo {v} com amor de Deus."));
+        write_chapter(&bible_path, 120, |v| {
+            format!("Versiculo {v} com amor de Deus.")
+        });
 
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("test-bible", "Test Bible", bible_path));
+        app.modules
+            .push(bible_module("test-bible", "Test Bible", bible_path));
         app.session.search_module_id = Some("test-bible".into());
         app.session.query = "amor".into();
         app.run_search();
@@ -3398,7 +3462,7 @@ pub(crate) mod tests {
             )),
             ..Default::default()
         };
-        let output = ctx.run(raw, |ctx| {
+        let output = ctx.run_test_ui(raw, |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
         assert!(
@@ -3423,7 +3487,7 @@ pub(crate) mod tests {
             )),
             ..Default::default()
         };
-        let output = ctx.run(raw.clone(), |ctx| {
+        let output = ctx.run_test_ui(raw.clone(), |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
         assert!(
@@ -3436,7 +3500,7 @@ pub(crate) mod tests {
         app.session.searched_query = "jesus".into();
         app.session.hits.clear();
 
-        let output2 = ctx.run(raw, |ctx| {
+        let output2 = ctx.run_test_ui(raw, |ctx| {
             app.sidebar(ctx, theme::palette(false));
         });
         assert!(
@@ -3463,7 +3527,8 @@ pub(crate) mod tests {
         graphe_store::sqlite::init_module_sql(&bible_path, &sql).unwrap();
 
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("names-bible", "Names Bible", bible_path));
+        app.modules
+            .push(bible_module("names-bible", "Names Bible", bible_path));
         app.session.search_module_id = Some("names-bible".into());
 
         // Searching for "joão"
@@ -3568,6 +3633,8 @@ pub(crate) mod tests {
                 egui::Event::MouseWheel {
                     unit: egui::MouseWheelUnit::Point,
                     delta: egui::vec2(0.0, -280.0),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                     modifiers: egui::Modifiers::default(),
                 },
             ],
@@ -3601,7 +3668,7 @@ pub(crate) mod tests {
             egui::vec2(1200.0, 800.0),
         ));
         raw.time = Some(time);
-        ctx.run(raw, |ctx| {
+        ctx.run_test_ui(raw, |ctx| {
             app.editor(ctx, theme::palette(false));
         })
     }
@@ -3784,6 +3851,8 @@ pub(crate) mod tests {
                         egui::Event::MouseWheel {
                             unit: egui::MouseWheelUnit::Point,
                             delta: egui::vec2(0.0, if frame % 2 == 0 { -90.0 } else { 70.0 }),
+                            phase: egui::TouchPhase::Move,
+                            source: egui::MouseWheelSource::Unknown,
                             modifiers: egui::Modifiers::default(),
                         },
                     ],
@@ -3875,6 +3944,8 @@ pub(crate) mod tests {
                     egui::Event::MouseWheel {
                         unit: egui::MouseWheelUnit::Point,
                         delta: egui::vec2(0.0, -160.0),
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
                         modifiers: egui::Modifiers::default(),
                     },
                 ],
@@ -3903,6 +3974,92 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_font_change_shapes_only_the_open_rows() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.loaded_key = ":10:1:pane-1".into();
+        app.session.chapter_text = (1..=48)
+            .map(|verse| {
+                (
+                    verse,
+                    format!(
+                        "Verso {verse}: No princípio criou Deus os céus e a terra <S>7225</S> e disse haja luz <S>216</S>."
+                    ),
+                )
+            })
+            .collect();
+        app.session.show_strongs = true;
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "Grace and truth came through Jesus Christ. ".repeat(40);
+        let mut pieces = Vec::new();
+        for verse in 1..=20 {
+            if verse > 1 {
+                pieces.push(crate::study::CommentaryPiece::Break);
+            }
+            pieces.push(crate::study::CommentaryPiece::Heading(verse.to_string()));
+            pieces.push(crate::study::CommentaryPiece::Text(paragraph.clone()));
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+        fn frame(ctx: &egui::Context, app: &mut GrapheApp, time: f64) {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            ));
+            raw.time = Some(time);
+            let _ = ctx.run_test_ui(raw, |ui| app.show_workbench(ui));
+        }
+        frame(&ctx, &mut app, 0.1);
+        frame(&ctx, &mut app, 0.2);
+        let shaped = app.reading.verse_layouts_built;
+        let measures = app.reading.chapter_measures;
+        let wrapped = app.reading.commentary_layouts;
+        let chars = app.reading.commentary_chars;
+        assert!(shaped > 0, "the chapter is shaped once");
+        assert_eq!(measures, 1, "the chapter is measured once, got {measures}");
+        assert!(wrapped >= 1, "the commentary is wrapped once");
+        assert!(
+            chars > 200 && chars < 12_000,
+            "the open commentary slice was {chars} chars"
+        );
+        app.session.font_size = 28.0;
+        frame(&ctx, &mut app, 0.3);
+        let shaped_delta = app.reading.verse_layouts_built - shaped;
+        let chars_delta = app.reading.commentary_chars - chars;
+        assert_eq!(
+            app.reading.chapter_measures, measures,
+            "a font step measured the whole chapter again"
+        );
+        assert!(
+            shaped_delta > 0 && shaped_delta < 36,
+            "a font step shaped {shaped_delta} verses"
+        );
+        assert!(
+            app.reading.commentary_layouts > wrapped,
+            "the open commentary was not wrapped at the new size"
+        );
+        assert!(
+            chars_delta > 200 && chars_delta < 12_000,
+            "a font step wrapped {chars_delta} commentary chars"
+        );
+    }
+
+    #[test]
     fn scrolled_commentary_list_stays_under_the_dialog_header() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -3926,7 +4083,7 @@ pub(crate) mod tests {
         ));
         raw.time = Some(0.2);
         raw.events = vec![egui::Event::PointerMoved(pointer)];
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.dialogs(ctx);
         });
         let mut raw = egui::RawInput::default();
@@ -3940,10 +4097,12 @@ pub(crate) mod tests {
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
                 modifiers: egui::Modifiers::default(),
             },
         ];
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             app.dialogs(ctx);
         });
         let (output, scrolled) = dialog_frame(&ctx, &mut app);
@@ -4170,7 +4329,10 @@ pub(crate) mod tests {
         let mut app = bare(Session::new());
         app.session.strongs_dicts.clear();
         app.lookup_dict_with_context("H1234", None, None, None);
-        assert_eq!(app.session.dict_body, graphe_domain::i18n::t("dictNoDictsConfigured"));
+        assert_eq!(
+            app.session.dict_body,
+            graphe_domain::i18n::t("dictNoDictsConfigured")
+        );
         assert_eq!(app.session.sidebar, "dictionary");
     }
 
@@ -4178,47 +4340,53 @@ pub(crate) mod tests {
     fn test_pseudo_strong_no_entry_explanation() {
         let mut app = bare(Session::new());
         app.lookup_dict_focused("H9000", false);
-        assert_eq!(app.session.dict_body, graphe_domain::i18n::t("dictPseudoStrongsNoEntry"));
+        assert_eq!(
+            app.session.dict_body,
+            graphe_domain::i18n::t("dictPseudoStrongsNoEntry")
+        );
     }
 
     #[test]
     fn test_switching_theme_clears_reading_cache_and_applies_style() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        app.reading.remember_verse_text("k1".into(), vec![(1, "In the beginning".into())]);
+        app.reading
+            .remember_verse_text("k1".into(), vec![(1, "In the beginning".into())]);
         assert!(app.reading.cached_verse_text("k1").is_some());
 
         // Initial update in light theme
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
-        let _ = ctx.run(raw.clone(), |ctx| {
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             let mut frame = eframe::Frame::_new_kittest();
-            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+            <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
         });
-        let alpha = ctx.style().visuals.text_alpha_from_coverage;
-
         // Toggle to dark theme
         app.session.dark = true;
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             let mut frame = eframe::Frame::_new_kittest();
-            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+            <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
         });
 
         assert!(app.applied_dark);
         assert!(app.reading.cached_verse_text("k1").is_none());
-        assert_eq!(ctx.style().visuals.text_alpha_from_coverage, alpha);
+        assert!(ctx.global_style().visuals.dark_mode);
 
         // Repopulate and toggle back to light theme
-        app.reading.remember_verse_text("k2".into(), vec![(2, "God created".into())]);
+        app.reading
+            .remember_verse_text("k2".into(), vec![(2, "God created".into())]);
         app.session.dark = false;
-        let _ = ctx.run(raw, |ctx| {
+        let _ = ctx.run_test_ui(raw, |ctx| {
             let mut frame = eframe::Frame::_new_kittest();
-            <GrapheApp as eframe::App>::update(&mut app, ctx, &mut frame);
+            <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
         });
 
         assert!(!app.applied_dark);
         assert!(app.reading.cached_verse_text("k2").is_none());
-        assert_eq!(ctx.style().visuals.text_alpha_from_coverage, alpha);
+        assert!(!ctx.global_style().visuals.dark_mode);
     }
 
     #[test]
@@ -4229,8 +4397,11 @@ pub(crate) mod tests {
 
         // When no update notice, update banner produces no marks
         let mut raw = egui::RawInput::default();
-        raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
-        let _ = ctx.run(raw.clone(), |ctx| {
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             app.update_banner(ctx, palette);
         });
 
@@ -4238,7 +4409,7 @@ pub(crate) mod tests {
         *app.update_notice.lock().unwrap() = Some("1.0.14".into());
 
         // Now update banner renders download and close marks
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             ctx.data_mut(|d| {
                 d.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
             });
@@ -4257,7 +4428,10 @@ pub(crate) mod tests {
 
         // Click the close button
         let mut click_raw = egui::RawInput::default();
-        click_raw.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        click_raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
         click_raw.events = vec![
             egui::Event::PointerButton {
                 pos: egui::pos2(
@@ -4278,7 +4452,7 @@ pub(crate) mod tests {
                 modifiers: egui::Modifiers::default(),
             },
         ];
-        let _ = ctx.run(click_raw, |ctx| {
+        let _ = ctx.run_test_ui(click_raw, |ctx| {
             app.update_banner(ctx, palette);
         });
 
@@ -4329,7 +4503,10 @@ pub(crate) mod tests {
         time += 0.1;
         let frame40 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         let offset_40 = mark(&frame40, "chapter-offset:pane-1")[1];
-        assert!(offset_40 > offset_15, "offset_40 {offset_40} should be greater than offset_15 {offset_15}");
+        assert!(
+            offset_40 > offset_15,
+            "offset_40 {offset_40} should be greater than offset_15 {offset_15}"
+        );
         assert_eq!(app.session.selected_verses, vec![40]);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -4402,7 +4579,8 @@ pub(crate) mod tests {
     fn clicking_search_hit_when_already_in_same_chapter_scrolls_to_selected_verse() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        let dir = std::env::temp_dir().join(format!("graphe-search-scroll-same-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("graphe-search-scroll-same-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let bible_path = dir.join("bible.SQLite3");
@@ -4439,7 +4617,8 @@ pub(crate) mod tests {
 
     #[test]
     fn search_hit_scrolls_to_selected_verse_with_multiline_cross_references() {
-        let dir = std::env::temp_dir().join(format!("graphe-search-scroll-xrefs-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("graphe-search-scroll-xrefs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let bible_path = dir.join("bible.SQLite3");
@@ -4486,7 +4665,7 @@ pub(crate) mod tests {
         };
 
         // Render initial frame at top of chapter
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             app.sidebar(ctx, theme::palette(false));
             app.editor(ctx, theme::palette(false));
         });
@@ -4504,7 +4683,7 @@ pub(crate) mod tests {
 
         // Run multi-frame passes for scroll convergence
         for _ in 0..6 {
-            let _ = ctx.run(raw.clone(), |ctx| {
+            let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.sidebar(ctx, theme::palette(false));
                 app.editor(ctx, theme::palette(false));
             });
@@ -4527,7 +4706,10 @@ pub(crate) mod tests {
             rect[1] + rect[3]
         );
         assert_eq!(app.session.selected_verses, vec![32]);
-        assert!(app.session.scroll_verse.is_none(), "scroll_verse should have settled to None");
+        assert!(
+            app.session.scroll_verse.is_none(),
+            "scroll_verse should have settled to None"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -4570,7 +4752,8 @@ pub(crate) mod tests {
                 short_title: Some("TSK".into()),
                 description: None,
             });
-            app.session.xref_modules = vec!["The Treasury of Scripture Knowledge.crossreference".into()];
+            app.session.xref_modules =
+                vec!["The Treasury of Scripture Knowledge.crossreference".into()];
         }
 
         let raw = egui::RawInput {
@@ -4580,7 +4763,7 @@ pub(crate) mod tests {
             )),
             ..Default::default()
         };
-        let _ = ctx.run(raw.clone(), |ctx| {
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             app.sidebar(ctx, theme::palette(false));
             app.editor(ctx, theme::palette(false));
         });
@@ -4596,7 +4779,7 @@ pub(crate) mod tests {
         app.sync_active_chapter();
 
         for _ in 0..6 {
-            let _ = ctx.run(raw.clone(), |ctx| {
+            let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.sidebar(ctx, theme::palette(false));
                 app.editor(ctx, theme::palette(false));
             });
@@ -4661,7 +4844,9 @@ pub(crate) mod tests {
             },
         ];
         let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
-        app.reading.commentary.insert(key, crate::study::CommentaryPaint::new(pieces));
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
 
         let mut time = 0.0;
         let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
@@ -4670,23 +4855,41 @@ pub(crate) mod tests {
 
         // Hover over link
         time += 0.1;
-        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerMoved(link_pos)]);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(link_pos)],
+        );
 
         // Click link: press down at time 0.2, release at time 0.3
         time += 0.1;
-        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerButton {
-            pos: link_pos,
-            button: egui::PointerButton::Primary,
-            pressed: true,
-            modifiers: egui::Modifiers::default(),
-        }]);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
         time += 0.1;
-        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), vec![egui::Event::PointerButton {
-            pos: link_pos,
-            button: egui::PointerButton::Primary,
-            pressed: false,
-            modifiers: egui::Modifiers::default(),
-        }]);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
 
         // Frame after click should have scrolled Bible to verse 25
         time += 0.1;

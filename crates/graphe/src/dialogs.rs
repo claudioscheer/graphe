@@ -172,7 +172,7 @@ impl GrapheApp {
             })
             .scroll_source(egui::containers::scroll_area::ScrollSource {
                 scroll_bar: !fits,
-                drag: false,
+                drag: egui::containers::scroll_area::DragScroll::Never,
                 mouse_wheel: !fits,
             })
             .show(ui, |ui| {
@@ -903,10 +903,7 @@ impl GrapheApp {
             crate::chrome::mark_layout(
                 ui,
                 "nav-scroll-state",
-                egui::Rect::from_min_size(
-                    output.inner_rect.min,
-                    egui::vec2(content, viewport),
-                ),
+                egui::Rect::from_min_size(output.inner_rect.min, egui::vec2(content, viewport)),
             );
         }
         if !back_visible {
@@ -1246,31 +1243,28 @@ impl GrapheApp {
                     if self.check_option(ui, install, &i18n::t("installAfterConvert"), None) {
                         self.session.convert_install = !install;
                     }
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            let folder =
-                                self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
-                            let files =
-                                self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
-                            #[cfg(test)]
-                            {
-                                crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
-                                crate::chrome::mark_layout(ui, "convert-files", files.rect);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        let folder =
+                            self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
+                        let files =
+                            self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
+                        #[cfg(test)]
+                        {
+                            crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
+                            crate::chrome::mark_layout(ui, "convert-files", files.rect);
+                        }
+                        if folder.clicked() {
+                            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                                self.convert_paths(convertible_in_folder(&dir));
                             }
-                            if folder.clicked() {
-                                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                    self.convert_paths(convertible_in_folder(&dir));
-                                }
+                        }
+                        if files.clicked() {
+                            if let Some(paths) = rfd::FileDialog::new().pick_files() {
+                                self.convert_paths(paths);
                             }
-                            if files.clicked() {
-                                if let Some(paths) = rfd::FileDialog::new().pick_files() {
-                                    self.convert_paths(paths);
-                                }
-                            }
-                        },
-                    );
+                        }
+                    });
                 },
             );
             false
