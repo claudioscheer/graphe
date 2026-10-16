@@ -76,3 +76,9 @@ Tests sit next to the code they call (`#[cfg(test)]` modules). They construct th
 - Only commit when asked. Only push when asked.
 - No AI attribution or co-author trailers.
 - Commit messages are complete sentences and say why the change exists.
+
+## Documentation & Processes
+
+Standard process guides for agents are stored in `docs/processes/`:
+- [Release Process](docs/processes/release.md): Version bumping, manifests, tests, tags, and GitHub release automation.
+
