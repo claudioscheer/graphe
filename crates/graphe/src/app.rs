@@ -8,7 +8,7 @@ use graphe_domain::books::GRAPHE_BOOK_NUMBERS;
 use graphe_domain::commentary_ref::{
     build_reference_matcher, BookName as RefBookName, ReferenceMatcher,
 };
-use graphe_domain::i18n::{self, Lang};
+use graphe_domain::i18n;
 use graphe_domain::model::BookRecord;
 use graphe_domain::navigation::NavigationSession;
 use graphe_domain::panes::{canon_chapter_spans, ChapterSpan};
@@ -741,14 +741,6 @@ fn verse_numbers(modules: &[InstalledModule], book: i64, chapter: i64) -> Vec<i6
     (1..=paint::verse_count_fallback(book, chapter)).collect()
 }
 
-pub(crate) fn language_button(lang: Lang) -> &'static str {
-    match lang {
-        Lang::Pt => "PT",
-        Lang::En => "EN",
-        Lang::Es => "ES",
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1129,6 +1121,68 @@ pub(crate) mod tests {
         });
         assert!(app.session.dark, "the theme control toggles light and dark");
         assert_eq!(app.store.settings()["theme"], "dark");
+    }
+
+    #[test]
+    fn settings_dropdowns_render_with_unified_dropdown_style() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.dialog = Dialog::Settings;
+        let _ = dialog_frame(&ctx, &mut app);
+        let (output, marks) = dialog_frame(&ctx, &mut app);
+
+        let font_dd = mark(&marks, "dropdown:font-size");
+        let lang_dd = mark(&marks, "dropdown:language");
+        assert_eq!(font_dd[2], 72.0, "font size dropdown has consistent 72px width");
+        assert_eq!(lang_dd[2], 72.0, "language dropdown has consistent 72px width");
+
+        // Verify active label is painted on the trigger
+        assert!(galley_has(&output, "20px"), "active font size is displayed on dropdown");
+        assert!(galley_has(&output, "PT"), "active language is displayed on dropdown");
+
+        // Click language dropdown to open popup
+        let pos = egui::pos2(lang_dd[0] + lang_dd[2] * 0.5, lang_dd[1] + lang_dd[3] * 0.5);
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.events = vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            },
+        ];
+        let _ = ctx.run(raw, |ctx| {
+            app.dialogs(ctx);
+        });
+        let frame_output = ctx.run(egui::RawInput::default(), |ctx| {
+            app.dialogs(ctx);
+        });
+
+        // The dropdown popup is open and renders options with the unified elevated surface
+        let palette = theme::palette(app.session.dark);
+        let elevated = paint::color(palette.ui_surface_elevated);
+        let painted_elevated = frame_output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => rect.fill == elevated,
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| match s {
+                egui::Shape::Rect(r) => r.fill == elevated,
+                _ => false,
+            }),
+            _ => false,
+        });
+        assert!(painted_elevated, "language dropdown popup uses elevated surface paper");
+        assert!(galley_has(&frame_output, "EN"), "language dropdown displays EN option");
+        assert!(galley_has(&frame_output, "ES"), "language dropdown displays ES option");
     }
 
     fn close_sits_like_the_about_x(marks: &[(String, [f32; 4])]) {

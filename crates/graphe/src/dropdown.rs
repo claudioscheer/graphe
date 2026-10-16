@@ -16,6 +16,17 @@ pub struct DropdownItem {
     pub tooltip: Option<String>,
 }
 
+impl DropdownItem {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            subtitle: None,
+            tooltip: None,
+        }
+    }
+}
+
 /// Unified dropdown component for selecting Bible, commentary, dictionary, and other modules.
 pub struct ModuleDropdown<'a> {
     pub salt: &'a str,
@@ -30,6 +41,7 @@ pub struct ModuleDropdown<'a> {
     pub truncate_length: usize,
     /// Pane toolbar trigger: no box, just the name and a chevron.
     pub plain: bool,
+    pub show_search: bool,
 }
 
 impl<'a> ModuleDropdown<'a> {
@@ -88,6 +100,7 @@ impl<'a> ModuleDropdown<'a> {
             min_dropdown_width: 240.0,
             truncate_length: 50,
             plain: false,
+            show_search: true,
         }
     }
 
@@ -144,7 +157,37 @@ impl<'a> ModuleDropdown<'a> {
             min_dropdown_width: 240.0,
             truncate_length: 50,
             plain: false,
+            show_search: true,
         }
+    }
+
+    /// Creates a dropdown populated with custom items (e.g. font size, language).
+    pub fn from_items(
+        salt: &'a str,
+        current_id: Option<&'a str>,
+        items: Vec<DropdownItem>,
+    ) -> Self {
+        Self {
+            salt,
+            module_type: "custom",
+            current_id,
+            items,
+            show_favorites: false,
+            allow_none: false,
+            none_label: "—".into(),
+            width: None,
+            min_dropdown_width: 72.0,
+            truncate_length: 50,
+            plain: false,
+            show_search: false,
+        }
+    }
+
+    /// Enable or disable the search box in the popup.
+    #[allow(dead_code)]
+    pub fn show_search(mut self, show: bool) -> Self {
+        self.show_search = show;
+        self
     }
 
     /// Explicit width for the trigger button.
@@ -305,6 +348,8 @@ impl<'a> ModuleDropdown<'a> {
             if self.plain {
                 crate::chrome::mark_layout(ui, &format!("picker:{}", self.salt), rect);
             }
+            #[cfg(test)]
+            crate::chrome::mark_layout(ui, &format!("dropdown:{}", self.salt), rect);
 
             // Chevron sits at the right edge of the trigger, away from a short name.
             let chevron_center = egui::pos2(
@@ -357,107 +402,111 @@ impl<'a> ModuleDropdown<'a> {
                     ui.set_width(popup_width);
                     ui.set_max_width(popup_width);
 
-                    let search_id = popup_id.with("search");
-                    let mut search_query = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+                    let query = if self.show_search {
+                        let search_id = popup_id.with("search");
+                        let mut search_query = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<String>(search_id).unwrap_or_default());
 
-                    let was_open_id = popup_id.with("was_open");
-                    let was_open = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
-                    if !was_open {
-                        search_query.clear();
-                    }
-                    ui.ctx().data_mut(|d| d.insert_temp(was_open_id, true));
-
-                    // 1. Search Box with rounded border and optional clear button
-                    let search_h = 28.0_f32;
-                    let (search_row_rect, _) = ui.allocate_exact_size(
-                        egui::vec2(popup_width, search_h + 4.0),
-                        egui::Sense::hover(),
-                    );
-                    let box_margin_h = 6.0_f32;
-                    let box_rect = egui::Rect::from_min_size(
-                        egui::pos2(
-                            search_row_rect.left() + box_margin_h,
-                            search_row_rect.top() + 2.0,
-                        ),
-                        egui::vec2(popup_width - 2.0 * box_margin_h, search_h),
-                    );
-
-                    ui.painter().rect(
-                        box_rect,
-                        egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
-                        paint::color(palette.ui_surface),
-                        egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)),
-                        egui::StrokeKind::Inside,
-                    );
-
-                    let is_empty = search_query.is_empty();
-                    let text_w = if is_empty {
-                        box_rect.width() - 16.0
-                    } else {
-                        box_rect.width() - 32.0
-                    };
-                    let text_edit_rect = egui::Rect::from_min_size(
-                        egui::pos2(box_rect.left() + 8.0, box_rect.top()),
-                        egui::vec2(text_w, box_rect.height()),
-                    );
-
-                    let text_resp = ui.put(
-                        text_edit_rect,
-                        egui::TextEdit::singleline(&mut search_query)
-                            .hint_text(i18n::t("searchPlaceholder"))
-                            .frame(false)
-                            .margin(egui::Margin::ZERO)
-                            .vertical_align(egui::Align::Center)
-                            .font(egui::FontId::proportional(13.0)),
-                    );
-
-                    if !was_open {
-                        text_resp.request_focus();
-                    }
-
-                    if !is_empty {
-                        let clear_rect = egui::Rect::from_center_size(
-                            egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
-                            egui::vec2(18.0, 18.0),
-                        );
-                        let clear_resp =
-                            ui.interact(clear_rect, popup_id.with("clear"), egui::Sense::click());
-                        if clear_resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        }
-                        let clear_color = if clear_resp.hovered() {
-                            paint::color(palette.ui_text)
-                        } else {
-                            paint::color(palette.ui_text_subtle)
-                        };
-                        let clear_galley = ui.painter().layout_no_wrap(
-                            "×".into(),
-                            egui::FontId::proportional(15.0),
-                            clear_color,
-                        );
-                        let clear_pos = egui::pos2(
-                            clear_rect.center().x - clear_galley.rect.width() / 2.0,
-                            clear_rect.center().y - clear_galley.rect.height() / 2.0,
-                        );
-                        ui.painter().galley(clear_pos, clear_galley, clear_color);
-
-                        if clear_resp.clicked() {
+                        let was_open_id = popup_id.with("was_open");
+                        let was_open = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
+                        if !was_open {
                             search_query.clear();
+                        }
+                        ui.ctx().data_mut(|d| d.insert_temp(was_open_id, true));
+
+                        // 1. Search Box with rounded border and optional clear button
+                        let search_h = 28.0_f32;
+                        let (search_row_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(popup_width, search_h + 4.0),
+                            egui::Sense::hover(),
+                        );
+                        let box_margin_h = 6.0_f32;
+                        let box_rect = egui::Rect::from_min_size(
+                            egui::pos2(
+                                search_row_rect.left() + box_margin_h,
+                                search_row_rect.top() + 2.0,
+                            ),
+                            egui::vec2(popup_width - 2.0 * box_margin_h, search_h),
+                        );
+
+                        ui.painter().rect(
+                            box_rect,
+                            egui::CornerRadius::same(theme::RADIUS_CONTROL as u8),
+                            paint::color(palette.ui_surface),
+                            egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_soft)),
+                            egui::StrokeKind::Inside,
+                        );
+
+                        let is_empty = search_query.is_empty();
+                        let text_w = if is_empty {
+                            box_rect.width() - 16.0
+                        } else {
+                            box_rect.width() - 32.0
+                        };
+                        let text_edit_rect = egui::Rect::from_min_size(
+                            egui::pos2(box_rect.left() + 8.0, box_rect.top()),
+                            egui::vec2(text_w, box_rect.height()),
+                        );
+
+                        let text_resp = ui.put(
+                            text_edit_rect,
+                            egui::TextEdit::singleline(&mut search_query)
+                                .hint_text(i18n::t("searchPlaceholder"))
+                                .frame(false)
+                                .margin(egui::Margin::ZERO)
+                                .vertical_align(egui::Align::Center)
+                                .font(egui::FontId::proportional(13.0)),
+                        );
+
+                        if !was_open {
                             text_resp.request_focus();
                         }
-                    }
 
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(search_id, search_query.clone()));
+                        if !is_empty {
+                            let clear_rect = egui::Rect::from_center_size(
+                                egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
+                                egui::vec2(18.0, 18.0),
+                            );
+                            let clear_resp =
+                                ui.interact(clear_rect, popup_id.with("clear"), egui::Sense::click());
+                            if clear_resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
+                            let clear_color = if clear_resp.hovered() {
+                                paint::color(palette.ui_text)
+                            } else {
+                                paint::color(palette.ui_text_subtle)
+                            };
+                            let clear_galley = ui.painter().layout_no_wrap(
+                                "×".into(),
+                                egui::FontId::proportional(15.0),
+                                clear_color,
+                            );
+                            let clear_pos = egui::pos2(
+                                clear_rect.center().x - clear_galley.rect.width() / 2.0,
+                                clear_rect.center().y - clear_galley.rect.height() / 2.0,
+                            );
+                            ui.painter().galley(clear_pos, clear_galley, clear_color);
 
-                    ui.add_space(4.0);
+                            if clear_resp.clicked() {
+                                search_query.clear();
+                                text_resp.request_focus();
+                            }
+                        }
+
+                        ui.ctx()
+                            .data_mut(|d| d.insert_temp(search_id, search_query.clone()));
+
+                        ui.add_space(4.0);
+                        search_query.trim().to_lowercase()
+                    } else {
+                        String::new()
+                    };
 
                     // 2. Filter items and separate into favorites vs non-favorites
-                    let query = search_query.trim().to_lowercase();
                     let fav_ids = if self.show_favorites {
                         picker::favorites(store, self.module_type)
                     } else {
@@ -605,7 +654,7 @@ impl<'a> ModuleDropdown<'a> {
                     ui.ctx().data_mut(|d| d.insert_temp(hl_id, hl));
                 });
 
-            if !is_open {
+            if !is_open && self.show_search {
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(popup_id.with("was_open"), false));
             }
@@ -910,5 +959,28 @@ mod tests {
         assert!(tooltip.contains("Almeida Corrigida Fiel"));
         assert!(tooltip.contains("acf"));
         assert!(tooltip.contains("Almeida Corrigida Fiel 2011"));
+    }
+
+    #[test]
+    fn from_items_configures_custom_dropdown_without_search() {
+        let items = vec![
+            DropdownItem::new("14", "14px"),
+            DropdownItem::new("20", "20px"),
+        ];
+        let dd = ModuleDropdown::from_items("font-size", Some("20"), items);
+        assert_eq!(dd.salt, "font-size");
+        assert_eq!(dd.current_id, Some("20"));
+        assert_eq!(dd.items.len(), 2);
+        assert!(!dd.show_search);
+        assert!(!dd.show_favorites);
+        assert_eq!(dd.min_dropdown_width, 72.0);
+        assert_eq!(dd.trigger_label(), "20px");
+    }
+
+    #[test]
+    fn show_search_builder_can_toggle_search_box() {
+        let items = vec![DropdownItem::new("pt", "PT")];
+        let dd = ModuleDropdown::from_items("lang", Some("pt"), items).show_search(true);
+        assert!(dd.show_search);
     }
 }
