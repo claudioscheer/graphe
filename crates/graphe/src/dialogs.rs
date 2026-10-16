@@ -100,6 +100,7 @@ impl GrapheApp {
         self.session.dialog = Dialog::None;
         self.dict_info = None;
         self.nav = None;
+        self.nav_input_rect = None;
         self.picker = None;
         self.editor.loaded = None;
     }
@@ -836,8 +837,16 @@ impl GrapheApp {
         }
         self.nav_input_bar(ui);
         let screen = self.nav.as_ref().map(|nav| nav.screen.clone());
-        let max_h = max_body(ui, 180.0);
-        egui::ScrollArea::vertical()
+        let back_visible = self.nav.as_ref().is_some_and(|nav| nav.back_visible);
+        // Grow the card to the book grid instead of capping it at a fixed
+        // chrome. The old 180px reserve forced a scrollbar on a 1080p window.
+        // Measure the input bar and the divider already on the card, then keep
+        // only the screen margins and the back footer (when visible) reserved.
+        let chrome_top = ui.min_rect().height();
+        let footer_h = if back_visible { 61.0 } else { 0.0 };
+        let screen_h = ui.ctx().content_rect().height();
+        let max_h = commentary_body_limit(screen_h, chrome_top + footer_h);
+        let output = egui::ScrollArea::vertical()
             .id_salt("nav-grid")
             .max_height(max_h)
             .auto_shrink([false, true])
@@ -876,7 +885,30 @@ impl GrapheApp {
                         _ => {}
                     });
             });
-        let back_visible = self.nav.as_ref().is_some_and(|nav| nav.back_visible);
+        // The shared modal area keeps last frame's height. Grow until the grid
+        // sits inside the card, then stop at the screen margin. A very small
+        // screen still scrolls.
+        let shown = output.inner_rect.height();
+        let wanted = output.content_size.y.min(max_h);
+        if wanted > shown + 1.0 {
+            ui.expand_to_include_y(output.inner_rect.top() + wanted);
+            ui.ctx().request_repaint();
+        }
+        #[cfg(test)]
+        crate::chrome::mark_layout(ui, "nav-scroll", output.inner_rect);
+        #[cfg(test)]
+        {
+            let content = output.content_size.y;
+            let viewport = output.inner_rect.height();
+            crate::chrome::mark_layout(
+                ui,
+                "nav-scroll-state",
+                egui::Rect::from_min_size(
+                    output.inner_rect.min,
+                    egui::vec2(content, viewport),
+                ),
+            );
+        }
         if !back_visible {
             return false;
         }
@@ -949,6 +981,7 @@ impl GrapheApp {
                     .inner;
                 #[cfg(test)]
                 crate::chrome::mark_layout(ui, "nav-input", response.rect);
+                self.nav_input_rect = Some(response.rect);
                 if self.nav_focus {
                     response.request_focus();
                     self.nav_focus = false;
@@ -2220,11 +2253,19 @@ impl GrapheApp {
     }
 
     /// The About dialog's X: no fill, same mark as a pane close, equal inset from the top and the right.
+    /// The navigation dialog has no header. Its X centers with the reference field.
     fn modal_close_button(&self, ui: &mut egui::Ui, card: egui::Rect) -> bool {
         let palette = theme::palette(self.session.dark);
         let inset = 20.0;
         let half = 4.0 + 1.5 / 2.0;
-        let center = egui::pos2(card.right() - inset - half, card.top() + inset + half);
+        let center_y = if self.session.dialog == Dialog::Navigation {
+            self.nav_input_rect
+                .map(|input| input.center().y)
+                .unwrap_or(card.top() + inset + half)
+        } else {
+            card.top() + inset + half
+        };
+        let center = egui::pos2(card.right() - inset - half, center_y);
         let hit = egui::Rect::from_center_size(center, egui::vec2(28.0, 28.0));
         let response = ui.interact(hit, ui.id().with("modal-x"), egui::Sense::click());
         let ink = paint::color(if response.hovered() {

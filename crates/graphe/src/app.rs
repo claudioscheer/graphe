@@ -80,6 +80,7 @@ pub fn run() -> eframe::Result {
                 store,
                 nav: None,
                 nav_focus: false,
+                nav_input_rect: None,
                 picker: None,
                 morphs: HashMap::new(),
                 matcher: None,
@@ -114,6 +115,7 @@ pub(crate) struct GrapheApp {
     pub(crate) store: AppStateStore,
     pub(crate) nav: Option<LiveNav>,
     pub(crate) nav_focus: bool,
+    pub(crate) nav_input_rect: Option<egui::Rect>,
     pub(crate) picker: Option<ModulePicker>,
     pub(crate) morphs: HashMap<PathBuf, LoadedMorph>,
     matcher: Option<ReferenceMatcher>,
@@ -763,6 +765,7 @@ pub(crate) mod tests {
             store: AppStateStore::new(),
             nav: None,
             nav_focus: false,
+            nav_input_rect: None,
             picker: None,
             morphs: HashMap::new(),
             matcher: None,
@@ -986,6 +989,51 @@ pub(crate) mod tests {
             );
             assert!((rect[3] - 44.0).abs() < 1.0, "{key} is not a 44px tile");
         }
+    }
+
+    #[test]
+    fn navigation_dialog_shows_books_without_scroll_and_centers_close() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        i18n::set_lang("pt");
+        app.open_navigation();
+        let screen = egui::vec2(1400.0, 1000.0);
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, marks) = dialog_frame_in(&ctx, &mut app, screen);
+        let card = *mark(&marks, "modal-card");
+        let input = *mark(&marks, "nav-input");
+        let close = *mark(&marks, "modal-close");
+        let state = *mark(&marks, "nav-scroll-state");
+        let content_h = state[2];
+        let viewport_h = state[3];
+        assert!(
+            content_h <= viewport_h + 1.0,
+            "the book grid scrolls: content {content_h} viewport {viewport_h}"
+        );
+        let cells: Vec<_> = marks
+            .iter()
+            .filter(|(key, _)| key.starts_with("nav-cell:"))
+            .collect();
+        assert!(!cells.is_empty(), "the book grid paints tiles");
+        let bottom = cells
+            .iter()
+            .map(|(_, rect)| rect[1] + rect[3])
+            .fold(0.0_f32, f32::max);
+        assert!(
+            bottom <= card[1] + card[3] + 1.0,
+            "the last book is clipped: bottom {bottom} card {card:?}"
+        );
+        let input_mid = input[1] + input[3] / 2.0;
+        let close_mid = close[1] + close[3] / 2.0;
+        assert!(
+            (input_mid - close_mid).abs() < 1.5,
+            "the close sits with the field: input {input:?} close {close:?}"
+        );
+        let right_gap = (card[0] + card[2]) - (close[0] + close[2]);
+        assert!(
+            (right_gap - 20.0).abs() < 0.6,
+            "the close keeps its right inset: {right_gap}"
+        );
     }
 
     #[test]
@@ -1263,7 +1311,6 @@ pub(crate) mod tests {
         for dialog in [
             Dialog::About,
             Dialog::Convert,
-            Dialog::Navigation,
             Dialog::Preview,
             Dialog::AllCommentaries,
             Dialog::Picker,
@@ -1274,6 +1321,23 @@ pub(crate) mod tests {
             let (_, marks) = dialog_frame_in(&ctx, &mut app, screen);
             close_sits_like_the_about_x(&marks);
         }
+        app.session.dialog = Dialog::Navigation;
+        let _ = dialog_frame_in(&ctx, &mut app, screen);
+        let (_, marks) = dialog_frame_in(&ctx, &mut app, screen);
+        let card = *mark(&marks, "modal-card");
+        let input = *mark(&marks, "nav-input");
+        let close = *mark(&marks, "modal-close");
+        let right_gap = (card[0] + card[2]) - (close[0] + close[2]);
+        assert!(
+            (right_gap - 20.0).abs() < 0.6,
+            "navigation keeps its right inset: {right_gap}"
+        );
+        let input_mid = input[1] + input[3] / 2.0;
+        let close_mid = close[1] + close[3] / 2.0;
+        assert!(
+            (input_mid - close_mid).abs() < 1.5,
+            "navigation centers with the field: input {input:?} close {close:?}"
+        );
     }
 
     #[test]
