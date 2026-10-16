@@ -66,7 +66,7 @@ impl GrapheApp {
         }
         let dark = self.session.dark;
         let mut dismiss = false;
-        let modal_id = egui::Id::new("graphe-modal");
+        let modal_id = egui::Id::unique("graphe-modal");
         // The stock modal fades in. That leaves the card half-visible for a
         // moment after the click. Show it at full strength on the first painted frame.
         let modal = egui::Modal::new(modal_id)
@@ -472,7 +472,7 @@ impl GrapheApp {
                     visuals.widgets.active.corner_radius = radius;
                     ui.add(
                         egui::TextEdit::singleline(&mut prefix)
-                            .id(egui::Id::new("dict-info-prefix"))
+                            .id(egui::Id::unique("dict-info-prefix"))
                             .hint_text(
                                 egui::RichText::new(i18n::t("dictBrowsePlaceholder"))
                                     .color(hint)
@@ -964,7 +964,7 @@ impl GrapheApp {
                         visuals.widgets.active.corner_radius = radius;
                         ui.add(
                             egui::TextEdit::singleline(&mut input)
-                                .id(ui.id().with("nav-input"))
+                                .id(ui.scope_id().with("nav-input"))
                                 .hint_text(
                                     egui::RichText::new(i18n::t("navPlaceholder"))
                                         .color(hint)
@@ -2184,7 +2184,6 @@ impl GrapheApp {
             .text_styles
             .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
         let visuals = &mut style.visuals;
-        visuals.clip_rect_margin = 0.0;
         visuals.override_text_color = Some(text);
         visuals.panel_fill = fill;
         visuals.window_fill = fill;
@@ -2261,7 +2260,7 @@ impl GrapheApp {
         };
         let center = egui::pos2(card.right() - inset - half, center_y);
         let hit = egui::Rect::from_center_size(center, egui::vec2(28.0, 28.0));
-        let response = ui.interact(hit, ui.id().with("modal-x"), egui::Sense::click());
+        let response = ui.interact(hit, ui.scope_id().with("modal-x"), egui::Sense::click());
         let ink = paint::color(if response.hovered() {
             palette.ui_text
         } else {
@@ -2622,7 +2621,7 @@ impl GrapheApp {
             );
             return;
         };
-        let texture_id = egui::Id::new("graphe-wordmark");
+        let texture_id = egui::Id::unique("graphe-wordmark");
         let existing = ui
             .ctx()
             .data(|data| data.get_temp::<egui::TextureHandle>(texture_id));
@@ -3285,7 +3284,7 @@ fn page_button(
 ) -> bool {
     let palette = theme::palette(dark);
     // A disabled control still takes the click, so it does not fall through to the backdrop.
-    let response = ui.interact(rect, ui.id().with(mark), egui::Sense::click());
+    let response = ui.interact(rect, ui.scope_id().with(mark), egui::Sense::click());
     let mut ink = paint::color(palette.ui_text_muted);
     let mut border = paint::color(palette.ui_border_soft);
     let mut fill = if response.hovered() && enabled {

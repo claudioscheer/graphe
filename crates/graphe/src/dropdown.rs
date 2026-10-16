@@ -460,7 +460,7 @@ impl<'a> ModuleDropdown<'a> {
                                 )
                                 .frame(egui::Frame::NONE)
                                 .margin(egui::Margin::ZERO)
-                                .vertical_align(egui::Align::Center)
+                                .align(egui::Align2::LEFT_CENTER)
                                 .font(egui::FontId::proportional(13.0)),
                         );
 
@@ -573,7 +573,6 @@ impl<'a> ModuleDropdown<'a> {
                     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                     // 3. Scroll area containing the rows. Keep names under the search field.
-                    paint::clip_scroll_to_viewport(ui);
                     egui::ScrollArea::vertical()
                         .id_salt(popup_id.with("scroll"))
                         .max_height(260.0)
@@ -1028,7 +1027,7 @@ mod tests {
         raw.events = events;
         ctx.run_test_ui(raw, |ui| {
             ui.ctx().data_mut(|data| {
-                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"));
             });
             let palette = theme::palette(false);
             let dropdown = ModuleDropdown::from_installed("bible-test", "bible", Some("naa"), mods);
@@ -1056,7 +1055,7 @@ mod tests {
 
     fn marks(ctx: &egui::Context) -> Vec<(String, [f32; 4])> {
         ctx.data(|data| {
-            data.get_temp(egui::Id::new("pane-layout-marks"))
+            data.get_temp(egui::Id::unique("pane-layout-marks"))
                 .unwrap_or_default()
         })
     }

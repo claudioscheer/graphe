@@ -164,7 +164,7 @@ impl GrapheApp {
             .clamp(120.0, 520.0)
             .min((rect.width() - 220.0).max(80.0));
         let search = egui::Rect::from_center_size(rect.center(), egui::vec2(search_w, 24.0));
-        let response = ui.interact(search, ui.id().with("nav-search"), egui::Sense::click());
+        let response = ui.interact(search, ui.scope_id().with("nav-search"), egui::Sense::click());
         let fill = if self.session.dark {
             paint::color("#2b2b2b")
         } else {
@@ -226,7 +226,7 @@ impl GrapheApp {
             egui::pos2(rect.right() - 21.0, rect.center().y),
             egui::vec2(26.0, 24.0),
         );
-        let response = ui.interact(info, ui.id().with("about"), egui::Sense::click());
+        let response = ui.interact(info, ui.scope_id().with("about"), egui::Sense::click());
         if response.hovered() {
             ui.painter().rect_filled(
                 info,
@@ -311,7 +311,7 @@ impl GrapheApp {
                         .text_color(paint::color(palette.ui_text))
                         .frame(egui::Frame::NONE)
                         .margin(egui::Margin::symmetric(10, 0))
-                        .vertical_align(egui::Align::Center)
+                        .align(egui::Align2::LEFT_CENTER)
                         .desired_width(tab_rect.width()),
                 );
                 if self.rename_focus {
@@ -341,7 +341,7 @@ impl GrapheApp {
 
             let tab_response = ui.interact(
                 tab_rect,
-                ui.id().with(("workspace", id)),
+                ui.scope_id().with(("workspace", id)),
                 egui::Sense::click(),
             );
             if active {
@@ -399,7 +399,7 @@ impl GrapheApp {
             let close_response = if count > 1 {
                 Some(ui.interact(
                     close_rect,
-                    ui.id().with(("workspace-close", id)),
+                    ui.scope_id().with(("workspace-close", id)),
                     egui::Sense::click(),
                 ))
             } else {
@@ -446,7 +446,7 @@ impl GrapheApp {
         );
         let add = ui.interact(
             add_rect,
-            ui.id().with("workspace-add"),
+            ui.scope_id().with("workspace-add"),
             egui::Sense::click(),
         );
         paint::draw_icon(
@@ -874,7 +874,7 @@ impl GrapheApp {
     ) -> bool {
         let response = ui.interact(
             rect,
-            ui.id().with((
+            ui.scope_id().with((
                 if previous { "nav-prev" } else { "nav-next" },
                 rect.left() as i32,
             )),
@@ -949,7 +949,7 @@ impl GrapheApp {
         chapter: i64,
         palette: &UiPalette,
     ) -> bool {
-        let response = ui.interact(rect, ui.id().with("nav-current"), egui::Sense::click());
+        let response = ui.interact(rect, ui.scope_id().with("nav-current"), egui::Sense::click());
         let ink = paint::color(palette.ui_text);
         let galley = egui::WidgetText::from(
             egui::RichText::new(place_text(book, chapter))
@@ -1223,7 +1223,7 @@ impl GrapheApp {
 #[cfg(test)]
 pub(crate) fn mark_layout(ui: &egui::Ui, key: &str, rect: egui::Rect) {
     ui.ctx().data_mut(|data| {
-        let id = egui::Id::new("pane-layout-marks");
+        let id = egui::Id::unique("pane-layout-marks");
         let mut marks = data
             .get_temp::<Vec<(String, [f32; 4])>>(id)
             .unwrap_or_default();

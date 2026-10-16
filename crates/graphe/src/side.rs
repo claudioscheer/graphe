@@ -27,7 +27,6 @@ impl GrapheApp {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ui, |ui| {
-                paint::clip_scroll_to_viewport(ui);
                 // Shared by search, dictionary, and modules. 34px, padding 0 8px 0 12px.
                 // Align by font line metrics so all tab titles have identical baseline and cap height.
                 let header_height = 34.0;
@@ -65,7 +64,7 @@ impl GrapheApp {
                 );
                 let toggle_resp = ui.interact(
                     toggle_rect,
-                    ui.id().with("sidebar-collapse"),
+                    ui.scope_id().with("sidebar-collapse"),
                     egui::Sense::click(),
                 );
                 let toggle_color = if toggle_resp.hovered() {
@@ -275,7 +274,7 @@ impl GrapheApp {
             let mark = paint::color(palette.ui_text);
             // The cards are 12px. Leaving the Bible font out of the key
             // keeps a font click from wrapping every hit.
-            let cache_id = ui.id().with((
+            let cache_id = ui.scope_id().with((
                 text_width.round() as i32,
                 self.session.query.clone(),
                 self.session.search_module_id.clone(),
@@ -346,7 +345,7 @@ impl GrapheApp {
                     egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
                 );
                 let hit_id =
-                    ui.id()
+                    ui.scope_id()
                         .with(("search-hit", hit.book_number, hit.chapter, hit.verse, index));
                 let mut row_ui = ui.new_child(
                     egui::UiBuilder::new()
@@ -1176,7 +1175,7 @@ fn stat_card(ui: &mut egui::Ui, width: f32, count: usize, label: &str, palette: 
 }
 
 fn module_row(ui: &mut egui::Ui, name: &str, kind: &str, palette: &UiPalette) -> egui::Response {
-    let row_id = ui.id().with(("module-row", name, kind));
+    let row_id = ui.scope_id().with(("module-row", name, kind));
     let hovered = ui.data(|data| data.get_temp(row_id).unwrap_or(false));
     let (fill, stroke_color) = if hovered {
         (
@@ -1246,7 +1245,7 @@ fn search_input_box(
                 egui::TextEdit::singleline(query)
                     .frame(egui::Frame::NONE)
                     .margin(egui::Margin::ZERO)
-                    .vertical_align(egui::Align::Center)
+                    .align(egui::Align2::LEFT_CENTER)
                     .hint_text(hint)
                     .font(egui::FontId::proportional(13.0))
                     .text_color(paint::color(palette.ui_text))

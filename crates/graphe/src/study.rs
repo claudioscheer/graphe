@@ -21,7 +21,7 @@ impl GrapheApp {
     pub(crate) fn editor(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         #[cfg(test)]
         ui.data_mut(|data| {
-            data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+            data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"));
         });
         #[cfg(test)]
         {
@@ -184,7 +184,6 @@ impl GrapheApp {
                 );
                 body.set_min_size(body_rect.size());
                 body.shrink_clip_rect(body_rect);
-                paint::clip_scroll_to_viewport(&mut body);
                 #[cfg(test)]
                 crate::chrome::mark_layout(&body, &format!("body:{pane_id}"), body.max_rect());
                 if pane.pane_type == graphe_domain::model::PaneType::Commentary {
@@ -429,7 +428,7 @@ impl GrapheApp {
                 ),
             );
         }
-        let scroll_attempts_id = egui::Id::new(("scroll_attempts", pane_id));
+        let scroll_attempts_id = egui::Id::unique(("scroll_attempts", pane_id));
         let attempts: usize = ui.data(|d| d.get_temp(scroll_attempts_id)).unwrap_or(0);
         if active_bible && scroll_verse.is_some() {
             let reached_and_settled = (scroll_target_reached && !rows_grew) || attempts >= 5;
@@ -1100,7 +1099,7 @@ impl GrapheApp {
                 }
             }
         }
-        let menu_id = egui::Id::new(("strong-menu", pane_id, verse));
+        let menu_id = egui::Id::unique(("strong-menu", pane_id, verse));
         if response.secondary_clicked() {
             if let Some(hit) = &strong {
                 let saved = hit.clone();
@@ -1384,7 +1383,7 @@ fn split_handle(
     };
     let response = ui.interact(
         hit,
-        egui::Id::new(("split-handle", path)),
+        egui::Id::unique(("split-handle", path)),
         egui::Sense::drag(),
     );
     let cursor = if vertical {

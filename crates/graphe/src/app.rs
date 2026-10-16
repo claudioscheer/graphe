@@ -869,11 +869,11 @@ pub(crate) mod tests {
         let mut marks = Vec::new();
         let output = ctx.run_test_ui(raw, |ctx| {
             ctx.data_mut(|data| {
-                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"));
             });
             app.dialogs(ctx);
             marks = ctx.data(|data| {
-                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                     .unwrap_or_default()
             });
         });
@@ -1536,7 +1536,7 @@ pub(crate) mod tests {
             let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
-                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                         .unwrap_or_default()
                 });
             });
@@ -1664,7 +1664,7 @@ pub(crate) mod tests {
             let _ = ctx.run_test_ui(raw, |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
-                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                         .unwrap_or_default()
                 });
             });
@@ -1966,7 +1966,7 @@ pub(crate) mod tests {
             let _ = ctx.run_test_ui(raw.clone(), |ctx| {
                 app.editor(ctx, palette);
                 marks = ctx.data(|data| {
-                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                    data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                         .unwrap_or_default()
                 });
             });
@@ -2265,7 +2265,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// egui 0.37 panel ids are children of the root `Ui`, not `Id::new("sidebar")`.
+    /// egui 0.37 panel ids are children of the root `Ui`, not `Id::unique("sidebar")`.
     fn sidebar_panel_id() -> egui::Id {
         egui::ViewportId::ROOT.root_ui_id().with("sidebar")
     }
@@ -2290,7 +2290,7 @@ pub(crate) mod tests {
             let palette = theme::palette(false);
             app.sidebar(ctx, palette);
             marks = ctx.data(|data| {
-                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                     .unwrap_or_default()
             });
         });
@@ -2315,11 +2315,11 @@ pub(crate) mod tests {
         let mut marks = Vec::new();
         let output = ctx.run_test_ui(raw, |ctx| {
             ctx.data_mut(|data| {
-                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+                data.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"));
             });
             app.dialogs(ctx);
             marks = ctx.data(|data| {
-                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                     .unwrap_or_default()
             });
         });
@@ -2716,7 +2716,7 @@ pub(crate) mod tests {
         let _ = ctx.run_test_ui(raw, |ctx| {
             app.editor(ctx, palette);
             marks = ctx.data(|data| {
-                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                     .unwrap_or_default()
             });
         });
@@ -4411,12 +4411,12 @@ pub(crate) mod tests {
         // Now update banner renders download and close marks
         let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             ctx.data_mut(|d| {
-                d.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"));
+                d.remove_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"));
             });
             app.update_banner(ctx, palette);
         });
         let marks = ctx.data(|d| {
-            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                 .unwrap_or_default()
         });
         assert!(marks.iter().any(|(key, _)| key == "update-download"));
@@ -4693,7 +4693,7 @@ pub(crate) mod tests {
         }
 
         let marks = ctx.data(|data| {
-            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                 .unwrap_or_default()
         });
         let v32 = marks.iter().find(|(k, _)| k.contains("verse:pane-1:32"));
@@ -4789,7 +4789,7 @@ pub(crate) mod tests {
         }
 
         let marks = ctx.data(|data| {
-            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                 .unwrap_or_default()
         });
         let v32 = marks.iter().find(|(k, _)| k.contains("verse:pane-1:32"));

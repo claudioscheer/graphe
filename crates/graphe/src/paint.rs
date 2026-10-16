@@ -28,9 +28,6 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     // letters. One ramp for both themes leaves the atlas in place.
     visuals.text_options.color_transfer_function =
         egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
-    // egui otherwise lets a scroll area paint a few pixels outside its box,
-    // which draws chapter and commentary text across the bar above it.
-    visuals.clip_rect_margin = 0.0;
     ctx.set_visuals(visuals);
     let mut style = (*ctx.global_style()).clone();
     style
@@ -109,11 +106,6 @@ pub(crate) fn panel(hex: &str) -> egui::Frame {
     egui::Frame::new()
         .fill(color(hex))
         .inner_margin(egui::Margin::same(8))
-}
-
-/// Stop a scroll area from painting into the fixed bar above it.
-pub(crate) fn clip_scroll_to_viewport(ui: &mut egui::Ui) {
-    ui.visuals_mut().clip_rect_margin = 0.0;
 }
 
 fn scroll_limit_id(scroll_id: egui::Id) -> egui::Id {
@@ -1473,7 +1465,7 @@ mod tests {
         });
         let _ = output;
         let marks = ctx.data(|data| {
-            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::new("pane-layout-marks"))
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
                 .unwrap_or_default()
         });
         let top = mark_x(&marks, "dict-item:1");
