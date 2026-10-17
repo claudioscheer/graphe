@@ -385,22 +385,14 @@ impl<'a> ModuleDropdown<'a> {
                     bottom: 6,
                 });
 
-            let reset_size_id = popup_id.with("reset_size");
-            let should_reset = ui
-                .ctx()
-                .data(|d| d.get_temp::<bool>(reset_size_id).unwrap_or(false));
-            if should_reset {
-                ui.ctx().data_mut(|d| d.insert_temp(reset_size_id, false));
-            }
-
             egui::Popup::from_toggle_button_response(&resp)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .frame(popup_frame)
                 .width(popup_width)
-                .sizing_pass(should_reset)
                 .show(|ui| {
                     ui.set_width(popup_width);
                     ui.set_max_width(popup_width);
+                    ui.set_max_height(350.0);
 
                     let query = if self.show_search {
                         let search_id = popup_id.with("search");
@@ -460,11 +452,6 @@ impl<'a> ModuleDropdown<'a> {
                             egui::vec2(text_w, box_rect.height()),
                         );
 
-                        let had_focus_id = popup_id.with("search_had_focus");
-                        let had_focus = ui
-                            .ctx()
-                            .data(|d| d.get_temp::<bool>(had_focus_id).unwrap_or(true));
-
                         let text_resp = ui.put(
                             text_edit_rect,
                             egui::TextEdit::singleline(&mut search_query)
@@ -479,15 +466,8 @@ impl<'a> ModuleDropdown<'a> {
                                 .font(egui::FontId::proportional(13.0)),
                         );
 
-                        if !was_open || (should_reset && had_focus) {
+                        if !was_open {
                             text_resp.request_focus();
-                        }
-
-                        let current_has_focus = text_resp.has_focus();
-                        if !should_reset {
-                            ui.ctx().data_mut(|d| {
-                                d.insert_temp(had_focus_id, current_has_focus);
-                            });
                         }
 
                         if !is_empty {
@@ -528,26 +508,15 @@ impl<'a> ModuleDropdown<'a> {
                             if clear_resp.clicked() {
                                 search_query.clear();
                                 text_resp.request_focus();
-                                ui.ctx().data_mut(|d| {
-                                    d.insert_temp(reset_size_id, true);
-                                    d.insert_temp(had_focus_id, true);
-                                });
                                 ui.ctx().request_repaint();
                             }
                         }
 
                         if search_query != prev_query {
-                            let should_expand = search_query.is_empty()
-                                || search_query.len() < prev_query.len();
                             ui.ctx().data_mut(|d| {
                                 d.insert_temp(prev_query_id, search_query.clone());
-                                if should_expand {
-                                    d.insert_temp(reset_size_id, true);
-                                }
                             });
-                            if should_expand {
-                                ui.ctx().request_repaint();
-                            }
+                            ui.ctx().request_repaint();
                         }
 
                         ui.ctx()
@@ -716,8 +685,6 @@ impl<'a> ModuleDropdown<'a> {
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(popup_id.with("was_open"), false);
                     d.insert_temp(popup_id.with("prev_query"), String::new());
-                    d.insert_temp(popup_id.with("reset_size"), false);
-                    d.insert_temp(popup_id.with("search_had_focus"), true);
                 });
             }
 
@@ -1196,6 +1163,60 @@ mod tests {
         assert!(
             reset_height > 200.0,
             "popup height must reset back to full height (> 200px) after search is cleared, got {reset_height}"
+        );
+    }
+
+    #[test]
+    fn dropdown_does_not_flash_when_backspacing_or_clearing() {
+        let ctx = egui::Context::default();
+        let mut store = AppStateStore::new();
+        let mut mods = Vec::new();
+        for i in 0..15 {
+            mods.push(InstalledModule {
+                id: format!("mod_{i}"),
+                path: PathBuf::from(format!("mod_{i}.bible")),
+                kind: "bible".into(),
+                name: format!("Module {i:02}"),
+                short_title: Some(format!("M{i}")),
+                description: None,
+            });
+        }
+
+        // 1. Initial frame to locate dropdown trigger
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+        let trigger = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown:bible-test")
+            .map(|(_, rect)| rect)
+            .expect("dropdown trigger");
+        let pos = egui::pos2(trigger[0] + trigger[2] * 0.5, trigger[1] + trigger[3] * 0.5);
+
+        // 2. Open dropdown
+        let _ = dropdown_frame(&ctx, &mut store, &mods, click(pos));
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        // 3. Type "Module 1"
+        let _ = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::Text("Module 1".into())]);
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        // 4. Press backspace to delete '1'
+        let out = dropdown_frame(
+            &ctx,
+            &mut store,
+            &mods,
+            vec![egui::Event::Key {
+                key: egui::Key::Backspace,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        // On the exact frame backspace was pressed, the popup must remain visible (no sizing pass flash)
+        assert!(
+            contains_text(&out, "Module 01"),
+            "dropdown must remain visible and rendered immediately when backspacing without flashing"
         );
     }
 
