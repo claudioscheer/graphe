@@ -385,10 +385,19 @@ impl<'a> ModuleDropdown<'a> {
                     bottom: 6,
                 });
 
+            let reset_size_id = popup_id.with("reset_size");
+            let should_reset = ui
+                .ctx()
+                .data(|d| d.get_temp::<bool>(reset_size_id).unwrap_or(false));
+            if should_reset {
+                ui.ctx().data_mut(|d| d.insert_temp(reset_size_id, false));
+            }
+
             egui::Popup::from_toggle_button_response(&resp)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .frame(popup_frame)
                 .width(popup_width)
+                .sizing_pass(should_reset)
                 .show(|ui| {
                     ui.set_width(popup_width);
                     ui.set_max_width(popup_width);
@@ -407,6 +416,15 @@ impl<'a> ModuleDropdown<'a> {
                             search_query.clear();
                         }
                         ui.ctx().data_mut(|d| d.insert_temp(was_open_id, true));
+
+                        let prev_query_id = popup_id.with("prev_query");
+                        let prev_query = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<String>(prev_query_id).unwrap_or_default());
+                        if !was_open {
+                            ui.ctx()
+                                .data_mut(|d| d.insert_temp(prev_query_id, String::new()));
+                        }
 
                         // 1. Search Box with rounded border and optional clear button
                         let search_h = 28.0_f32;
@@ -464,6 +482,12 @@ impl<'a> ModuleDropdown<'a> {
                                 egui::pos2(box_rect.right() - 13.0, box_rect.center().y),
                                 egui::vec2(18.0, 18.0),
                             );
+                            #[cfg(test)]
+                            crate::chrome::mark_layout(
+                                ui,
+                                &format!("dropdown_clear:{}", self.salt),
+                                clear_rect,
+                            );
                             let clear_resp = ui.interact(
                                 clear_rect,
                                 popup_id.with("clear"),
@@ -492,6 +516,14 @@ impl<'a> ModuleDropdown<'a> {
                                 search_query.clear();
                                 text_resp.request_focus();
                             }
+                        }
+
+                        if search_query != prev_query {
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(prev_query_id, search_query.clone());
+                                d.insert_temp(reset_size_id, true);
+                            });
+                            ui.ctx().request_repaint();
                         }
 
                         ui.ctx()
@@ -648,11 +680,20 @@ impl<'a> ModuleDropdown<'a> {
                         });
 
                     ui.ctx().data_mut(|d| d.insert_temp(hl_id, hl));
+                    #[cfg(test)]
+                    crate::chrome::mark_layout(
+                        ui,
+                        &format!("dropdown_popup:{}", self.salt),
+                        ui.min_rect(),
+                    );
                 });
 
             if !is_open && self.show_search {
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(popup_id.with("was_open"), false));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(popup_id.with("was_open"), false);
+                    d.insert_temp(popup_id.with("prev_query"), String::new());
+                    d.insert_temp(popup_id.with("reset_size"), false);
+                });
             }
 
             chosen
@@ -1045,6 +1086,91 @@ mod tests {
         assert!(
             contains_text(&output, long_name),
             "dropdown trigger label must use available space and show the full title instead of prematurely truncating with ellipsis"
+        );
+    }
+
+    #[test]
+    fn dropdown_height_resets_after_search_is_cleared() {
+        let ctx = egui::Context::default();
+        let mut store = AppStateStore::new();
+        let mut mods = Vec::new();
+        for i in 0..15 {
+            mods.push(InstalledModule {
+                id: format!("mod_{i}"),
+                path: PathBuf::from(format!("mod_{i}.bible")),
+                kind: "bible".into(),
+                name: format!("Module {i:02}"),
+                short_title: Some(format!("M{i}")),
+                description: None,
+            });
+        }
+
+        // 1. Initial frame to locate dropdown trigger
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+        let trigger = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown:bible-test")
+            .map(|(_, rect)| rect)
+            .expect("dropdown trigger");
+        let pos = egui::pos2(trigger[0] + trigger[2] * 0.5, trigger[1] + trigger[3] * 0.5);
+
+        // 2. Click trigger to open dropdown
+        let _ = dropdown_frame(&ctx, &mut store, &mods, click(pos));
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        let initial_height = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown_popup:bible-test")
+            .map(|(_, rect)| rect[3])
+            .expect("popup height should be recorded");
+        assert!(
+            initial_height > 200.0,
+            "initial popup height should be tall (> 200px), got {initial_height}"
+        );
+
+        // 3. Type search query to filter to a single item
+        let _ = dropdown_frame(
+            &ctx,
+            &mut store,
+            &mods,
+            vec![egui::Event::Text("Module 14".into())],
+        );
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        let filtered_height = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown_popup:bible-test")
+            .map(|(_, rect)| rect[3])
+            .expect("popup height should be recorded after filtering");
+        assert!(
+            filtered_height < 100.0,
+            "filtered popup height should shrink (< 100px), got {filtered_height}"
+        );
+
+        // 4. Click the clear button ("×") to clear the search query
+        let clear_rect = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown_clear:bible-test")
+            .map(|(_, rect)| rect)
+            .expect("clear button should be present when search query is non-empty");
+        let clear_pos = egui::pos2(
+            clear_rect[0] + clear_rect[2] * 0.5,
+            clear_rect[1] + clear_rect[3] * 0.5,
+        );
+        let _ = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::PointerMoved(clear_pos)]);
+        let _ = dropdown_frame(&ctx, &mut store, &mods, click(clear_pos));
+        // Run sizing pass and render frame
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        let reset_height = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown_popup:bible-test")
+            .map(|(_, rect)| rect[3])
+            .expect("popup height should be recorded after clearing search");
+        assert!(
+            reset_height > 200.0,
+            "popup height must reset back to full height (> 200px) after search is cleared, got {reset_height}"
         );
     }
 
