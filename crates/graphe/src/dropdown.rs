@@ -460,9 +460,15 @@ impl<'a> ModuleDropdown<'a> {
                             egui::vec2(text_w, box_rect.height()),
                         );
 
+                        let had_focus_id = popup_id.with("search_had_focus");
+                        let had_focus = ui
+                            .ctx()
+                            .data(|d| d.get_temp::<bool>(had_focus_id).unwrap_or(true));
+
                         let text_resp = ui.put(
                             text_edit_rect,
                             egui::TextEdit::singleline(&mut search_query)
+                                .id_salt(popup_id.with("search_input"))
                                 // The hint matches the 11px row subtitle. Typed text stays at 13.
                                 .hint_text(
                                     egui::RichText::new(i18n::t("searchPlaceholder")).size(11.0),
@@ -473,8 +479,15 @@ impl<'a> ModuleDropdown<'a> {
                                 .font(egui::FontId::proportional(13.0)),
                         );
 
-                        if !was_open {
+                        if !was_open || (should_reset && had_focus) {
                             text_resp.request_focus();
+                        }
+
+                        let current_has_focus = text_resp.has_focus();
+                        if !should_reset {
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(had_focus_id, current_has_focus);
+                            });
                         }
 
                         if !is_empty {
@@ -515,15 +528,26 @@ impl<'a> ModuleDropdown<'a> {
                             if clear_resp.clicked() {
                                 search_query.clear();
                                 text_resp.request_focus();
+                                ui.ctx().data_mut(|d| {
+                                    d.insert_temp(reset_size_id, true);
+                                    d.insert_temp(had_focus_id, true);
+                                });
+                                ui.ctx().request_repaint();
                             }
                         }
 
                         if search_query != prev_query {
+                            let should_expand = search_query.is_empty()
+                                || search_query.len() < prev_query.len();
                             ui.ctx().data_mut(|d| {
                                 d.insert_temp(prev_query_id, search_query.clone());
-                                d.insert_temp(reset_size_id, true);
+                                if should_expand {
+                                    d.insert_temp(reset_size_id, true);
+                                }
                             });
-                            ui.ctx().request_repaint();
+                            if should_expand {
+                                ui.ctx().request_repaint();
+                            }
                         }
 
                         ui.ctx()
@@ -693,6 +717,7 @@ impl<'a> ModuleDropdown<'a> {
                     d.insert_temp(popup_id.with("was_open"), false);
                     d.insert_temp(popup_id.with("prev_query"), String::new());
                     d.insert_temp(popup_id.with("reset_size"), false);
+                    d.insert_temp(popup_id.with("search_had_focus"), true);
                 });
             }
 
@@ -1072,21 +1097,21 @@ mod tests {
             let _ = dropdown.show(ui, &mut store, palette, false);
         });
 
-        fn contains_text(output: &egui::FullOutput, needle: &str) -> bool {
-            fn walk(shape: &egui::Shape, needle: &str) -> bool {
-                match shape {
-                    egui::Shape::Text(text) if text.galley.job.text.contains(needle) => true,
-                    egui::Shape::Vec(list) => list.iter().any(|shape| walk(shape, needle)),
-                    _ => false,
-                }
-            }
-            output.shapes.iter().any(|cs| walk(&cs.shape, needle))
-        }
-
         assert!(
             contains_text(&output, long_name),
             "dropdown trigger label must use available space and show the full title instead of prematurely truncating with ellipsis"
         );
+    }
+
+    fn contains_text(output: &egui::FullOutput, needle: &str) -> bool {
+        fn walk(shape: &egui::Shape, needle: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(needle) => true,
+                egui::Shape::Vec(list) => list.iter().any(|shape| walk(shape, needle)),
+                _ => false,
+            }
+        }
+        output.shapes.iter().any(|cs| walk(&cs.shape, needle))
     }
 
     #[test]
@@ -1171,6 +1196,49 @@ mod tests {
         assert!(
             reset_height > 200.0,
             "popup height must reset back to full height (> 200px) after search is cleared, got {reset_height}"
+        );
+    }
+
+    #[test]
+    fn search_box_retains_focus_while_typing() {
+        let ctx = egui::Context::default();
+        let mut store = AppStateStore::new();
+        let mods = sample_modules();
+
+        // 1. Initial frame to locate dropdown trigger
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+        let trigger = marks(&ctx)
+            .into_iter()
+            .find(|(key, _)| key == "dropdown:bible-test")
+            .map(|(_, rect)| rect)
+            .expect("dropdown trigger");
+        let pos = egui::pos2(trigger[0] + trigger[2] * 0.5, trigger[1] + trigger[3] * 0.5);
+
+        // 2. Click trigger to open dropdown
+        let _ = dropdown_frame(&ctx, &mut store, &mods, click(pos));
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        assert!(
+            ctx.memory(|mem| mem.focused().is_some()),
+            "search input should be focused on open"
+        );
+
+        // 3. Type first letter 'n'
+        let _ = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::Text("n".into())]);
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        assert!(
+            ctx.memory(|mem| mem.focused().is_some()),
+            "search input must NOT lose focus after typing a character"
+        );
+
+        // 4. Type second letter 'a'
+        let out = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::Text("a".into())]);
+        let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
+
+        assert!(
+            contains_text(&out, "na"),
+            "search input should accept successive characters ('na') without losing focus"
         );
     }
 
