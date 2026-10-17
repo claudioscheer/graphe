@@ -1476,8 +1476,8 @@ pub(crate) mod tests {
         let files = *mark(&marks, "convert-files");
         let folder = *mark(&marks, "convert-folder");
         assert!(
-            (card[2] - 520.0).abs() < 2.0,
-            "convert card is 520px wide, got {card:?}"
+            (card[2] - 600.0).abs() < 2.0,
+            "convert card is 600px wide, got {card:?}"
         );
         assert!(
             card[3] < 260.0,
@@ -1498,6 +1498,13 @@ pub(crate) mod tests {
         assert!(
             gap < 48.0,
             "the buttons follow the description, gap {gap} desc {desc:?} files {files:?}"
+        );
+        let install = *mark(&marks, "convert-install");
+        assert!(
+            install[0] + install[2] <= files[0] + 1.0,
+            "checkbox does not overflow into action buttons: install right {} files left {}",
+            install[0] + install[2],
+            files[0]
         );
     }
 
