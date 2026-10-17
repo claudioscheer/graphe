@@ -23,6 +23,7 @@ pub struct UiPalette {
     pub ui_warn: &'static str,
     pub ui_warn_text: &'static str,
     pub ui_verse_num: &'static str,
+    pub ui_jesus_words: &'static str,
 }
 
 pub const LIGHT: UiPalette = UiPalette {
@@ -48,6 +49,7 @@ pub const LIGHT: UiPalette = UiPalette {
     ui_warn: "#c18a1f",
     ui_warn_text: "#8f5f11",
     ui_verse_num: "#9b4d3a",
+    ui_jesus_words: "#b91c1c",
 };
 
 pub const DARK: UiPalette = UiPalette {
@@ -73,6 +75,7 @@ pub const DARK: UiPalette = UiPalette {
     ui_warn: "#c18a1f",
     ui_warn_text: "#f6df9c",
     ui_verse_num: "#d4a089",
+    ui_jesus_words: "#f87171",
 };
 
 /// VS Code-like radii from the design system. 8px+ is reserved for pills.
@@ -105,6 +108,8 @@ mod theme_tests {
         assert_eq!(DARK.ui_border, "#333333");
         assert_eq!(LIGHT.ui_link, "#65543f");
         assert_eq!(DARK.ui_link, "#d6a85f");
+        assert_eq!(LIGHT.ui_jesus_words, "#b91c1c");
+        assert_eq!(DARK.ui_jesus_words, "#f87171");
         assert!(RADIUS_INLINE < 8.0 && RADIUS_CONTROL < 8.0 && RADIUS_SURFACE < 8.0);
         assert!(RADIUS_PILL > 8.0);
     }

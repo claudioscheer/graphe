@@ -2404,6 +2404,7 @@ fn verse_layout_key(spans: &[VerseSpan], text_width: f32, font: f32, palette: &U
     palette.ui_text.hash(&mut hasher);
     palette.ui_text_subtle.hash(&mut hasher);
     palette.ui_text_muted.hash(&mut hasher);
+    palette.ui_jesus_words.hash(&mut hasher);
     for span in spans {
         match span {
             VerseSpan::Text(text) => {
@@ -2438,6 +2439,10 @@ fn verse_layout_key(spans: &[VerseSpan], text_width: f32, font: f32, palette: &U
                 3u8.hash(&mut hasher);
                 note.hash(&mut hasher);
             }
+            VerseSpan::Jesus(text) => {
+                4u8.hash(&mut hasher);
+                text.hash(&mut hasher);
+            }
         }
     }
     hasher.finish()
@@ -2458,6 +2463,8 @@ fn verse_layout(
     // Electron `.strongs` is 0.5em, raised, with 2px on the left and a word space after.
     let mut body = text_format(font, paint::color(palette.ui_text));
     body.extra_letter_spacing = 0.45;
+    let mut jesus_body = text_format(font, paint::color(palette.ui_jesus_words));
+    jesus_body.extra_letter_spacing = 0.45;
     let mut strong_fmt = text_format(font * 0.5, paint::color(palette.ui_text_subtle));
     strong_fmt.valign = egui::Align::TOP;
     let note_fmt = text_format(font * 0.72, paint::color(palette.ui_text_muted));
@@ -2465,6 +2472,15 @@ fn verse_layout(
         match span {
             VerseSpan::Text(text) => {
                 push_chars(&mut job, &mut chars, text, body.clone());
+                if needs_word_gap(span, spans.get(index + 1)) {
+                    push_chars(&mut job, &mut chars, " ", body.clone());
+                }
+            }
+            VerseSpan::Jesus(text) => {
+                push_chars(&mut job, &mut chars, text, jesus_body.clone());
+                if needs_word_gap(span, spans.get(index + 1)) {
+                    push_chars(&mut job, &mut chars, " ", jesus_body.clone());
+                }
             }
             VerseSpan::Strong {
                 display,
@@ -2526,10 +2542,25 @@ fn verse_layout(
     VerseLayout { galley, strongs }
 }
 
+fn needs_word_gap(current: &VerseSpan, next: Option<&VerseSpan>) -> bool {
+    let next_text = match (current, next) {
+        (VerseSpan::Text(_), Some(VerseSpan::Jesus(next_text))) => next_text,
+        (VerseSpan::Jesus(_), Some(VerseSpan::Text(next_text))) => next_text,
+        _ => return false,
+    };
+    if let Some(ch) = next_text.chars().next() {
+        ch.is_alphanumeric() || matches!(ch, '«' | '“' | '"' | '\'' | '‘')
+    } else {
+        false
+    }
+}
+
 /// A word follows the number. Another number, or punctuation, stays closer: `G4228.`
 fn gap_after_strong(next: Option<&VerseSpan>) -> bool {
     match next {
-        Some(VerseSpan::Text(text)) => text.chars().next().is_some_and(|ch| ch.is_alphanumeric()),
+        Some(VerseSpan::Text(text)) | Some(VerseSpan::Jesus(text)) => {
+            text.chars().next().is_some_and(|ch| ch.is_alphanumeric())
+        }
         _ => false,
     }
 }
@@ -2825,7 +2856,7 @@ mod tests {
                     VerseSpan::Text(".".into()),
                 ];
                 let palette = graphe_domain::theme::palette(false);
-                let layout = verse_layout(ui, &spans, 480.0, 18.0, &palette);
+                let layout = verse_layout(ui, &spans, 480.0, 18.0, palette);
                 assert_eq!(layout.galley.job.text, "dianteG3588G3063 esperandoG4228.");
                 let strong = layout
                     .galley
@@ -2841,6 +2872,42 @@ mod tests {
                 assert!(
                     number_y + 1.0 < word_y,
                     "the number sits above the word: number {number_y} word {word_y}"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn words_of_jesus_render_in_jesus_palette_color() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run_test_ui(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let spans = vec![
+                    VerseSpan::Text("Ele disse:".into()),
+                    VerseSpan::Jesus("Eu sou o caminho".into()),
+                    VerseSpan::Text(".".into()),
+                ];
+                let light = graphe_domain::theme::palette(false);
+                let layout_light = verse_layout(ui, &spans, 480.0, 18.0, light);
+                assert_eq!(layout_light.galley.job.text, "Ele disse: Eu sou o caminho.");
+                let text_section = &layout_light.galley.job.sections[0];
+                let jesus_section = &layout_light.galley.job.sections[1];
+                let period_section = &layout_light.galley.job.sections[2];
+                assert_eq!(text_section.format.color, crate::paint::color(light.ui_text));
+                assert_eq!(
+                    jesus_section.format.color,
+                    crate::paint::color(light.ui_jesus_words)
+                );
+                assert_eq!(
+                    period_section.format.color,
+                    crate::paint::color(light.ui_text)
+                );
+
+                let dark = graphe_domain::theme::palette(true);
+                let layout_dark = verse_layout(ui, &spans, 480.0, 18.0, dark);
+                assert_eq!(
+                    layout_dark.galley.job.sections[1].format.color,
+                    crate::paint::color(dark.ui_jesus_words)
                 );
             });
         });
