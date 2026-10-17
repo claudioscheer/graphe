@@ -98,7 +98,7 @@ impl<'a> ModuleDropdown<'a> {
             none_label: "—".into(),
             width: None,
             min_dropdown_width: 240.0,
-            truncate_length: 50,
+            truncate_length: usize::MAX,
             plain: false,
             show_search: true,
         }
@@ -155,7 +155,7 @@ impl<'a> ModuleDropdown<'a> {
             none_label: "—".into(),
             width: None,
             min_dropdown_width: 240.0,
-            truncate_length: 50,
+            truncate_length: usize::MAX,
             plain: false,
             show_search: true,
         }
@@ -177,7 +177,7 @@ impl<'a> ModuleDropdown<'a> {
             none_label: "—".into(),
             width: None,
             min_dropdown_width: 72.0,
-            truncate_length: 50,
+            truncate_length: usize::MAX,
             plain: false,
             show_search: false,
         }
@@ -306,39 +306,30 @@ impl<'a> ModuleDropdown<'a> {
             } else {
                 palette.ui_text
             });
-            let galley = if self.plain {
-                let text_width = (rect.width() - 26.0).max(8.0);
-                egui::WidgetText::from(egui::RichText::new(trigger_text).size(font_size).color(ink))
-                    .into_galley(
-                        ui,
-                        Some(egui::TextWrapMode::Truncate),
-                        text_width,
-                        egui::FontSelection::default(),
-                    )
-            } else {
-                let max_chars = ((rect.width() - 28.0) / 7.5) as usize;
-                let display_text = if trigger_text.chars().count() > max_chars && max_chars > 3 {
-                    format!(
-                        "{}…",
-                        trigger_text.chars().take(max_chars - 1).collect::<String>()
-                    )
-                } else if trigger_text.chars().count() > self.truncate_length {
-                    format!(
-                        "{}…",
-                        trigger_text
-                            .chars()
-                            .take(self.truncate_length)
-                            .collect::<String>()
-                    )
-                } else {
+            let right_reserved = if self.plain { 24.0 } else { 28.0 };
+            let text_width = (rect.width() - right_reserved).max(8.0);
+            let display_text = if self.truncate_length < usize::MAX
+                && trigger_text.chars().count() > self.truncate_length
+            {
+                format!(
+                    "{}…",
                     trigger_text
-                };
-                ui.painter().layout_no_wrap(
-                    display_text,
-                    egui::FontId::proportional(font_size),
-                    ink,
+                        .chars()
+                        .take(self.truncate_length)
+                        .collect::<String>()
                 )
+            } else {
+                trigger_text
             };
+            let galley = egui::WidgetText::from(
+                egui::RichText::new(display_text).size(font_size).color(ink),
+            )
+            .into_galley(
+                ui,
+                Some(egui::TextWrapMode::Truncate),
+                text_width,
+                egui::FontSelection::default(),
+            );
             let text_pos = egui::pos2(
                 rect.left() + 8.0,
                 rect.center().y - galley.rect.height() / 2.0,
@@ -1011,6 +1002,50 @@ mod tests {
         assert_eq!(hint, 11.0, "the search hint matches the row subtitle");
         assert_eq!(title, 13.0, "the row title stays at the field size");
         assert!(hint < title, "the empty hint is quieter than the list");
+    }
+
+    #[test]
+    fn dropdown_label_uses_all_available_space() {
+        let ctx = egui::Context::default();
+        let mut store = AppStateStore::new();
+        let long_name = "Dicionário Strong - Léxico Completo";
+        let mods = vec![InstalledModule {
+            id: "strong_pt".into(),
+            path: PathBuf::from("strong.dictionary"),
+            kind: "dictionary".into(),
+            name: long_name.into(),
+            short_title: None,
+            description: None,
+        }];
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(280.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let output = ctx.run_test_ui(raw, |ui| {
+            let palette = theme::palette(false);
+            let dropdown = ModuleDropdown::from_installed("dict-test", "dictionary", Some("strong_pt"), &mods);
+            let _ = dropdown.show(ui, &mut store, palette, false);
+        });
+
+        fn contains_text(output: &egui::FullOutput, needle: &str) -> bool {
+            fn walk(shape: &egui::Shape, needle: &str) -> bool {
+                match shape {
+                    egui::Shape::Text(text) if text.galley.job.text.contains(needle) => true,
+                    egui::Shape::Vec(list) => list.iter().any(|shape| walk(shape, needle)),
+                    _ => false,
+                }
+            }
+            output.shapes.iter().any(|cs| walk(&cs.shape, needle))
+        }
+
+        assert!(
+            contains_text(&output, long_name),
+            "dropdown trigger label must use available space and show the full title instead of prematurely truncating with ellipsis"
+        );
     }
 
     fn dropdown_frame(
