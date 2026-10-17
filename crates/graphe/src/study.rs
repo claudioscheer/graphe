@@ -305,6 +305,21 @@ impl GrapheApp {
                     .set_heights(pane_id, content_key, width_px, font, heights.clone());
                 (heights, false)
             };
+            if paint.verses.is_empty() {
+                if active_bible {
+                    self.session.scroll_verse = None;
+                }
+                let spans = self.chapter_spans(pane_id);
+                let message = if self.modules.iter().all(|module| module.kind != "bible") {
+                    i18n::t("noModules")
+                } else if spans.iter().any(|span| span.book_number == book) {
+                    i18n::t("chapterUnavailable")
+                } else {
+                    i18n::t("bookUnavailable")
+                };
+                self.draw_bible_empty(ui, pane_id, palette, &message);
+                return;
+            }
             let total = BIBLE_PAD_TOP + rows_prefix(&heights, heights.len()) + BIBLE_PAD_BOTTOM;
             ui.set_width(full);
             ui.set_min_height(total);
@@ -535,6 +550,34 @@ impl GrapheApp {
                 },
             );
         });
+    }
+
+    fn draw_bible_empty(
+        &self,
+        ui: &mut egui::Ui,
+        pane_id: &str,
+        palette: &UiPalette,
+        message: &str,
+    ) {
+        let size = ui.available_size().max(egui::vec2(32.0, 32.0));
+        let subtle = paint::color(palette.ui_text_subtle);
+        let response = ui.allocate_ui_with_layout(
+            size,
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(message)
+                        .size((self.session.font_size - 2.0).max(12.0))
+                        .italics()
+                        .color(subtle),
+                );
+            },
+        );
+        crate::chrome::mark_layout(
+            ui,
+            &format!("bible-empty:{pane_id}"),
+            response.response.rect,
+        );
     }
 
     fn draw_commentary_empty(&self, ui: &mut egui::Ui, pane_id: &str, palette: &UiPalette) {

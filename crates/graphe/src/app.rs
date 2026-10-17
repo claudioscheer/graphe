@@ -2791,6 +2791,88 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn bible_empty_label_fills_the_pane_body() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        app.session.chapter_text.clear();
+        let pane = app.session.active_pane_id.clone();
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let marks = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let body = *mark(&marks, &format!("body:{pane}"));
+        let empty = *mark(&marks, &format!("bible-empty:{pane}"));
+        assert!(
+            (empty[2] - body[2]).abs() < 4.0,
+            "the empty bible fills the pane width, body {body:?}, empty {empty:?}"
+        );
+        assert!(
+            (empty[3] - body[3]).abs() < 8.0,
+            "the empty bible fills the pane height, body {body:?}, empty {empty:?}"
+        );
+        assert!(
+            (empty[0] - body[0]).abs() < 4.0 && (empty[1] - body[1]).abs() < 8.0,
+            "the empty bible starts at the body origin, body {body:?}, empty {empty:?}"
+        );
+    }
+
+    #[test]
+    fn bible_empty_shows_book_and_chapter_unavailable_messages() {
+        i18n::set_lang("pt");
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+
+        let dir = std::env::temp_dir().join(format!("graphe-empty-bible-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ot.SQLite3");
+        let sql = "CREATE TABLE books (book_number INTEGER, short_name TEXT, long_name TEXT); \
+                   INSERT INTO books VALUES (10, 'Gn', 'Gênesis'); \
+                   CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT); \
+                   INSERT INTO verses VALUES (10, 1, 1, 'No princípio...');";
+        graphe_store::sqlite::init_module_sql(&path, sql).unwrap();
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "ot".into(),
+            name: "OT Only".into(),
+            kind: "bible".into(),
+            path: path.clone(),
+            short_title: Some("OT".into()),
+            description: None,
+        });
+        let pane = app.session.active_pane_id.clone();
+        app.session.panes.get_mut(&pane).unwrap().module_id = Some("ot".into());
+
+        // 1. Matthew (470) is missing from the module -> book unavailable
+        app.session.panes.get_mut(&pane).unwrap().book_number = 470;
+        app.session.panes.get_mut(&pane).unwrap().chapter = 11;
+        app.session.chapter_text.clear();
+        app.loaded_key.clear();
+
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let output = ctx.run_test_ui(raw.clone(), |ctx| {
+            app.editor(ctx, theme::palette(false));
+        });
+        let _ = first_text_y(&output, &i18n::t("bookUnavailable"));
+
+        // 2. Genesis (10) chapter 99 is missing from the module -> chapter unavailable
+        app.session.panes.get_mut(&pane).unwrap().book_number = 10;
+        app.session.panes.get_mut(&pane).unwrap().chapter = 99;
+        app.session.chapter_text.clear();
+        app.loaded_key.clear();
+
+        let output2 = ctx.run_test_ui(raw, |ctx| {
+            app.editor(ctx, theme::palette(false));
+        });
+        let _ = first_text_y(&output2, &i18n::t("chapterUnavailable"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn mark<'a>(marks: &'a [(String, [f32; 4])], key: &str) -> &'a [f32; 4] {
         marks
             .iter()
