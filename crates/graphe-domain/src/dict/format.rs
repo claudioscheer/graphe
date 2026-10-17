@@ -27,6 +27,11 @@ pub fn get_level(label: &str) -> u8 {
     }
 }
 
+/// Calculates the font size for dictionary text based on the user's base font size.
+pub fn dict_font_size(base_font_size: f32) -> f32 {
+    (base_font_size - 4.0).max(14.0)
+}
+
 pub fn build_sub_list(items: &[DefinitionItem], restore: &dyn Fn(&str) -> String) -> String {
     let mut html = String::from("<ol class=\"dict-def-sublist\">");
     let mut i = 0;
@@ -307,5 +312,15 @@ mod dictionary_formatting_tests {
         assert_eq!(get_level("1"), 0);
         assert_eq!(get_level("1a"), 1);
         assert_eq!(get_level("1a1"), 2);
+    }
+
+    #[test]
+    fn scales_dictionary_font_size_with_floor() {
+        assert_eq!(dict_font_size(14.0), 14.0);
+        assert_eq!(dict_font_size(16.0), 14.0);
+        assert_eq!(dict_font_size(18.0), 14.0);
+        assert_eq!(dict_font_size(20.0), 16.0);
+        assert_eq!(dict_font_size(24.0), 20.0);
+        assert_eq!(dict_font_size(28.0), 24.0);
     }
 }

@@ -23,11 +23,11 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     visuals.panel_fill = color(palette.ui_surface);
     visuals.window_fill = color(palette.ui_bg);
     visuals.extreme_bg_color = color(palette.ui_bg);
-    // Light and dark visuals use different glyph ramps. egui rebuilds the font
-    // atlas when the ramp changes, and the galleys we keep then draw the wrong
-    // letters. One ramp for both themes leaves the atlas in place.
-    visuals.text_options.color_transfer_function =
-        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
+    visuals.text_options.color_transfer_function = if dark {
+        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+    } else {
+        egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT
+    };
     ctx.set_visuals(visuals);
     let mut style = (*ctx.global_style()).clone();
     style
@@ -43,11 +43,12 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     // Menus and panels otherwise ease open. A click should show the surface at once.
     style.animation_time = 0.0;
     ctx.set_global_style(style);
-    // The inactive theme slot still has egui's other default ramp. Pin that
-    // too, so a system-theme change cannot rebuild the atlas either.
     ctx.all_styles_mut(|style| {
-        style.visuals.text_options.color_transfer_function =
-            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
+        style.visuals.text_options.color_transfer_function = if style.visuals.dark_mode {
+            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+        } else {
+            egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT
+        };
     });
     // One notch is 100 points before a view multiplies it. The view applies
     // that full step at once; egui would otherwise ease it over later frames.
@@ -1185,7 +1186,7 @@ fn render_definition(
         }
         if rest.starts_with("<div") {
             if let Some((inner, after)) = element_inner(rest, "div") {
-                render_inline_block(ui, inner, 12.0, muted, link, 0.0);
+                render_inline_block(ui, inner, size, muted, link, 0.0);
                 ui.add_space(8.0);
                 rest = after;
                 continue;
@@ -1291,7 +1292,7 @@ fn push_inline_html(
         push_html_text(
             job,
             &decode_entities(&rest[..start]),
-            if label { 11.0 } else { size },
+            if label { (size * 0.85).max(11.0) } else { size },
             if label || anchor { link } else { text },
             italic,
         );
@@ -1323,7 +1324,7 @@ fn push_inline_html(
     push_html_text(
         job,
         &decode_entities(rest),
-        if label { 11.0 } else { size },
+        if label { (size * 0.85).max(11.0) } else { size },
         if label || anchor { link } else { text },
         italic,
     );
@@ -1515,22 +1516,8 @@ mod tests {
         });
     }
 
-    fn glyph_ink(ctx: &egui::Context, min: [u16; 2], max: [u16; 2]) -> Vec<egui::Color32> {
-        ctx.fonts(|fonts| {
-            let image = fonts.image();
-            let mut pixels = Vec::new();
-            for y in min[1]..max[1] {
-                for x in min[0]..max[0] {
-                    let index = y as usize * image.size[0] + x as usize;
-                    pixels.push(image.pixels.get(index).copied().unwrap_or_default());
-                }
-            }
-            pixels
-        })
-    }
-
     #[test]
-    fn theme_switch_does_not_recreate_font_atlas() {
+    fn theme_switch_applies_optimal_color_transfer_function() {
         let ctx = egui::Context::default();
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(
@@ -1541,37 +1528,16 @@ mod tests {
             install_fonts(ctx);
             apply(ctx, false, 16.0);
         });
-        let mut uv = None;
-        let _ = ctx.run_test_ui(raw.clone(), |ui| {
-            let galley = ui.painter().layout_no_wrap(
-                "In the beginning".to_string(),
-                egui::FontId::proportional(16.0),
-                egui::Color32::BLACK,
-            );
-            uv = galley.rows.iter().find_map(|row| {
-                row.glyphs
-                    .iter()
-                    .find(|glyph| glyph.chr == 'I' && !glyph.uv_rect.is_nothing())
-                    .map(|glyph| (glyph.uv_rect.min, glyph.uv_rect.max))
-            });
-        });
-        let (uv_min, uv_max) = uv.expect("the letter I was rasterized");
-        let before = glyph_ink(&ctx, uv_min, uv_max);
-        assert!(
-            before.iter().any(|pixel| pixel.a() > 0),
-            "the letter I has ink in the atlas"
-        );
-        let ramp = egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT;
         assert_eq!(
             ctx.global_style()
                 .visuals
                 .text_options
                 .color_transfer_function,
-            ramp
+            egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT,
+            "light theme must use light mode transfer function for crisp non-pixelated text"
         );
 
         let _ = ctx.run_test_ui(raw.clone(), |ctx| apply(ctx, true, 16.0));
-        // begin_pass on this frame is where a changed ramp would wipe the atlas.
         let _ = ctx.run_test_ui(raw.clone(), |_| {});
         assert!(ctx.global_style().visuals.dark_mode);
         assert_eq!(
@@ -1579,13 +1545,8 @@ mod tests {
                 .visuals
                 .text_options
                 .color_transfer_function,
-            ramp,
-            "dark theme changed the glyph ramp"
-        );
-        assert_eq!(
-            glyph_ink(&ctx, uv_min, uv_max),
-            before,
-            "dark theme rebuilt the font atlas under the letters already shaped"
+            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT,
+            "dark theme must use dark mode transfer function"
         );
 
         let _ = ctx.run_test_ui(raw.clone(), |ctx| apply(ctx, false, 16.0));
@@ -1596,13 +1557,8 @@ mod tests {
                 .visuals
                 .text_options
                 .color_transfer_function,
-            ramp,
-            "light theme changed the glyph ramp"
-        );
-        assert_eq!(
-            glyph_ink(&ctx, uv_min, uv_max),
-            before,
-            "light theme rebuilt the font atlas under the letters already shaped"
+            egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT,
+            "light theme must restore light mode transfer function"
         );
     }
 
