@@ -108,7 +108,8 @@ impl GrapheApp {
     fn dialog_width(&self) -> f32 {
         match self.session.dialog {
             Dialog::About => 380.0,
-            Dialog::Settings | Dialog::Convert | Dialog::Picker => 520.0,
+            Dialog::Settings | Dialog::Picker => 520.0,
+            Dialog::Convert => 600.0,
             Dialog::Navigation => 560.0,
             Dialog::ModuleEditor => 920.0,
             Dialog::Coverage => 620.0,
@@ -1237,33 +1238,36 @@ impl GrapheApp {
             let row_width = ui.available_width();
             ui.allocate_ui_with_layout(
                 egui::vec2(row_width, 36.0),
-                egui::Layout::left_to_right(egui::Align::Center),
+                egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    let install = self.session.convert_install;
-                    if self.check_option(ui, install, &i18n::t("installAfterConvert"), None) {
-                        self.session.convert_install = !install;
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let folder =
+                        self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
+                    let files =
+                        self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
+                    #[cfg(test)]
+                    {
+                        crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
+                        crate::chrome::mark_layout(ui, "convert-files", files.rect);
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        let folder =
-                            self.paper_button(ui, &i18n::t("selectFolder"), PaperButton::Outline);
-                        let files =
-                            self.paper_button(ui, &i18n::t("selectFiles"), PaperButton::Primary);
+                    if folder.clicked() {
+                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                            self.convert_paths(convertible_in_folder(&dir));
+                        }
+                    }
+                    if files.clicked() {
+                        if let Some(paths) = rfd::FileDialog::new().pick_files() {
+                            self.convert_paths(paths);
+                        }
+                    }
+
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let install = self.session.convert_install;
+                        if self.check_option(ui, install, &i18n::t("installAfterConvert"), None) {
+                            self.session.convert_install = !install;
+                        }
                         #[cfg(test)]
-                        {
-                            crate::chrome::mark_layout(ui, "convert-folder", folder.rect);
-                            crate::chrome::mark_layout(ui, "convert-files", files.rect);
-                        }
-                        if folder.clicked() {
-                            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                self.convert_paths(convertible_in_folder(&dir));
-                            }
-                        }
-                        if files.clicked() {
-                            if let Some(paths) = rfd::FileDialog::new().pick_files() {
-                                self.convert_paths(paths);
-                            }
-                        }
+                        crate::chrome::mark_layout(ui, "convert-install", ui.min_rect());
                     });
                 },
             );
@@ -2473,13 +2477,23 @@ impl GrapheApp {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 let label = ui.add(
                     egui::Label::new(egui::RichText::new(title).size(13.0).color(text))
+                        .wrap_mode(egui::TextWrapMode::Wrap)
                         .sense(egui::Sense::click()),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if label.clicked() {
                     toggle = true;
                 }
                 if let Some(hint) = hint {
-                    ui.label(egui::RichText::new(hint).size(12.0).color(hint_color));
+                    let hint_label = ui.add(
+                        egui::Label::new(egui::RichText::new(hint).size(12.0).color(hint_color))
+                            .wrap_mode(egui::TextWrapMode::Wrap)
+                            .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if hint_label.clicked() {
+                        toggle = true;
+                    }
                 }
             });
         });
@@ -2528,10 +2542,7 @@ impl GrapheApp {
                 mark,
             );
         }
-        if response.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        response
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
 
     fn about_card(&mut self, ui: &mut egui::Ui) -> bool {
@@ -3400,4 +3411,35 @@ mod tests {
         );
         assert_eq!(commentaries_title(""), i18n::t("allCommentaries"));
     }
+
+    #[test]
+    fn test_checkbox_hover_shows_pointing_hand() {
+        use crate::RunTestUi;
+        let ctx = egui::Context::default();
+        let app = crate::app::tests::bare(crate::session::Session::new());
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut pos = egui::Pos2::ZERO;
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let start = ui.cursor().min;
+                let _ = app.check_option(ui, false, "Test Option", None);
+                pos = egui::pos2(start.x + 30.0, start.y + 10.0);
+            });
+        });
+
+        raw.events.push(egui::Event::PointerMoved(pos));
+        let output = ctx.run_test_ui(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = app.check_option(ui, false, "Test Option", None);
+            });
+        });
+        assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::PointingHand);
+    }
 }
+
