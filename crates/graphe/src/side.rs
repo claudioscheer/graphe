@@ -1246,7 +1246,7 @@ fn search_input_box(
                     .frame(egui::Frame::NONE)
                     .margin(egui::Margin::ZERO)
                     .align(egui::Align2::LEFT_CENTER)
-                    .hint_text(hint)
+                    .hint_text(egui::RichText::new(hint).size(11.0))
                     .font(egui::FontId::proportional(13.0))
                     .text_color(paint::color(palette.ui_text))
                     .desired_width(text_w),
@@ -1576,4 +1576,38 @@ mod tests {
         assert!(!reloading);
         assert_eq!(repaint, None);
     }
+
+    #[test]
+    fn test_search_input_box_placeholder_size() {
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, 20.0);
+        let palette = graphe_domain::theme::palette(false);
+        let mut query = String::new();
+        let hint = "Buscar por palavra...";
+        let output = ctx.run_test_ui(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = super::search_input_box(ui, &mut query, hint, palette);
+            });
+        });
+
+        fn galley_font_size(output: &egui::FullOutput, needle: &str) -> Option<f32> {
+            fn walk(shape: &egui::Shape, needle: &str) -> Option<f32> {
+                match shape {
+                    egui::Shape::Text(text) if text.galley.job.text.contains(needle) => text
+                        .galley
+                        .job
+                        .sections
+                        .first()
+                        .map(|section| section.format.font_id.size),
+                    egui::Shape::Vec(list) => list.iter().find_map(|shape| walk(shape, needle)),
+                    _ => None,
+                }
+            }
+            output.shapes.iter().find_map(|cs| walk(&cs.shape, needle))
+        }
+
+        let size = galley_font_size(&output, hint).expect("placeholder painted");
+        assert_eq!(size, 11.0, "placeholder font size must be 11.0, not the large reader body font");
+    }
 }
+
