@@ -636,6 +636,9 @@ impl GrapheApp {
 
         let entry = self.session.dict_entry.clone();
         let topic = self.session.dict_query.clone();
+        let dict_font = graphe_domain::dict::dict_font_size(self.session.font_size);
+        let meta_font = (dict_font - 1.0).max(13.0);
+        let lexeme_font = (self.session.font_size * 1.25).max(22.0);
 
         // A wide entry must scroll inside the panel. Growing the scroll area
         // pushes the study pane and leaves an unpainted gap, and the resize
@@ -682,7 +685,7 @@ impl GrapheApp {
                                 let lexeme = graphe_domain::bidi::display_text(lexeme);
                                 ui.label(
                                     egui::RichText::new(lexeme.as_ref())
-                                        .size(24.0)
+                                        .size(lexeme_font)
                                         .color(paint::color(palette.ui_text)),
                                 );
                                 ui.add_space(2.0);
@@ -708,7 +711,7 @@ impl GrapheApp {
                             if !meta.is_empty() {
                                 ui.label(
                                     egui::RichText::new(&meta)
-                                        .size(13.0)
+                                        .size(meta_font)
                                         .italics()
                                         .color(paint::color(palette.ui_text_muted)),
                                 );
@@ -724,7 +727,7 @@ impl GrapheApp {
                                 let short_def = graphe_domain::bidi::display_text(short_def);
                                 ui.label(
                                     egui::RichText::new(short_def.as_ref())
-                                        .size(13.0)
+                                        .size(dict_font)
                                         .strong()
                                         .color(paint::color(palette.ui_text)),
                                 );
@@ -749,14 +752,14 @@ impl GrapheApp {
                                 ui.horizontal_wrapped(|ui| {
                                     ui.label(
                                         egui::RichText::new(i18n::t("dictNoDictsConfigured"))
-                                            .size(13.0)
+                                            .size(dict_font)
                                             .color(paint::color(palette.ui_text_subtle)),
                                     );
                                     if ui
                                         .link(
                                             egui::RichText::new(i18n::t("settings"))
-                                                .size(13.0)
-                                                .color(paint::color(palette.ui_link)),
+                                                 .size(dict_font)
+                                                 .color(paint::color(palette.ui_link)),
                                         )
                                         .clicked()
                                     {
@@ -767,7 +770,7 @@ impl GrapheApp {
                                 paint::show_html(
                                     ui,
                                     &self.session.dict_body,
-                                    13.0,
+                                    dict_font,
                                     paint::color(palette.ui_text),
                                     paint::color(if self.session.dark {
                                         palette.ui_text_subtle
@@ -1608,6 +1611,47 @@ mod tests {
 
         let size = galley_font_size(&output, hint).expect("placeholder painted");
         assert_eq!(size, 11.0, "placeholder font size must be 11.0, not the large reader body font");
+    }
+
+    #[test]
+    fn test_dictionary_panel_scales_font_size() {
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.session.sidebar = "dictionary".to_string();
+        app.session.dict_query = "G3056".to_string();
+        app.session.dict_body = "<p>Palavra grega logos</p>".to_string();
+
+        fn get_font_size_for_needle(app: &mut crate::app::GrapheApp, font_size: f32, needle: &str) -> f32 {
+            app.session.font_size = font_size;
+            let ctx = egui::Context::default();
+            crate::paint::apply(&ctx, app.session.dark, app.session.font_size);
+            let output = ctx.run_test_ui(Default::default(), |ctx| {
+                let palette = graphe_domain::theme::palette(app.session.dark);
+                app.sidebar(ctx, palette);
+            });
+            fn walk(shape: &egui::Shape, needle: &str) -> Option<f32> {
+                match shape {
+                    egui::Shape::Text(text) if text.galley.job.text.contains(needle) => text
+                        .galley
+                        .job
+                        .sections
+                        .first()
+                        .map(|section| section.format.font_id.size),
+                    egui::Shape::Vec(list) => list.iter().find_map(|shape| walk(shape, needle)),
+                    _ => None,
+                }
+            }
+            output
+                .shapes
+                .iter()
+                .find_map(|cs| walk(&cs.shape, needle))
+                .expect("needle text must be painted")
+        }
+
+        let size_default = get_font_size_for_needle(&mut app, 20.0, "Palavra grega logos");
+        assert_eq!(size_default, 16.0);
+
+        let size_large = get_font_size_for_needle(&mut app, 24.0, "Palavra grega logos");
+        assert_eq!(size_large, 20.0);
     }
 }
 

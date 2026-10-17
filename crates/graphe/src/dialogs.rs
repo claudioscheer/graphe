@@ -395,12 +395,13 @@ impl GrapheApp {
         } else {
             i18n::t("dictionary")
         };
+        let dict_font = graphe_domain::dict::dict_font_size(self.session.font_size);
         let usage = format!("{} ({kind})", i18n::t("dictUsageBody"));
         let count = i18n::t("dictTotalWords").replace("{count}", &info.count.to_string());
         info_section(ui, dark, "dictUsageTitle", "dict-info-usage", |ui| {
             ui.label(
                 egui::RichText::new(usage)
-                    .size(13.0)
+                    .size(dict_font)
                     .color(paint::color(palette.ui_text_muted)),
             );
         });
@@ -413,7 +414,7 @@ impl GrapheApp {
             |ui| {
                 ui.label(
                     egui::RichText::new(count)
-                        .size(13.0)
+                        .size(dict_font)
                         .color(paint::color(palette.ui_text_muted)),
                 );
                 ui.label(
