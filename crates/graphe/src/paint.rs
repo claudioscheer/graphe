@@ -78,14 +78,17 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
         let Some(list) = fonts.families.get_mut(&family) else {
             continue;
         };
-        let at = list
-            .iter()
-            .position(|name| name == "NotoEmoji-Regular")
-            .unwrap_or(list.len());
-        list.insert(at, "DejaVuSans".to_owned());
+        let mut ordered = Vec::new();
         if fonts.font_data.contains_key("system-ui") {
-            list.insert(at, "system-ui".to_owned());
+            ordered.push("system-ui".to_owned());
         }
+        ordered.push("DejaVuSans".to_owned());
+        for name in list.iter() {
+            if !ordered.contains(name) {
+                ordered.push(name.clone());
+            }
+        }
+        *list = ordered;
     }
     ctx.set_fonts(fonts);
 }
@@ -94,8 +97,14 @@ fn system_ui_font() -> Option<Vec<u8>> {
     [
         r"C:\Windows\Fonts\segoeui.ttf",
         r"C:\Windows\Fonts\arial.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/SFCompact.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/Library/Fonts/Arial Unicode.ttf",
     ]
@@ -1513,6 +1522,32 @@ mod tests {
                     u32::from(ch)
                 );
             }
+        });
+    }
+
+    #[test]
+    fn font_definitions_prioritize_system_and_dejavu_fonts() {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        ));
+        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
+            install_fonts(ctx);
+        });
+        let _ = ctx.run_test_ui(raw, |_| {});
+        ctx.fonts(|fonts| {
+            let families = fonts.definitions();
+            let proportional = families
+                .families
+                .get(&egui::FontFamily::Proportional)
+                .expect("proportional font family");
+            let first = &proportional[0];
+            assert!(
+                first == "system-ui" || first == "DejaVuSans",
+                "first font must be system-ui or DejaVuSans to prevent pixelated Ubuntu-Light fallback, got: {first}"
+            );
         });
     }
 
