@@ -5421,6 +5421,22 @@ pub(crate) mod tests {
 
         let (first_link_book, first_link_chapter, first_link_verse, link_pos) = {
             let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
+            for (i, link) in window.links.iter().enumerate() {
+                let slice = if link.end <= window.galley.job.text.len() {
+                    let chars: Vec<char> = window.galley.job.text.chars().collect();
+                    if link.end <= chars.len() {
+                        chars[link.start..link.end].iter().collect::<String>()
+                    } else {
+                        "OUT OF CHARS".to_string()
+                    }
+                } else {
+                    "OUT OF BOUNDS".to_string()
+                };
+                let cursor_start = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
+                let cursor_end = window.galley.pos_from_cursor(egui::text::CCursor::new(link.end));
+                println!("LINK #{i}: start={}, end={}, book={}, chapter={}, verse={:?}, text={:?}, pos_start={:?}, pos_end={:?}",
+                    link.start, link.end, link.book, link.chapter, link.verse, slice, cursor_start.min, cursor_end.min);
+            }
             assert!(!window.links.is_empty(), "there should be links in Hebrews 10:26");
             let first_link = &window.links[0];
             let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(first_link.start));
@@ -5585,6 +5601,247 @@ pub(crate) mod tests {
         assert_eq!(bible.book_number, 50);
         assert_eq!(bible.chapter, 17);
         assert_eq!(bible.selected_verse, Some(26));
+    }
+
+    #[test]
+    fn commentary_text_with_maqaf_renders_references_at_correct_positions() {
+        let text = "autor sagrado, ver <a class='bible' href='B:650 2:2'>Heb. 2:2</a>, <a class='bible' href='B:650 2:3'>3</a>; 6:48<strong>־; 1</strong>2:2529<strong>־</strong>. A seriedade da apostasia se vê no fato que o apóstata rejeita ao «único e perfeito sacrifício», que não pode ser substituído por outro. Portanto, se. o sacrifício de Cristo for rejeitado, não mais haverá expiação pelo pecado).\r\n</p><p>«...depois de termos recebido...»A «...verdade...» é a mensagem cristã, a esperança dada na expiação e no sacerdócio de Cristo, na «mensagem cristã». Esse é o uso normal do termo, nas páginas do N.T. (Ver <a class='bible' href='B:540 6:7'>II Cor. 6:7</a>; <a class='bible' href='B:560 1:13'>Efé. 1:13</a>, «palavra da verdade»; <a class='bible' href='B:550 2:5'>Gál. 2:5</a>";
+        let runs = graphe_domain::commentary_html::render_commentary_html(text, None);
+        let mut pieces = Vec::new();
+        for run in runs {
+            match run {
+                graphe_domain::commentary_html::CommentaryRun::Break => pieces.push(crate::study::CommentaryPiece::Break),
+                graphe_domain::commentary_html::CommentaryRun::Text { text, italic, bold } => {
+                    if italic || bold {
+                        pieces.push(crate::study::CommentaryPiece::Rich { text, italic, bold });
+                    } else {
+                        pieces.push(crate::study::CommentaryPiece::Text(text));
+                    }
+                }
+                graphe_domain::commentary_html::CommentaryRun::Link { label, book, chapter, verse, .. } => {
+                    pieces.push(crate::study::CommentaryPiece::Link { label, book, chapter, verse });
+                }
+            }
+        }
+        let ctx = egui::Context::default();
+        ctx.run_test_ui(Default::default(), |ui: &mut egui::Ui| {
+            let (galley, links) = crate::study::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+            // Verify no row has reversed words
+            for row in &galley.rows {
+                let row_text: String = row.glyphs.iter().map(|g| g.chr).collect();
+                assert!(!row_text.contains("odacep"), "row text should not be reversed: {row_text}");
+                assert!(!row_text.contains("aisatsopa"), "row text should not be reversed: {row_text}");
+            }
+            // Verify II Cor. 6:7 is present and its coordinates resolve correctly
+            let cor_link = links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
+                .expect("II Cor. 6:7 link must exist");
+            let start_cursor = galley.pos_from_cursor(egui::text::CCursor::new(cor_link.start));
+            let end_cursor = galley.pos_from_cursor(egui::text::CCursor::new(cor_link.end));
+            assert!(end_cursor.min.x > start_cursor.min.x || end_cursor.min.y > start_cursor.min.y, "link must have non-zero width");
+            let hit = crate::study::link_at(&galley, egui::Pos2::ZERO, &links, start_cursor.min + egui::vec2(2.0, 2.0));
+            assert_eq!(hit.map(|h| (h.book, h.chapter, h.verse)), Some((540, 6, Some(7))));
+        });
+    }
+
+    #[test]
+    fn clicking_champlin_hebrews_10_26_second_corinthians_ref_navigates_correctly() {
+        let user_profile = match std::env::var("USERPROFILE") {
+            Ok(val) => val,
+            Err(_) => return,
+        };
+        let comm_path = std::path::PathBuf::from(user_profile)
+            .join(".graphe")
+            .join("modules")
+            .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+        if !comm_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let commentary_pane = app.session.split_commentary(false);
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "champlin".into(),
+            name: "Champlin".into(),
+            kind: "commentary".into(),
+            path: comm_path,
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&commentary_pane) {
+            record.module_id = Some("champlin".into());
+        }
+
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(650, 10, Some(26));
+        app.loaded_key.clear();
+
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+
+        let at = egui::pos2(800.0, 400.0);
+        let mut time = 0.2;
+        let mut cor_found = false;
+        let mut cor_cursor = egui::Rect::ZERO;
+        for _ in 0..12 {
+            time += 0.05;
+            let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), wheel_down(at));
+            if let Some(window) = app.reading.commentary_window(&commentary_pane) {
+                if let Some(link) = window.links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7)) {
+                    cor_found = true;
+                    cor_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
+                    break;
+                }
+            }
+        }
+        assert!(cor_found, "II Cor. 6:7 link should be visible in commentary window");
+
+        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
+        let link_pos = egui::pos2(text_rect[0] + cor_cursor.min.x + 5.0, text_rect[1] + cor_cursor.min.y + 5.0);
+
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(link_pos),
+                egui::Event::PointerButton {
+                    pos: link_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(link_pos),
+                egui::Event::PointerButton {
+                    pos: link_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+
+        let bible = app.session.panes.get("pane-1").unwrap();
+        // Crucial: Must navigate to II Cor. 6:7 (540, 6, 7), NOT João 14:6 (500, 14, 6)
+        assert_eq!(bible.book_number, 540, "Must navigate to II Corinthians (540), not Jo 14:6");
+        assert_eq!(bible.chapter, 6);
+        assert_eq!(bible.selected_verse, Some(7));
+    }
+
+    #[test]
+    fn selecting_commentary_text_across_reference_preserves_selection() {
+        let user_profile = match std::env::var("USERPROFILE") {
+            Ok(val) => val,
+            Err(_) => return,
+        };
+        let comm_path = std::path::PathBuf::from(user_profile)
+            .join(".graphe")
+            .join("modules")
+            .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+        if !comm_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let commentary_pane = app.session.split_commentary(false);
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "champlin".into(),
+            name: "Champlin".into(),
+            kind: "commentary".into(),
+            path: comm_path,
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&commentary_pane) {
+            record.module_id = Some("champlin".into());
+        }
+
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(650, 10, Some(26));
+        app.loaded_key.clear();
+
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+
+        let marks = study_frame(&ctx, &mut app, 0.15, egui::Modifiers::default(), Vec::new());
+        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
+
+        let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
+        assert!(!window.links.is_empty(), "commentary window should have reference links");
+        let ref_link = &window.links[0];
+        let ref_start = window.galley.pos_from_cursor(egui::text::CCursor::new(ref_link.start));
+        let ref_end = window.galley.pos_from_cursor(egui::text::CCursor::new(ref_link.end));
+
+        // Start drag 30px before the reference link and drag past the reference link
+        let drag_start = egui::pos2((text_rect[0] + ref_start.min.x - 30.0).max(text_rect[0] + 5.0), text_rect[1] + ref_start.min.y + 5.0);
+        let drag_end = egui::pos2(text_rect[0] + ref_end.min.x + 30.0, text_rect[1] + ref_end.min.y + 5.0);
+
+        let mut time = 0.2;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(drag_start),
+                egui::Event::PointerButton {
+                    pos: drag_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+
+        // Move across the reference link while holding mouse down
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(drag_end)],
+        );
+
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: drag_end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+
+        // The text selection MUST NOT be cancelled or deselected when passing over the reference
+        assert!(
+            label_has_selection(&ctx),
+            "commentary must have active selection after dragging across reference link"
+        );
     }
 
     #[test]
