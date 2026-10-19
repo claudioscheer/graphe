@@ -1239,8 +1239,8 @@ impl GrapheApp {
         let hovering_link = pointer
             .and_then(|pos| link_at(&galley, link_origin, &links, pos))
             .is_some();
-        let selecting = !hovering_link
-            && (ui.input(|input| input.pointer.primary_down()) || label_has_selection(ui.ctx()));
+        let selecting = label_has_selection(ui.ctx())
+            || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
         let response = if selecting {
             ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
         } else {
@@ -1299,8 +1299,18 @@ impl GrapheApp {
                 char_to = (index + 48).min(total.max(1));
             }
         }
-        let (start, end) = piece_span(&paint.pieces, char_from, char_to);
         let key = GalleyKey::new(paint.fingerprint, width_px, font, text_color, link_color);
+        let locked_span = if label_has_selection(ui.ctx())
+            || ui.input(|input| input.pointer.primary_down())
+        {
+            self.reading
+                .commentary_window(pane_id)
+                .filter(|window| window.key == key)
+                .map(|window| (window.start, window.end))
+        } else {
+            None
+        };
+        let (start, end) = locked_span.unwrap_or_else(|| piece_span(&paint.pieces, char_from, char_to));
         let cached = self
             .reading
             .commentary_window(pane_id)
@@ -1339,8 +1349,8 @@ impl GrapheApp {
         let hovering_link = pointer
             .and_then(|pos| link_at(&galley, link_origin, &links, pos))
             .is_some();
-        let selecting = !hovering_link
-            && (ui.input(|input| input.pointer.primary_down()) || label_has_selection(ui.ctx()));
+        let selecting = label_has_selection(ui.ctx())
+            || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
         let response = if selecting {
             ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
         } else {
