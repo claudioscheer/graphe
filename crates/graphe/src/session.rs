@@ -287,6 +287,16 @@ impl Session {
         self.reveal_selected_verse(verse.is_some());
         if is_bible {
             self.note_bible_moved(&moved);
+        } else if let Some(verse) = verse {
+            self.queue_commentary_scroll(&moved, verse);
+            if let Some(target) = self.panes.get(&moved).and_then(|p| p.synced_to_pane_id.clone()) {
+                if let Some(bible_pane) = self.panes.get_mut(&target) {
+                    bible_pane.book_number = book;
+                    bible_pane.book_short_name = i18n::book_name(book).short;
+                    bible_pane.chapter = chapter;
+                    bible_pane.selected_verse = Some(verse);
+                }
+            }
         }
     }
 
@@ -1434,5 +1444,21 @@ mod tests {
         session.navigate(470, 5, Some(3));
         assert!(session.back(), "back should succeed after navigating to another verse");
         assert_eq!(session.selected_verses, vec![2]);
+    }
+
+    #[test]
+    fn navigating_commentary_pane_queues_commentary_scroll_and_syncs_bible() {
+        let mut session = Session::new();
+        let comm_pane = session.split_commentary(false);
+        if let Some(pane) = session.panes.get_mut(&comm_pane) {
+            pane.synced_to_pane_id = Some("pane-1".into());
+        }
+        session.active_pane_id = comm_pane.clone();
+        session.navigate(650, 10, Some(26));
+        assert_eq!(session.commentary_scroll_verse(&comm_pane), Some(26));
+        assert_eq!(session.panes["pane-1"].book_number, 650);
+        assert_eq!(session.panes["pane-1"].chapter, 10);
+        assert_eq!(session.panes["pane-1"].selected_verse, Some(26));
+        assert_eq!(session.selected_verses, vec![26]);
     }
 }

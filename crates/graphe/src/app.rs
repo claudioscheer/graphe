@@ -254,7 +254,7 @@ impl GrapheApp {
         self.sidebar(ui, &palette);
         self.editor(ui, &palette);
         self.dialogs(&ctx);
-        self.drain_navigation();
+        self.drain_navigation(&ctx);
         self.drain_picker();
     }
 }
@@ -458,7 +458,7 @@ impl GrapheApp {
     pub(crate) fn open_navigation(&mut self) {
         let modules = self.modules.clone();
         let modules_verses = modules.clone();
-        let pane = self.session.active_pane_id.clone();
+        let pane = self.session.navigation_target(&self.session.active_pane_id);
         let books = self.nav_books();
         let chapter_count_fn: Box<dyn FnMut(&str, i64) -> i64> =
             Box::new(move |_module: &str, book: i64| chapter_count(&modules, book));
@@ -466,10 +466,11 @@ impl GrapheApp {
             Box::new(move |_module: &str, book: i64, chapter: i64| {
                 verse_numbers(&modules_verses, book, chapter)
             });
+        let target = pane.clone();
         let pane_fn: Box<dyn FnMut(&str) -> Option<String>> =
-            Box::new(move |id: &str| (id == pane).then(|| "active".to_string()));
+            Box::new(move |id: &str| (id == target).then(|| "active".to_string()));
         let mut nav = NavigationSession::new(chapter_count_fn, verse_fn, pane_fn);
-        nav.open_for(&self.session.active_pane_id, books);
+        nav.open_for(&pane, books);
         nav.input = self.session.nav_input.clone();
         self.nav = Some(nav);
         self.nav_focus = true;
@@ -526,7 +527,7 @@ impl GrapheApp {
         }
     }
 
-    fn drain_navigation(&mut self) {
+    fn drain_navigation(&mut self, ctx: &egui::Context) {
         let Some(nav) = self.nav.as_mut() else {
             return;
         };
@@ -548,6 +549,7 @@ impl GrapheApp {
         }
         self.loaded_key.clear();
         self.sync_active_chapter();
+        ctx.request_repaint();
     }
 
     fn drain_picker(&mut self) {
@@ -5148,5 +5150,125 @@ pub(crate) mod tests {
         assert_eq!(app.session.selected_verses, vec![25]);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_navigation_targets_synced_bible_pane_when_commentary_active() {
+        let mut app = bare(Session::new());
+        let comm_pane = app.session.split_commentary(false);
+        if let Some(pane) = app.session.panes.get_mut(&comm_pane) {
+            pane.synced_to_pane_id = Some("pane-1".into());
+        }
+        app.session.active_pane_id = comm_pane;
+        app.open_navigation();
+        assert_eq!(
+            app.nav.as_ref().and_then(|n| n.active_pane_id.as_deref()),
+            Some("pane-1")
+        );
+    }
+
+    #[test]
+    fn typing_verse_reference_scrolls_to_verse_even_when_commentary_active() {
+        let userprofile = match std::env::var("USERPROFILE") {
+            Ok(val) => std::path::PathBuf::from(val),
+            Err(_) => return,
+        };
+        let bible_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("Nova Almeida Atualizada.bible.SQLite3");
+        if !bible_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("NAA", "NAA", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = 650;
+        app.session.panes.get_mut("pane-1").unwrap().chapter = 10;
+        app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
+
+        let comm_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+        if comm_path.exists() {
+            app.modules.push(graphe_store::catalog::InstalledModule {
+                id: "Champlin".into(),
+                name: "Champlin".into(),
+                kind: "commentary".into(),
+                path: comm_path,
+                short_title: None,
+                description: None,
+            });
+            let comm_pane = app.session.split_commentary(false);
+            if let Some(pane) = app.session.panes.get_mut(&comm_pane) {
+                pane.module_id = Some("Champlin".into());
+                pane.synced_to_pane_id = Some("pane-1".into());
+            }
+        }
+
+        let xref_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("The Treasury of Scripture Knowledge.crossreference.SQLite3");
+        if xref_path.exists() {
+            app.modules.push(graphe_store::catalog::InstalledModule {
+                id: "TSK".into(),
+                name: "TSK".into(),
+                kind: "crossreference".into(),
+                path: xref_path,
+                short_title: None,
+                description: None,
+            });
+            app.session.xref_modules = vec!["TSK".into()];
+        }
+
+        // Frame 0: render at top
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        // Open navigation dialog and type Hb 10:26 and press Enter
+        app.open_navigation();
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        let raw2 = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![
+                egui::Event::Text("Hb 10:26".into()),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: Some(egui::Key::Enter),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw2, |ui| app.show_workbench(ui));
+
+        assert_eq!(app.session.selected_verses, vec![26]);
+
+        for _ in 1..=5 {
+            let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        }
+
+        let marks = ctx.data(|d| d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks")).unwrap_or_default());
+        let offset = marks.iter().find(|(k, _)| k == "chapter-offset:pane-1").map(|(_, r)| *r).expect("chapter offset");
+        assert!(offset[1] > 4000.0, "bible pane should scroll to verse 26, got {}", offset[1]);
+
+        let comm_offset = marks.iter().find(|(k, _)| k.starts_with("commentary-offset")).map(|(_, r)| *r).expect("commentary offset");
+        assert!(comm_offset[1] > 50000.0, "commentary pane should scroll to verse 26, got {}", comm_offset[1]);
     }
 }

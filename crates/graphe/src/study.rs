@@ -704,6 +704,20 @@ impl GrapheApp {
             &format!("commentary-view:{pane_id}"),
             _output.inner_rect,
         );
+        #[cfg(test)]
+        {
+            let offset = egui::containers::scroll_area::State::load(ui.ctx(), commentary_scroll)
+                .map(|state| state.unclamped_offset().y)
+                .unwrap_or(0.0);
+            crate::chrome::mark_layout(
+                ui,
+                &format!("commentary-offset:{pane_id}"),
+                egui::Rect::from_min_size(
+                    egui::pos2(_output.content_size.y, offset),
+                    egui::vec2(_output.inner_rect.height(), 1.0),
+                ),
+            );
+        }
     }
 
     pub(crate) fn load_all_commentaries(&mut self, book: i64, chapter: i64, verse: Option<i64>) {
@@ -982,7 +996,7 @@ impl GrapheApp {
             .insert_chapter(key, fingerprint, verses, show_strongs, prefix)
     }
 
-    fn load_commentary(
+    pub(crate) fn load_commentary(
         &mut self,
         module: &InstalledModule,
         book: i64,
@@ -1262,6 +1276,7 @@ impl GrapheApp {
             if let Some(index) = anchor_for_verse(&paint.anchors, verse) {
                 let local = galley.pos_from_cursor(egui::text::CCursor::new(index));
                 ui.scroll_to_rect(local.translate(rect.min.to_vec2()), Some(egui::Align::TOP));
+                ui.ctx().request_repaint();
                 self.session.clear_commentary_scroll(pane_id);
             } else if !paint.pieces.is_empty() {
                 self.session.clear_commentary_scroll(pane_id);
@@ -1373,6 +1388,7 @@ impl GrapheApp {
                 let local = index.saturating_sub(before);
                 let cursor = galley.pos_from_cursor(egui::text::CCursor::new(local));
                 ui.scroll_to_rect(cursor.translate(rect.min.to_vec2()), Some(egui::Align::TOP));
+                ui.ctx().request_repaint();
             }
             self.session.clear_commentary_scroll(pane_id);
         }
@@ -1566,7 +1582,7 @@ pub(crate) struct CommentaryPaint {
     pub(crate) pieces: Arc<Vec<CommentaryPiece>>,
     fingerprint: u64,
     /// `(verse_from, verse_to, char index)` so a Bible verse can scroll this chapter.
-    anchors: Arc<Vec<(i64, i64, usize)>>,
+    pub(crate) anchors: Arc<Vec<(i64, i64, usize)>>,
 }
 
 impl CommentaryPaint {
@@ -2289,7 +2305,7 @@ fn commentary_plain(text: &str) -> String {
     graphe_domain::commentary_html::plain_text(text)
 }
 
-fn anchor_for_verse(anchors: &[(i64, i64, usize)], verse: i64) -> Option<usize> {
+pub(crate) fn anchor_for_verse(anchors: &[(i64, i64, usize)], verse: i64) -> Option<usize> {
     anchors
         .iter()
         .filter(|(from, to, _)| verse >= *from && verse <= *to)
