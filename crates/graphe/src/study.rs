@@ -1755,6 +1755,13 @@ impl ReadingCache {
         self.pane_galleys.clear();
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_galleys(&self) -> bool {
+        !self.verse_layouts.is_empty()
+            || !self.commentary_windows.is_empty()
+            || !self.commentary_galleys.is_empty()
+    }
+
     pub(crate) fn cached_verse_text(&self, key: &str) -> Option<Vec<(i64, String)>> {
         self.verse_text.get(key).cloned()
     }

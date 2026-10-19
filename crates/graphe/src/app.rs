@@ -87,6 +87,7 @@ pub fn run() -> eframe::Result {
                 matcher_lang: String::new(),
                 applied_dark: running.palette_dark,
                 applied_font: 20.0,
+                pending_transfer_fn: None,
                 theme_ready: false,
                 loaded_key: String::new(),
                 save_seen: 0,
@@ -122,6 +123,7 @@ pub(crate) struct GrapheApp {
     pub(crate) matcher_lang: String,
     applied_dark: bool,
     applied_font: f32,
+    pending_transfer_fn: Option<egui::epaint::FontColorTransferFunction>,
     theme_ready: bool,
     pub(crate) loaded_key: String,
     save_seen: usize,
@@ -224,11 +226,30 @@ impl GrapheApp {
         let ctx = ui.ctx().clone();
         self.pump_update();
         self.flush_saves();
+        let current_transfer = ctx.fonts(|f| f.options().color_transfer_function);
+        let atlas_rebuilt = self
+            .pending_transfer_fn
+            .is_some_and(|target| target == current_transfer);
+        if atlas_rebuilt {
+            self.pending_transfer_fn = None;
+            self.reading.clear();
+            ctx.request_repaint();
+        }
         let theme_changed = self.theme_ready && self.applied_dark != self.session.dark;
         let font_changed =
             self.theme_ready && (self.applied_font - self.session.font_size).abs() > 0.1;
         if !self.theme_ready || theme_changed || font_changed {
             paint::apply(&ctx, self.session.dark, self.session.font_size);
+            if theme_changed {
+                let target_transfer = if self.session.dark {
+                    egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+                } else {
+                    egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT
+                };
+                if current_transfer != target_transfer {
+                    self.pending_transfer_fn = Some(target_transfer);
+                }
+            }
             self.applied_dark = self.session.dark;
             self.applied_font = self.session.font_size;
             self.theme_ready = true;
@@ -239,6 +260,9 @@ impl GrapheApp {
                 self.reading.drop_shaped();
             } else {
                 self.reading.clear();
+            }
+            if theme_changed {
+                ctx.request_repaint();
             }
         }
         if let Some(text) = self.session.pending_copy.take() {
@@ -736,6 +760,11 @@ impl GrapheApp {
             self.reload_modules();
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn has_cached_galleys(&self) -> bool {
+        self.reading.has_galleys()
+    }
 }
 
 pub(crate) fn label_for(view: &str) -> String {
@@ -792,6 +821,7 @@ pub(crate) mod tests {
             matcher_lang: String::new(),
             applied_dark: false,
             applied_font: 20.0,
+            pending_transfer_fn: None,
             theme_ready: true,
             loaded_key: String::new(),
             save_seen: 0,
@@ -4605,28 +4635,13 @@ pub(crate) mod tests {
             .remember_verse_text("k1".into(), vec![(1, "In the beginning".into())]);
         assert!(app.reading.cached_verse_text("k1").is_some());
 
-        // Initial update in light theme
+        // Toggle to dark theme
+        app.session.dark = true;
         let mut raw = egui::RawInput::default();
         raw.screen_rect = Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
             egui::vec2(800.0, 600.0),
         ));
-        let _ = ctx.run_test_ui(raw.clone(), |ctx| {
-            let mut frame = eframe::Frame::_new_kittest();
-            <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
-        });
-        let ramp = ctx
-            .global_style()
-            .visuals
-            .text_options
-            .color_transfer_function;
-        assert_eq!(
-            ramp,
-            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
-        );
-
-        // Toggle to dark theme
-        app.session.dark = true;
         let _ = ctx.run_test_ui(raw.clone(), |ctx| {
             let mut frame = eframe::Frame::_new_kittest();
             <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
@@ -4640,7 +4655,8 @@ pub(crate) mod tests {
                 .visuals
                 .text_options
                 .color_transfer_function,
-            ramp
+            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT,
+            "dark theme must use dark mode transfer function"
         );
 
         // Repopulate and toggle back to light theme
@@ -4660,8 +4676,54 @@ pub(crate) mod tests {
                 .visuals
                 .text_options
                 .color_transfer_function,
-            ramp
+            egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT,
+            "light theme must restore light mode transfer function"
         );
+    }
+
+    #[test]
+    fn font_atlas_rebuild_transfer_fn_change_clears_reading_cache() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+
+        // Frame 1: initialize light theme on context
+        paint::install_fonts(&ctx);
+        paint::apply(&ctx, false, 20.0);
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        // Populate reading cache during settled light theme
+        app.reading
+            .remember_verse_text("k1".into(), vec![(1, "Verse 1".into())]);
+        assert!(app.reading.cached_verse_text("k1").is_some());
+
+        // Toggle to dark theme
+        app.session.dark = true;
+        // Frame 2: theme_changed triggers, sets dark visuals and flags pending_transfer_fn
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        // Cache was cleared on theme switch
+        assert!(app.reading.cached_verse_text("k1").is_none());
+        assert_eq!(
+            app.pending_transfer_fn,
+            Some(egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT)
+        );
+
+        // Re-populate reading cache before font atlas rebuild frame
+        app.reading
+            .remember_verse_text("k2".into(), vec![(2, "Verse 2".into())]);
+
+        // Frame 3: begin_pass rebuilds font atlas with DARK_MODE_DEFAULT; atlas_rebuilt triggers
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        assert!(app.pending_transfer_fn.is_none());
+        // Reading cache was cleared again on atlas rebuild to prevent invalid glyph UVs
+        assert!(app.reading.cached_verse_text("k2").is_none());
     }
 
     #[test]

@@ -548,12 +548,126 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
     let shot_dir = repo_root.join("temp").join("screenshots");
     let _ = std::fs::create_dir_all(&shot_dir);
 
-    let mut harness = workbench(1200.0, 800.0);
-    harness.run();
+    i18n::set_lang("pt");
+    let mut app = bare(Session::new());
 
-    // Open settings and toggle to dark theme
+    let user_profile = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let bible_path = std::path::PathBuf::from(&user_profile)
+        .join(".graphe")
+        .join("modules")
+        .join("Nova Almeida Atualizada.bible.SQLite3");
+    let comm_path = std::path::PathBuf::from(&user_profile)
+        .join(".graphe")
+        .join("modules")
+        .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+
+    let (bible_path, comm_path) = if bible_path.exists() && comm_path.exists() {
+        (bible_path, comm_path)
+    } else {
+        let dir = std::env::temp_dir().join(format!("graphe-theme-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        let b_path = dir.join("test.bible.SQLite3");
+        let c_path = dir.join("test.commentary.SQLite3");
+        let sql_b = "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);\n\
+                     INSERT INTO verses VALUES (50, 1, 1, 'São estas as palavras que Moisés falou a todo o Israel.');\n\
+                     INSERT INTO verses VALUES (50, 1, 2, 'Jornada de onze dias há desde Horebe.');\n";
+        let sql_c = "CREATE TABLE commentaries (book_number INTEGER, chapter_number_from INTEGER, verse_number_from INTEGER, chapter_number_to INTEGER, verse_number_to INTEGER, text TEXT);\n\
+                     INSERT INTO commentaries VALUES (50, 1, 1, 1, 1, '<b>1</b> Estatísticas: 5º livro da Bíblia;');\n";
+        let _ = graphe_store::sqlite::init_module_sql(&b_path, sql_b);
+        let _ = graphe_store::sqlite::init_module_sql(&c_path, sql_c);
+        (b_path, c_path)
+    };
+
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "NAA".into(),
+        name: "NAA".into(),
+        kind: "bible".into(),
+        path: bible_path,
+        short_title: None,
+        description: None,
+    });
+    app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "Champlin".into(),
+        name: "Champlin".into(),
+        kind: "commentary".into(),
+        path: comm_path,
+        short_title: None,
+        description: None,
+    });
+    let comm_pane = app.session.split_commentary(false);
+    if let Some(record) = app.session.panes.get_mut(&comm_pane) {
+        record.module_id = Some("Champlin".into());
+        record.synced_to_pane_id = Some("pane-1".into());
+    }
+
+    app.session.active_pane_id = "pane-1".into();
+    app.session.navigate(50, 1, None);
+
+    // Start in dark mode
+    app.session.dark = true;
+
+    let mut fonts_ready = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .with_max_steps(16)
+        .with_accessibility_check(false)
+        .build_ui_state(
+            move |ui, app: &mut GrapheApp| {
+                if !fonts_ready {
+                    paint::install_fonts(ui.ctx());
+                    paint::apply(ui.ctx(), app.session.dark, app.session.font_size);
+                    fonts_ready = true;
+                }
+                app.show_workbench(ui);
+            },
+            app,
+        );
+
+    // Initial run in dark mode
+    harness.run();
+    assert!(harness.ctx.global_style().visuals.dark_mode);
+    assert_eq!(
+        harness
+            .ctx
+            .global_style()
+            .visuals
+            .text_options
+            .color_transfer_function,
+        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+    );
+
+    // Open settings and switch to light mode
     harness.state_mut().session.dialog = Dialog::Settings;
     harness.run();
+    harness.state_mut().session.dark = false;
+    harness.run();
+
+    assert!(!harness.ctx.global_style().visuals.dark_mode);
+    assert_eq!(
+        harness
+            .ctx
+            .global_style()
+            .visuals
+            .text_options
+            .color_transfer_function,
+        egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT
+    );
+
+    // Verify verse rows/text are rendered and present in reading cache
+    assert!(
+        harness.state().has_cached_galleys(),
+        "reading cache must have shaped galleys after switching to light theme"
+    );
+
+    let img_after = harness.render().expect("render after theme switch");
+    let _ = img_after.save(shot_dir.join("9-after.png"));
+
+    // Switch back to dark mode
     harness.state_mut().session.dark = true;
     harness.run();
 
@@ -567,11 +681,12 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
             .color_transfer_function,
         egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
     );
+    assert!(
+        harness.state().has_cached_galleys(),
+        "reading cache must have shaped galleys after switching to dark theme"
+    );
 
-    let img_after = harness.render().expect("render after theme switch");
-    let _ = img_after.save(shot_dir.join("9-after.png"));
-
-    // Toggle back to light theme
+    // Switch back to light mode again
     harness.state_mut().session.dark = false;
     harness.run();
 
@@ -583,7 +698,11 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
             .visuals
             .text_options
             .color_transfer_function,
-        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+        egui::epaint::FontColorTransferFunction::LIGHT_MODE_DEFAULT
+    );
+    assert!(
+        harness.state().has_cached_galleys(),
+        "reading cache must have shaped galleys after switching back to light theme"
     );
 }
 
