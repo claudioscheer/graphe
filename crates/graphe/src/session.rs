@@ -276,6 +276,7 @@ impl Session {
                 return;
             };
             pane.book_number = book;
+            pane.book_short_name = i18n::book_name(book).short;
             pane.chapter = chapter;
             pane.selected_verse = verse;
             panes::push_nav_history_entry(pane);
@@ -404,7 +405,7 @@ impl Session {
                 module_id: None,
                 book_number,
                 chapter,
-                book_short_name: String::new(),
+                book_short_name: i18n::book_name(book_number).short,
                 selected_verse: None,
                 nav_history: Vec::new(),
                 nav_history_idx: -1,
@@ -446,11 +447,7 @@ impl Session {
         let pane = self.panes.get(&target);
         let book = pane.map(|pane| pane.book_number).unwrap_or(10);
         let chapter = pane.map(|pane| pane.chapter).unwrap_or(1);
-        let short = pane
-            .map(|pane| pane.book_short_name.trim())
-            .filter(|name| !name.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| i18n::book_name(book).short);
+        let short = i18n::book_name(book).short;
         self.chapter_text
             .iter()
             .filter(|(verse, _)| self.selected_verses.contains(verse))
@@ -978,6 +975,7 @@ impl Session {
 fn apply_entry(pane: &mut PaneRecord, entry: &NavHistoryEntry) {
     pane.module_id = Some(entry.module_id.clone());
     pane.book_number = entry.book_number;
+    pane.book_short_name = i18n::book_name(entry.book_number).short;
     pane.chapter = entry.chapter;
     pane.selected_verse = entry.verse;
 }
@@ -1028,7 +1026,7 @@ fn bible_pane(id: &str, label: &str) -> PaneRecord {
         module_id: None,
         book_number: 10,
         chapter: 1,
-        book_short_name: String::new(),
+        book_short_name: i18n::book_name(10).short,
         selected_verse: None,
         nav_history: Vec::new(),
         nav_history_idx: -1,
@@ -1390,5 +1388,24 @@ mod tests {
         session.show_chapter(vec![(1, "x".into()), (2, "y".into())]);
         assert!(session.selected_verses.is_empty());
         assert!(session.scroll_verse.is_none());
+    }
+
+    #[test]
+    fn copying_hebrews_verse_copies_hebrews_not_genesis() {
+        let mut session = Session::new();
+        if let Some(pane) = session.panes.get_mut("pane-1") {
+            pane.book_short_name = "Gn".into();
+        }
+        session.navigate(650, 10, Some(26));
+        session.show_chapter(vec![(
+            26,
+            "Porque, se pecarmos voluntariamente, depois de termos recebido o pleno conhecimento da verdade...".into(),
+        )]);
+        session.selected_verses = vec![26];
+        let copied = session.copy_selection();
+        assert!(
+            copied.starts_with("[Hb 10:26]") || copied.starts_with("[Heb 10:26]"),
+            "expected Hebrews citation, got: {copied}"
+        );
     }
 }
