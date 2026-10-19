@@ -2730,6 +2730,33 @@ pub(crate) mod tests {
         marks
     }
 
+    fn study_frame_output(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        time: f64,
+        modifiers: egui::Modifiers,
+        events: Vec<egui::Event>,
+    ) -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
+        let mut raw = egui::RawInput::default();
+        raw.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        raw.time = Some(time);
+        raw.events.push(egui::Event::ModifiersChanged(modifiers));
+        raw.events.extend(events);
+        let palette = theme::palette(false);
+        let mut marks = Vec::new();
+        let output = ctx.run_test_ui(raw, |ctx| {
+            app.editor(ctx, palette);
+            marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+        });
+        (output, marks)
+    }
+
     #[test]
     fn commentary_badge_lists_the_bible_views_it_can_follow() {
         i18n::set_lang("pt");
@@ -4145,6 +4172,139 @@ pub(crate) mod tests {
         assert!(
             chars_delta > 200 && chars_delta < 12_000,
             "a font step wrapped {chars_delta} commentary chars"
+        );
+    }
+
+    #[test]
+    fn commentary_selected_text_stays_on_words_when_scrolling() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.loaded_key = ":10:1:pane-1".into();
+        let pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&pane) {
+            record.module_id = Some("notes".into());
+        }
+        let paragraph = "A graça e a verdade vieram por Jesus Cristo. ".repeat(40);
+        let mut pieces = Vec::new();
+        for verse in 1..=20 {
+            if verse > 1 {
+                pieces.push(crate::study::CommentaryPiece::Break);
+            }
+            pieces.push(crate::study::CommentaryPiece::Heading(verse.to_string()));
+            pieces.push(crate::study::CommentaryPiece::Text(paragraph.clone()));
+        }
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+
+        let warmed = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        let text_mark = *mark(&warmed, &format!("commentary-text:{pane}"));
+        let p_start = egui::pos2(text_mark[0] + 40.0, text_mark[1] + 30.0);
+        let p_end = egui::pos2(text_mark[0] + 160.0, text_mark[1] + 30.0);
+
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.2,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(p_start),
+                egui::Event::PointerButton {
+                    pos: p_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.25,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(p_end)],
+        );
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.3,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: p_end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        assert!(
+            label_has_selection(&ctx),
+            "commentary text must be selected after drag"
+        );
+
+        let (output, _) = study_frame_output(
+            &ctx,
+            &mut app,
+            0.35,
+            egui::Modifiers::default(),
+            vec![egui::Event::Copy],
+        );
+        let initial_copy = output.platform_output.commands.iter().find_map(|cmd| match cmd {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        });
+        assert!(
+            initial_copy.as_ref().is_some_and(|text| !text.is_empty()),
+            "selected text should be copied, got {initial_copy:?}"
+        );
+
+        let pointer = egui::pos2(text_mark[0] + 100.0, text_mark[1] + 100.0);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.4,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -180.0),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+
+        assert!(
+            label_has_selection(&ctx),
+            "selection must persist during and after scroll"
+        );
+
+        let (output, _) = study_frame_output(
+            &ctx,
+            &mut app,
+            0.5,
+            egui::Modifiers::default(),
+            vec![egui::Event::Copy],
+        );
+        let after_scroll_copy = output.platform_output.commands.iter().find_map(|cmd| match cmd {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            after_scroll_copy, initial_copy,
+            "highlighted and selected text must stay on the same words when scrolling"
         );
     }
 
