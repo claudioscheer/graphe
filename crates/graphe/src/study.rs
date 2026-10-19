@@ -1256,7 +1256,13 @@ impl GrapheApp {
         let hovering_link = pointer
             .and_then(|pos| link_at(&galley, link_origin, &links, pos))
             .is_some();
-        let selecting = label_has_selection(ui.ctx())
+        let clicking_link = hovering_link
+            && ui.input(|input| {
+                input.pointer.primary_down()
+                    || input.pointer.primary_released()
+                    || input.pointer.primary_clicked()
+            });
+        let selecting = (label_has_selection(ui.ctx()) && !clicking_link)
             || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
         let response = if selecting {
             ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
@@ -1284,7 +1290,9 @@ impl GrapheApp {
         }
         let pointer = response
             .hover_pos()
-            .or_else(|| response.interact_pointer_pos());
+            .or_else(|| response.interact_pointer_pos())
+            .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+            .or_else(|| ui.input(|i| i.pointer.latest_pos()));
         let link = pointer.and_then(|pos| link_at(&galley, rect.min, &links, pos));
         if link.is_some() && response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1292,6 +1300,9 @@ impl GrapheApp {
         if response.clicked() {
             if let Some(hit) = link {
                 self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
+                if let Some(plugin) = ui.ctx().plugin_opt::<egui::text_selection::LabelSelectionState>() {
+                    plugin.lock().clear_selection();
+                }
                 ui.ctx().request_repaint();
             }
         }
@@ -1367,7 +1378,13 @@ impl GrapheApp {
         let hovering_link = pointer
             .and_then(|pos| link_at(&galley, link_origin, &links, pos))
             .is_some();
-        let selecting = label_has_selection(ui.ctx())
+        let clicking_link = hovering_link
+            && ui.input(|input| {
+                input.pointer.primary_down()
+                    || input.pointer.primary_released()
+                    || input.pointer.primary_clicked()
+            });
+        let selecting = (label_has_selection(ui.ctx()) && !clicking_link)
             || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
         let response = if selecting {
             ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
@@ -1394,7 +1411,9 @@ impl GrapheApp {
         }
         let pointer = response
             .hover_pos()
-            .or_else(|| response.interact_pointer_pos());
+            .or_else(|| response.interact_pointer_pos())
+            .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+            .or_else(|| ui.input(|i| i.pointer.latest_pos()));
         let link = pointer.and_then(|pos| link_at(&galley, rect.min, &links, pos));
         if link.is_some() && response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1402,6 +1421,9 @@ impl GrapheApp {
         if response.clicked() {
             if let Some(hit) = link {
                 self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
+                if let Some(plugin) = ui.ctx().plugin_opt::<egui::text_selection::LabelSelectionState>() {
+                    plugin.lock().clear_selection();
+                }
                 ui.ctx().request_repaint();
             }
         }
@@ -1598,12 +1620,12 @@ impl CommentaryPaint {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct GalleyKey {
-    fingerprint: u64,
-    width: i32,
-    font_bits: u32,
-    text: u32,
-    link: u32,
+pub(crate) struct GalleyKey {
+    pub(crate) fingerprint: u64,
+    pub(crate) width: i32,
+    pub(crate) font_bits: u32,
+    pub(crate) text: u32,
+    pub(crate) link: u32,
 }
 
 impl GalleyKey {
@@ -1640,12 +1662,12 @@ struct CommentaryGalley {
     links: Arc<Vec<LinkHit>>,
 }
 
-struct CommentaryWindow {
-    key: GalleyKey,
-    start: usize,
-    end: usize,
-    galley: Arc<egui::Galley>,
-    links: Arc<Vec<LinkHit>>,
+pub(crate) struct CommentaryWindow {
+    pub(crate) key: GalleyKey,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) galley: Arc<egui::Galley>,
+    pub(crate) links: Arc<Vec<LinkHit>>,
 }
 
 struct RowHeights {
@@ -1705,12 +1727,13 @@ struct VerseLayout {
     strongs: Vec<StrongHit>,
 }
 
-struct LinkHit {
-    start: usize,
-    end: usize,
-    book: i64,
-    chapter: i64,
-    verse: Option<i64>,
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LinkHit {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) book: i64,
+    pub(crate) chapter: i64,
+    pub(crate) verse: Option<i64>,
 }
 
 pub(crate) struct ReadingCache {
@@ -1867,7 +1890,7 @@ impl ReadingCache {
         );
     }
 
-    fn commentary_window(&self, pane_id: &str) -> Option<&CommentaryWindow> {
+    pub(crate) fn commentary_window(&self, pane_id: &str) -> Option<&CommentaryWindow> {
         self.commentary_windows.get(pane_id)
     }
 
@@ -2678,7 +2701,7 @@ fn strong_at(layout: &VerseLayout, origin: egui::Pos2, pos: egui::Pos2) -> Optio
         .find(|hit| index >= hit.start && index < hit.end)
 }
 
-fn link_at<'a>(
+pub(crate) fn link_at<'a>(
     galley: &egui::Galley,
     origin: egui::Pos2,
     links: &'a [LinkHit],

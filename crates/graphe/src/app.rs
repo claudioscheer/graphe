@@ -259,7 +259,7 @@ impl GrapheApp {
     }
 }
 
-fn label_has_selection(ctx: &egui::Context) -> bool {
+pub(crate) fn label_has_selection(ctx: &egui::Context) -> bool {
     ctx.plugin_opt::<egui::text_selection::LabelSelectionState>()
         .is_some_and(|plugin| plugin.lock().has_selection())
 }
@@ -5148,6 +5148,306 @@ pub(crate) mod tests {
         let offset = *mark(&frame1, "chapter-offset:pane-1");
         assert!(offset[1] > 200.0, "offset was {}", offset[1]);
         assert_eq!(app.session.selected_verses, vec![25]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clicking_commentary_body_ref_after_selecting_text() {
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir = std::env::temp_dir().join(format!("graphe-comm-link-sel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        let commentary_pane = app.session.split_commentary(false);
+        let path = std::path::PathBuf::from("notes.commentaries.SQLite3");
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&commentary_pane) {
+            record.module_id = Some("notes".into());
+        }
+        let pieces = vec![
+            crate::study::CommentaryPiece::Heading("Commentary".into()),
+            crate::study::CommentaryPiece::Break,
+            crate::study::CommentaryPiece::Text("See ".into()),
+            crate::study::CommentaryPiece::Link {
+                label: "Gn 1:25".into(),
+                book: 10,
+                chapter: 1,
+                verse: Some(25),
+            },
+        ];
+        let key = crate::study::commentary_key(&path, 10, 1, i18n::get_current_lang().as_str());
+        app.reading
+            .commentary
+            .insert(key, crate::study::CommentaryPaint::new(pieces));
+
+        let mut time = 0.0;
+        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
+        let p_start = egui::pos2(text_rect[0] + 10.0, text_rect[1] + 10.0);
+        let p_end = egui::pos2(text_rect[0] + 80.0, text_rect[1] + 10.0);
+        let link_pos = egui::pos2(text_rect[0] + 35.0, text_rect[1] + 30.0);
+
+        // Drag to select "Commentary"
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(p_start),
+                egui::Event::PointerButton {
+                    pos: p_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(p_end)],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: p_end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        assert!(label_has_selection(&ctx), "text should be selected");
+
+        // Hover over link
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(link_pos)],
+        );
+
+        // Click link: press down at time, release
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(link_pos + egui::vec2(1.0, 0.0))],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos + egui::vec2(1.0, 0.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        // Frame after click should have scrolled Bible to verse 25
+        time += 0.1;
+        let frame1 = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let offset = *mark(&frame1, "chapter-offset:pane-1");
+        assert!(offset[1] > 200.0, "offset was {}", offset[1]);
+        assert_eq!(app.session.selected_verses, vec![25]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clicking_champlin_hebrews_10_26_ref_after_selecting_text() {
+        let user_profile = match std::env::var("USERPROFILE") {
+            Ok(val) => val,
+            Err(_) => return,
+        };
+        let comm_path = std::path::PathBuf::from(user_profile)
+            .join(".graphe")
+            .join("modules")
+            .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+        if !comm_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        let dir = std::env::temp_dir().join(format!("graphe-comm-champ-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("bible.SQLite3");
+        let line = "No principio criou Deus os ceus e a terra. ".repeat(6);
+        write_chapter(&bible_path, 40, |verse| format!("{verse} {line}"));
+        app.modules.push(bible_module("bible", "Bible", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("bible".into());
+
+        let commentary_pane = app.session.split_commentary(false);
+        app.modules.push(graphe_store::catalog::InstalledModule {
+            id: "champlin".into(),
+            name: "Champlin".into(),
+            kind: "commentary".into(),
+            path: comm_path.clone(),
+            short_title: None,
+            description: None,
+        });
+        if let Some(record) = app.session.panes.get_mut(&commentary_pane) {
+            record.module_id = Some("champlin".into());
+        }
+
+        // Navigate both to Hebrews (650) chapter 10, verse 26
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(650, 10, Some(26));
+        app.loaded_key.clear();
+
+        let mut time = 0.0;
+        let _marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        time += 0.1;
+        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
+
+        // Select some text in the commentary
+        let p_start = egui::pos2(text_rect[0] + 50.0, 300.0);
+        let p_end = egui::pos2(text_rect[0] + 150.0, 300.0);
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![
+                egui::Event::PointerMoved(p_start),
+                egui::Event::PointerButton {
+                    pos: p_start,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(p_end)],
+        );
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: p_end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        assert!(
+            label_has_selection(&ctx),
+            "commentary must have active selection"
+        );
+
+        let (first_link_book, first_link_chapter, first_link_verse, link_pos) = {
+            let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
+            assert!(!window.links.is_empty(), "there should be links in Hebrews 10:26");
+            let first_link = &window.links[0];
+            let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(first_link.start));
+            let link_pos = egui::pos2(text_rect[0] + link_cursor.min.x + 5.0, text_rect[1] + link_cursor.min.y + 5.0);
+            (first_link.book, first_link.chapter, first_link.verse, link_pos)
+        };
+
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerMoved(link_pos)],
+        );
+
+        time += 0.1;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        time += 0.05;
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            time,
+            egui::Modifiers::default(),
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+
+        time += 0.1;
+        let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
+        let bible_pane = app.session.panes.get("pane-1").unwrap();
+        assert_eq!(bible_pane.book_number, first_link_book);
+        assert_eq!(bible_pane.chapter, first_link_chapter);
+        assert_eq!(bible_pane.selected_verse, first_link_verse);
+        assert!(!label_has_selection(&ctx), "selection should be cleared after navigating via link");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
