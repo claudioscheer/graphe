@@ -537,3 +537,54 @@ fn missing_reference_gives_feedback_in_workbench() {
     let _ = img_after.save(shot_dir.join("62-after.png"));
 }
 
+#[test]
+fn theme_switch_preserves_text_rendering_in_workbench() {
+    let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let shot_dir = repo_root.join("temp").join("screenshots");
+    let _ = std::fs::create_dir_all(&shot_dir);
+
+    let mut harness = workbench(1200.0, 800.0);
+    harness.run();
+
+    // Open settings and toggle to dark theme
+    harness.state_mut().session.dialog = Dialog::Settings;
+    harness.run();
+    harness.state_mut().session.dark = true;
+    harness.run();
+
+    assert!(harness.ctx.global_style().visuals.dark_mode);
+    assert_eq!(
+        harness
+            .ctx
+            .global_style()
+            .visuals
+            .text_options
+            .color_transfer_function,
+        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+    );
+
+    let img_after = harness.render().expect("render after theme switch");
+    let _ = img_after.save(shot_dir.join("9-after.png"));
+
+    // Toggle back to light theme
+    harness.state_mut().session.dark = false;
+    harness.run();
+
+    assert!(!harness.ctx.global_style().visuals.dark_mode);
+    assert_eq!(
+        harness
+            .ctx
+            .global_style()
+            .visuals
+            .text_options
+            .color_transfer_function,
+        egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+    );
+}
+
+
