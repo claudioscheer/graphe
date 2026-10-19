@@ -610,8 +610,6 @@ impl GrapheApp {
                 }
 
                 let active_path = self.active_dictionary().map(|m| m.path.clone());
-                let last_query_id = ui.scope_id().with("dict_last_query");
-                let last_query = ui.data(|d| d.get_temp::<String>(last_query_id));
 
                 // Row 3: Topic search input with Clear button
                 let (response, box_rect, cleared) = search_input_box(
@@ -623,10 +621,6 @@ impl GrapheApp {
                 #[cfg(test)]
                 crate::chrome::mark_layout(ui, "dict-search-box", box_rect);
 
-                let query_changed =
-                    response.changed() || last_query.as_deref() != Some(&self.session.dict_query);
-                ui.data_mut(|d| d.insert_temp(last_query_id, self.session.dict_query.clone()));
-
                 if cleared {
                     self.session.dict_body.clear();
                     self.session.dict_entry = None;
@@ -637,9 +631,9 @@ impl GrapheApp {
                     self.session.dict_suggestions.clear();
                     self.session.dict_suggestions_open = false;
                     self.session.dict_suggestions_index = None;
-                } else if query_changed {
+                } else if response.changed() {
                     let trimmed = self.session.dict_query.trim();
-                    if trimmed.is_empty() {
+                    if trimmed.chars().count() < 2 {
                         self.session.dict_suggestions.clear();
                         self.session.dict_suggestions_open = false;
                         self.session.dict_suggestions_index = None;
@@ -650,8 +644,6 @@ impl GrapheApp {
                             !self.session.dict_suggestions.is_empty();
                         self.session.dict_suggestions_index = None;
                     }
-                } else if response.clicked() && !self.session.dict_suggestions.is_empty() {
-                    self.session.dict_suggestions_open = true;
                 }
 
                 if self.session.dict_suggestions_open && !self.session.dict_suggestions.is_empty() {
@@ -670,6 +662,7 @@ impl GrapheApp {
                         };
                         ui.ctx().request_repaint();
                     } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                        self.session.dict_suggestions.clear();
                         self.session.dict_suggestions_open = false;
                         self.session.dict_suggestions_index = None;
                         ui.ctx().request_repaint();
@@ -695,6 +688,7 @@ impl GrapheApp {
                     } else {
                         self.session.dict_query.clone()
                     };
+                    self.session.dict_suggestions.clear();
                     self.session.dict_suggestions_open = false;
                     self.session.dict_suggestions_index = None;
                     let trimmed = topic.trim();
@@ -710,7 +704,10 @@ impl GrapheApp {
                 if self.session.dict_suggestions_open && !self.session.dict_suggestions.is_empty() {
                     let mut picked = None;
                     let popup_pos = egui::pos2(box_rect.left(), box_rect.bottom() + 2.0);
-                    let popup_width = box_rect.width();
+                    let box_width = box_rect.width();
+                    let frame_stroke = 1.0_f32;
+                    let frame_margin_x = 2.0_f32;
+                    let inner_width = (box_width - 2.0 * (frame_stroke + frame_margin_x)).max(10.0);
                     let suggestions = self.session.dict_suggestions.clone();
                     let active_idx = self.session.dict_suggestions_index;
 
@@ -718,10 +715,13 @@ impl GrapheApp {
                         .fixed_pos(popup_pos)
                         .order(egui::Order::Foreground)
                         .show(ui.ctx(), |ui| {
+                            ui.set_width(box_width);
+                            ui.set_max_width(box_width);
+
                             let frame = egui::Frame::new()
                                 .fill(paint::color(palette.ui_surface_elevated))
                                 .stroke(egui::Stroke::new(
-                                    1.0_f32,
+                                    frame_stroke,
                                     paint::color(if self.session.dark {
                                         palette.ui_border_strong
                                     } else {
@@ -741,23 +741,23 @@ impl GrapheApp {
                                         35
                                     }),
                                 })
-                                .inner_margin(egui::Margin::symmetric(2, 4));
+                                .inner_margin(egui::Margin::symmetric(frame_margin_x as i8, 4));
 
                             frame.show(ui, |ui| {
-                                ui.set_width(popup_width);
-                                ui.set_max_width(popup_width);
+                                ui.set_width(inner_width);
+                                ui.set_max_width(inner_width);
                                 egui::ScrollArea::vertical()
                                     .max_height(200.0)
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
-                                        ui.set_width(popup_width - 4.0);
                                         ui.spacing_mut().item_spacing.y = 1.0;
                                         for (idx, topic) in suggestions.iter().enumerate() {
                                             let is_highlighted = active_idx == Some(idx);
                                             let _row_id =
                                                 ui.scope_id().with(("dict-suggest", idx, topic));
+                                            let row_w = ui.available_width();
                                             let (row_rect, row_resp) = ui.allocate_exact_size(
-                                                egui::vec2(ui.available_width(), 26.0),
+                                                egui::vec2(row_w, 26.0),
                                                 egui::Sense::click(),
                                             );
                                             let is_hovered = row_resp.hovered();
@@ -807,6 +807,7 @@ impl GrapheApp {
 
                     if let Some(topic) = picked {
                         self.session.dict_query = topic.clone();
+                        self.session.dict_suggestions.clear();
                         self.session.dict_suggestions_open = false;
                         self.session.dict_suggestions_index = None;
                         self.lookup_dict(&topic);
@@ -823,6 +824,7 @@ impl GrapheApp {
                             if !box_rect.contains(pos)
                                 && !last_popup_rect.is_some_and(|r| r.contains(pos))
                             {
+                                self.session.dict_suggestions.clear();
                                 self.session.dict_suggestions_open = false;
                                 self.session.dict_suggestions_index = None;
                             }
@@ -1951,9 +1953,7 @@ mod tests {
         app.session.dict_module_id = Some(app.modules[0].id.clone());
         app.session.sidebar = "dictionary".into();
 
-        assert!(app.session.dict_suggestions.is_empty());
-        assert!(!app.session.dict_suggestions_open);
-
+        // 1. Startup with existing query should NOT open suggestions dropdown
         app.session.dict_query = "G1".into();
         let ctx = egui::Context::default();
         crate::paint::apply(&ctx, false, 14.0);
@@ -1963,10 +1963,110 @@ mod tests {
             app.sidebar(ctx, palette);
         });
 
+        assert!(
+            app.session.dict_suggestions.is_empty(),
+            "restored query must not open suggestions on startup"
+        );
+        assert!(
+            !app.session.dict_suggestions_open,
+            "suggestions dropdown must not be open on startup"
+        );
+
+        // 2. Click search box to focus it
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let box_rect = marks
+            .iter()
+            .find(|(k, _)| k == "dict-search-box")
+            .map(|(_, r)| *r)
+            .expect("dict-search-box layout mark");
+        let click_pos = egui::pos2(box_rect[0] + 10.0, box_rect[1] + box_rect[3] * 0.5);
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(click_pos),
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+
+        // 3. Type 1 character ("G") - length < 2 characters must NOT open suggestions
+        app.session.dict_query.clear();
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Text("G".into())],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G");
+        assert!(
+            app.session.dict_suggestions.is_empty(),
+            "1 character must not trigger suggestions"
+        );
+        assert!(
+            !app.session.dict_suggestions_open,
+            "dropdown must remain closed when query has < 2 characters"
+        );
+
+        // 4. Type second character ("1") - query is now "G1" (>= 2 chars), suggestions open
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Text("1".into())],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G1");
         assert_eq!(app.session.dict_suggestions, vec!["G1", "G10", "G100"]);
-        assert!(app.session.dict_suggestions_open);
+        assert!(
+            app.session.dict_suggestions_open,
+            "suggestions dropdown should open for >= 2 chars"
+        );
         assert_eq!(app.session.dict_suggestions_index, None);
 
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let popup_rect = marks
+            .iter()
+            .rfind(|(k, _)| k == "dict-suggestions-popup")
+            .map(|(_, r)| *r)
+            .expect("dict-suggestions-popup layout mark");
+        let current_box_rect = marks
+            .iter()
+            .rfind(|(k, _)| k == "dict-search-box")
+            .map(|(_, r)| *r)
+            .expect("dict-search-box layout mark");
+        assert_eq!(
+            popup_rect[2], current_box_rect[2],
+            "popup width must match search box width exactly"
+        );
+
+        // 5. Navigate with ArrowDown
         let _ = ctx.run_test_ui(
             egui::RawInput {
                 events: vec![egui::Event::Key {
@@ -2001,6 +2101,7 @@ mod tests {
         );
         assert_eq!(app.session.dict_suggestions_index, Some(1));
 
+        // 6. Select item with Enter - closes dropdown immediately and loads entry
         let _ = ctx.run_test_ui(
             egui::RawInput {
                 events: vec![egui::Event::Key {
@@ -2017,13 +2118,52 @@ mod tests {
             },
         );
         assert_eq!(app.session.dict_query, "G10");
-        assert!(!app.session.dict_suggestions_open);
+        assert!(
+            !app.session.dict_suggestions_open,
+            "dropdown must close immediately upon selecting an item"
+        );
+        assert!(
+            app.session.dict_suggestions.is_empty(),
+            "suggestions list should be cleared on selection"
+        );
         assert_eq!(app.session.dict_body, "dez");
 
-        app.session.dict_query = "G".into();
-        let _ = ctx.run_test_ui(Default::default(), |ctx| {
-            app.sidebar(ctx, palette);
-        });
+        // 7. Click search box to refocus, type "G1" again and test Escape closes dropdown
+        app.session.dict_query.clear();
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(click_pos),
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Text("G1".into())],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G1");
         assert!(app.session.dict_suggestions_open);
 
         let _ = ctx.run_test_ui(
@@ -2042,6 +2182,7 @@ mod tests {
             },
         );
         assert!(!app.session.dict_suggestions_open);
+        assert!(app.session.dict_suggestions.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
