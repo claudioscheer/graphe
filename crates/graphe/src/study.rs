@@ -481,6 +481,9 @@ impl GrapheApp {
         // was sitting on its last verse back toward the top.
         if let Some(pane) = self.session.panes.get_mut(pane_id) {
             pane.selected_verse = Some(verse);
+            if !shift && !toggle {
+                graphe_domain::panes::push_nav_history_entry(pane);
+            }
         }
         self.session.selected_verses = vec![verse];
         self.session.selection_anchor = Some(verse);
