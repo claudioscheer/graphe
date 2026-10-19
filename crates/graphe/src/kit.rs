@@ -551,7 +551,9 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
     i18n::set_lang("pt");
     let mut app = bare(Session::new());
 
-    let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+    let user_profile = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
     let bible_path = std::path::PathBuf::from(&user_profile)
         .join(".graphe")
         .join("modules")
@@ -561,40 +563,50 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
         .join("modules")
         .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
 
-    if bible_path.exists() {
-        app.modules.push(graphe_store::catalog::InstalledModule {
-            id: "NAA".into(),
-            name: "NAA".into(),
-            kind: "bible".into(),
-            path: bible_path,
-            short_title: None,
-            description: None,
-        });
-        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+    let (bible_path, comm_path) = if bible_path.exists() && comm_path.exists() {
+        (bible_path, comm_path)
+    } else {
+        let dir = std::env::temp_dir().join(format!("graphe-theme-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        let b_path = dir.join("test.bible.SQLite3");
+        let c_path = dir.join("test.commentary.SQLite3");
+        let sql_b = "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);\n\
+                     INSERT INTO verses VALUES (50, 1, 1, 'São estas as palavras que Moisés falou a todo o Israel.');\n\
+                     INSERT INTO verses VALUES (50, 1, 2, 'Jornada de onze dias há desde Horebe.');\n";
+        let sql_c = "CREATE TABLE commentaries (book_number INTEGER, chapter_number_from INTEGER, verse_number_from INTEGER, chapter_number_to INTEGER, verse_number_to INTEGER, text TEXT);\n\
+                     INSERT INTO commentaries VALUES (50, 1, 1, 1, 1, '<b>1</b> Estatísticas: 5º livro da Bíblia;');\n";
+        let _ = graphe_store::sqlite::init_module_sql(&b_path, sql_b);
+        let _ = graphe_store::sqlite::init_module_sql(&c_path, sql_c);
+        (b_path, c_path)
+    };
+
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "NAA".into(),
+        name: "NAA".into(),
+        kind: "bible".into(),
+        path: bible_path,
+        short_title: None,
+        description: None,
+    });
+    app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "Champlin".into(),
+        name: "Champlin".into(),
+        kind: "commentary".into(),
+        path: comm_path,
+        short_title: None,
+        description: None,
+    });
+    let comm_pane = app.session.split_commentary(false);
+    if let Some(record) = app.session.panes.get_mut(&comm_pane) {
+        record.module_id = Some("Champlin".into());
+        record.synced_to_pane_id = Some("pane-1".into());
     }
-    if comm_path.exists() {
-        app.modules.push(graphe_store::catalog::InstalledModule {
-            id: "Champlin".into(),
-            name: "Champlin".into(),
-            kind: "commentary".into(),
-            path: comm_path,
-            short_title: None,
-            description: None,
-        });
-        let comm_pane = app.session.split_commentary(false);
-        if let Some(record) = app.session.panes.get_mut(&comm_pane) {
-            record.module_id = Some("Champlin".into());
-            record.synced_to_pane_id = Some("pane-1".into());
-        }
-    }
+
     app.session.active_pane_id = "pane-1".into();
     app.session.navigate(50, 1, None);
-    if app.modules.is_empty() {
-        app.session.show_chapter(vec![
-            (1, "Estes são os termos da aliança que o SENHOR ordenou a Moisés".into()),
-            (2, "Jornada de onze dias há desde Horebe".into()),
-        ]);
-    }
 
     // Start in dark mode
     app.session.dark = true;
