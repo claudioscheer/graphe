@@ -2191,7 +2191,7 @@ fn piece_char_total(pieces: &[CommentaryPiece]) -> usize {
     pieces.iter().map(piece_char_len).sum()
 }
 
-fn chars_before(pieces: &[CommentaryPiece], end: usize) -> usize {
+pub(crate) fn chars_before(pieces: &[CommentaryPiece], end: usize) -> usize {
     pieces.iter().take(end).map(piece_char_len).sum()
 }
 

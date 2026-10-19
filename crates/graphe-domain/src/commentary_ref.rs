@@ -457,19 +457,34 @@ fn maybe_register_common_aliases(
         add("mat", false);
         add("matt", false);
     }
-    if contains_any(&long_lower, &["exodus"]) || contains_any(&long_fold, &["exodus"]) {
+    if book_num == 20
+        || contains_any(&long_lower, &["exodus", "exodo"])
+        || contains_any(&long_fold, &["exodus", "exodo"])
+    {
         add("exod", false);
     }
-    if contains_any(&long_lower, &["deuteronomy"]) || contains_any(&long_fold, &["deuteronomy"]) {
+    if book_num == 50
+        || contains_any(&long_lower, &["deuteronomy", "deuteronomio"])
+        || contains_any(&long_fold, &["deuteronomy", "deuteronomio"])
+    {
         add("deut", false);
     }
-    if contains_any(&long_lower, &["joshua"]) || contains_any(&long_fold, &["joshua"]) {
+    if book_num == 60
+        || contains_any(&long_lower, &["joshua", "josue"])
+        || contains_any(&long_fold, &["joshua", "josue"])
+    {
         add("josh", false);
     }
-    if contains_any(&long_lower, &["judges"]) || contains_any(&long_fold, &["judges"]) {
+    if book_num == 70
+        || contains_any(&long_lower, &["judges", "juizes", "jueces"])
+        || contains_any(&long_fold, &["judges", "juizes", "jueces"])
+    {
         add("judg", false);
     }
-    if contains_any(&long_lower, &["zechariah"]) || contains_any(&long_fold, &["zechariah"]) {
+    if book_num == 380
+        || contains_any(&long_lower, &["zechariah", "zacarias"])
+        || contains_any(&long_fold, &["zechariah", "zacarias"])
+    {
         add("zech", false);
     }
     if contains_any(&long_lower, &["isaiah", "isaias"])
@@ -1221,5 +1236,13 @@ mod tests {
                 verse_to: 1,
             })
         );
+    }
+
+    #[test]
+    fn parses_deut_reference_in_portuguese_matcher() {
+        let pt = pt_matcher();
+        let refs = pt.find_matches(Some("ver Deut. 17:26־"));
+        assert_all(&refs, &[(50, 17, Some(26), Some(26))]);
+        assert_eq!(refs[0].raw, "Deut. 17:26");
     }
 }
