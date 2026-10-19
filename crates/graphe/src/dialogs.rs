@@ -930,6 +930,7 @@ impl GrapheApp {
             palette.ui_border
         });
         let width = ui.available_width();
+        let is_not_found = self.nav.as_ref().is_some_and(|nav| nav.not_found);
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 16,
@@ -954,9 +955,20 @@ impl GrapheApp {
                         } else {
                             palette.ui_bg
                         });
-                        let border = egui::Stroke::new(1.0_f32, hint);
-                        let focus =
-                            egui::Stroke::new(1.0_f32, paint::color(palette.ui_border_strong));
+                        let border_color = if is_not_found {
+                            paint::color(palette.ui_warn)
+                        } else {
+                            hint
+                        };
+                        let border = egui::Stroke::new(1.0_f32, border_color);
+                        let focus = egui::Stroke::new(
+                            1.0_f32,
+                            if is_not_found {
+                                paint::color(palette.ui_warn)
+                            } else {
+                                paint::color(palette.ui_border_strong)
+                            },
+                        );
                         visuals.widgets.inactive.bg_stroke = border;
                         visuals.widgets.hovered.bg_stroke = focus;
                         visuals.widgets.active.bg_stroke = focus;
@@ -985,12 +997,29 @@ impl GrapheApp {
                     response.request_focus();
                     self.nav_focus = false;
                 }
-                let submitted = response.lost_focus()
+                if is_not_found {
+                    ui.add_space(6.0);
+                    let _label = ui.label(
+                        egui::RichText::new(i18n::t("referenceNotFound"))
+                            .size(13.0)
+                            .color(paint::color(palette.ui_warn_text)),
+                    );
+                    #[cfg(test)]
+                    crate::chrome::mark_layout(ui, "nav-not-found", _label.rect);
+                }
+                let submitted = (response.lost_focus() || response.has_focus())
                     && ui.input(|input_state| input_state.key_pressed(egui::Key::Enter));
                 if let Some(nav) = self.nav.as_mut() {
-                    nav.input = input;
+                    if nav.input != input {
+                        nav.not_found = false;
+                        nav.input = input;
+                    }
                     if submitted {
-                        nav.submit_input();
+                        let success = nav.submit_input();
+                        if !success {
+                            self.nav_focus = true;
+                        }
+                        ui.ctx().request_repaint();
                     }
                 }
             });

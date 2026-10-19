@@ -186,6 +186,28 @@ pub fn find_book_by_abbrev(abbrev: &str) -> Option<i64> {
             return Some(i64::from(GRAPHE_BOOK_NUMBERS[i]));
         }
     }
+    for (i, name) in names.iter().enumerate() {
+        if name.long.to_lowercase() == lower
+            || strip_diacritics(&name.long.to_lowercase()) == folded
+        {
+            return Some(i64::from(GRAPHE_BOOK_NUMBERS[i]));
+        }
+    }
+    for lang in ["pt", "en", "es"] {
+        if lang == get_current_lang().as_str() {
+            continue;
+        }
+        let fallback_names = book_names(lang);
+        for (i, name) in fallback_names.iter().enumerate() {
+            if name.short.to_lowercase() == lower
+                || strip_diacritics(&name.short.to_lowercase()) == folded
+                || name.long.to_lowercase() == lower
+                || strip_diacritics(&name.long.to_lowercase()) == folded
+            {
+                return Some(i64::from(GRAPHE_BOOK_NUMBERS[i]));
+            }
+        }
+    }
     None
 }
 
