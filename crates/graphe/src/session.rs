@@ -275,6 +275,7 @@ impl Session {
             let Some(pane) = self.panes.get_mut(&moved) else {
                 return;
             };
+            panes::push_nav_history_entry(pane);
             pane.book_number = book;
             pane.book_short_name = i18n::book_name(book).short;
             pane.chapter = chapter;
@@ -351,6 +352,9 @@ impl Session {
         let target = self.bible_target(&self.active_pane_id);
         if let Some(pane) = self.panes.get_mut(&target) {
             pane.selected_verse = self.selected_verses.last().copied();
+            if !shift && !toggle {
+                panes::push_nav_history_entry(pane);
+            }
         }
         self.note_bible_moved(&target);
     }
@@ -1019,7 +1023,7 @@ fn remove_leaf(node: &PaneNode, pane_id: &str) -> Option<PaneNode> {
 }
 
 fn bible_pane(id: &str, label: &str) -> PaneRecord {
-    PaneRecord {
+    let mut pane = PaneRecord {
         id: id.into(),
         pane_type: PaneType::Bible,
         window_label: Some(label.into()),
@@ -1032,7 +1036,9 @@ fn bible_pane(id: &str, label: &str) -> PaneRecord {
         nav_history_idx: -1,
         synced_to_pane_id: None,
         content_scroll_top: None,
-    }
+    };
+    panes::push_nav_history_entry(&mut pane);
+    pane
 }
 
 fn set_ratio(node: &mut PaneNode, path: &str, ratio: f64) -> bool {
@@ -1407,5 +1413,26 @@ mod tests {
             copied.starts_with("[Hb 10:26]") || copied.starts_with("[Heb 10:26]"),
             "expected Hebrews citation, got: {copied}"
         );
+    }
+
+    #[test]
+    fn back_selects_the_previous_verse() {
+        let mut session = Session::new();
+        session.show_chapter(vec![
+            (1, "In the beginning".into()),
+            (2, "And the earth".into()),
+            (3, "And God said".into()),
+        ]);
+        session.select_verse(1, false, false);
+        session.select_verse(2, false, false);
+        assert!(session.back(), "back should succeed after selecting another verse");
+        assert_eq!(session.selected_verses, vec![1]);
+
+        assert!(session.forward());
+        assert_eq!(session.selected_verses, vec![2]);
+
+        session.navigate(470, 5, Some(3));
+        assert!(session.back(), "back should succeed after navigating to another verse");
+        assert_eq!(session.selected_verses, vec![2]);
     }
 }
