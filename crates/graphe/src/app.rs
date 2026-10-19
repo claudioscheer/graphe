@@ -5682,4 +5682,72 @@ pub(crate) mod tests {
         let comm_offset = marks.iter().find(|(k, _)| k.starts_with("commentary-offset")).map(|(_, r)| *r).expect("commentary offset");
         assert!(comm_offset[1] > 50000.0, "commentary pane should scroll to verse 26, got {}", comm_offset[1]);
     }
+
+    #[test]
+    fn missing_reference_shows_feedback_and_clears_on_edit() {
+        let mut app = bare(Session::new());
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        // Open navigation dialog
+        app.open_navigation();
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        assert!(app.nav.is_some());
+        assert!(!app.nav.as_ref().unwrap().not_found);
+
+        // Submit invalid reference
+        let raw2 = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![
+                egui::Event::Text("nonexistent 1:1".into()),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: Some(egui::Key::Enter),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw2, |ui| app.show_workbench(ui));
+
+        // Dialog should remain open, not_found should be true
+        assert_eq!(app.session.dialog, Dialog::Navigation);
+        assert!(app.nav.as_ref().unwrap().not_found);
+
+        // Next frame renders the feedback label
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        assert!(
+            marks.iter().any(|(k, _)| k == "nav-not-found"),
+            "feedback label should be laid out"
+        );
+
+        // Typing clears the not_found state
+        let raw3 = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![egui::Event::Text("g".into())],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw3, |ui| app.show_workbench(ui));
+        assert!(!app.nav.as_ref().unwrap().not_found);
+    }
 }

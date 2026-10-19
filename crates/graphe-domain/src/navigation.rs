@@ -41,6 +41,7 @@ pub struct NavigationSession<C, V, P> {
     pub screen: NavScreen,
     pub back_visible: bool,
     pub navigations: Vec<NavAction>,
+    pub not_found: bool,
     chapter_count: C,
     chapter_verses: V,
     pane_module: P,
@@ -63,6 +64,7 @@ where
             screen: NavScreen::Closed,
             back_visible: false,
             navigations: Vec::new(),
+            not_found: false,
             chapter_count,
             chapter_verses,
             pane_module,
@@ -76,6 +78,7 @@ where
         self.selected_chapter = None;
         self.open = true;
         self.input.clear();
+        self.not_found = false;
         self.show_books();
     }
 
@@ -86,12 +89,14 @@ where
         self.selected_chapter = None;
         self.screen = NavScreen::Closed;
         self.back_visible = false;
+        self.not_found = false;
     }
 
     pub fn show_books(&mut self) {
         self.selected_book = None;
         self.selected_chapter = None;
         self.back_visible = false;
+        self.not_found = false;
         let ot = self
             .books
             .iter()
@@ -115,6 +120,7 @@ where
         self.selected_book = Some(book_number);
         self.selected_chapter = None;
         self.back_visible = true;
+        self.not_found = false;
         let Some(pane_id) = self.active_pane_id.clone() else {
             return;
         };
@@ -136,6 +142,7 @@ where
         self.selected_book = Some(book_number);
         self.selected_chapter = Some(chapter);
         self.back_visible = true;
+        self.not_found = false;
         let Some(pane_id) = self.active_pane_id.clone() else {
             return;
         };
@@ -183,6 +190,7 @@ where
         ) else {
             return;
         };
+        self.not_found = false;
         self.navigations.push(NavAction {
             pane_id,
             book_number: book,
@@ -193,6 +201,7 @@ where
     }
 
     pub fn back(&mut self) {
+        self.not_found = false;
         if self.selected_book.is_some() && self.selected_chapter.is_some() {
             if let Some(book) = self.selected_book {
                 self.select_book(book);
@@ -202,36 +211,49 @@ where
         self.show_books();
     }
 
-    pub fn submit_input(&mut self) {
+    pub fn submit_input(&mut self) -> bool {
         let raw = self.input.trim().to_string();
         if raw.is_empty() {
-            return;
+            self.not_found = false;
+            return false;
         }
         let Some(pane_id) = self.active_pane_id.clone() else {
-            return;
+            self.not_found = true;
+            return false;
         };
-        if (self.pane_module)(&pane_id).is_none() {
-            return;
-        }
+        let Some(module_id) = (self.pane_module)(&pane_id) else {
+            self.not_found = true;
+            return false;
+        };
         static RE: OnceLock<Regex> = OnceLock::new();
-        let re = RE
-            .get_or_init(|| Regex::new(r"(?i)^(\d?\s*[A-Za-zÀ-ÿ]+)\s*(\d+)(?::(\d+))?$").unwrap());
+        let re = RE.get_or_init(|| {
+            Regex::new(r"(?i)^(\d?\s*[A-Za-zÀ-ÿ]+)\s*(\d+)(?:[:,\.]\s*(\d+))?$").unwrap()
+        });
         let Some(caps) = re.captures(&raw) else {
-            return;
+            self.not_found = true;
+            return false;
         };
         let abbrev = caps[1].trim().to_lowercase();
         let chapter: i64 = caps[2].parse().unwrap_or(0);
         let verse = caps.get(3).and_then(|m| m.as_str().parse().ok());
         let Some(book_number) = i18n::find_book_by_abbrev(&abbrev) else {
-            return;
+            self.not_found = true;
+            return false;
         };
         if !self
             .books
             .iter()
             .any(|book| book.book_number == book_number)
         {
-            return;
+            self.not_found = true;
+            return false;
         }
+        let count = (self.chapter_count)(&module_id, book_number);
+        if chapter < 1 || (count > 0 && chapter > count) {
+            self.not_found = true;
+            return false;
+        }
+        self.not_found = false;
         self.navigations.push(NavAction {
             pane_id,
             book_number,
@@ -239,6 +261,7 @@ where
             verse,
         });
         self.close();
+        true
     }
 
     pub fn escape(&mut self) {
@@ -426,6 +449,52 @@ mod navigation_tests {
         nav.input = "Gen 1".into();
         nav.submit_input();
         assert!(nav.navigations.is_empty());
+        i18n::reset_lang();
+    }
+
+    #[test]
+    fn submit_input_sets_not_found_on_invalid_reference() {
+        i18n::set_lang("en");
+        let mut nav =
+            NavigationSession::new(|_, _| 2, |_, _, _| vec![1, 2], |_| Some("kjv".into()));
+        nav.open_for(
+            "pane-1",
+            vec![BookRecord {
+                book_number: 10,
+                short_name: Some("Gen".into()),
+                long_name: Some("Genesis".into()),
+            }],
+        );
+        assert!(!nav.not_found);
+
+        // Unparseable reference
+        nav.input = "invalid reference".into();
+        assert!(!nav.submit_input());
+        assert!(nav.not_found);
+        assert!(nav.open);
+
+        // Chapter out of range (mock provides 2 chapters)
+        nav.input = "Gen 999".into();
+        assert!(!nav.submit_input());
+        assert!(nav.not_found);
+
+        // Chapter 0 is invalid
+        nav.input = "Gen 0".into();
+        assert!(!nav.submit_input());
+        assert!(nav.not_found);
+
+        // Unknown book
+        nav.input = "Rev 1:1".into();
+        assert!(!nav.submit_input());
+        assert!(nav.not_found);
+
+        // Valid reference succeeds and clears not_found
+        nav.input = "Gen 1:1".into();
+        assert!(nav.submit_input());
+        assert!(!nav.not_found);
+        assert!(!nav.open);
+        assert_eq!(nav.navigations.len(), 1);
+
         i18n::reset_lang();
     }
 }

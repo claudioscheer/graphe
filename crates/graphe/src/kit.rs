@@ -455,3 +455,85 @@ fn clicking_champlin_deut_reference_in_workbench() {
     let _ = img_after.save(shot_dir.join("61-after.png"));
 }
 
+#[test]
+fn missing_reference_gives_feedback_in_workbench() {
+    let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let shot_dir = repo_root.join("temp").join("screenshots");
+    let _ = std::fs::create_dir_all(&shot_dir);
+
+    // 1. Capture bug reproduction (before fix):
+    // In buggy state, entering an unknown reference gave no feedback and kept not_found false.
+    {
+        let mut app_before = bare(Session::new());
+        app_before.open_navigation();
+        if let Some(nav) = app_before.nav.as_mut() {
+            nav.input = "nonexistent 1:1".into();
+            nav.not_found = false; // Bug state: no feedback shown
+        }
+        let mut fonts_ready = false;
+        let mut harness_before = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1200.0, 800.0))
+            .with_max_steps(16)
+            .with_accessibility_check(false)
+            .build_ui_state(
+                move |ui, app: &mut GrapheApp| {
+                    if !fonts_ready {
+                        paint::install_fonts(ui.ctx());
+                        paint::apply(ui.ctx(), app.session.dark, app.session.font_size);
+                        fonts_ready = true;
+                    }
+                    app.show_workbench(ui);
+                },
+                app_before,
+            );
+        harness_before.run();
+        let img_before = harness_before.render().expect("render before");
+        let _ = img_before.save(shot_dir.join("62-before.png"));
+    }
+
+    // 2. Capture feature working (after fix):
+    // Entering an unknown reference displays "Referência não encontrada."
+    let mut app = bare(Session::new());
+    app.open_navigation();
+    if let Some(nav) = app.nav.as_mut() {
+        nav.input = "nonexistent 1:1".into();
+        nav.submit_input();
+    }
+    assert!(app.nav.as_ref().unwrap().not_found);
+
+    let mut fonts_ready = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .with_max_steps(16)
+        .with_accessibility_check(false)
+        .build_ui_state(
+            move |ui, app: &mut GrapheApp| {
+                if !fonts_ready {
+                    paint::install_fonts(ui.ctx());
+                    paint::apply(ui.ctx(), app.session.dark, app.session.font_size);
+                    fonts_ready = true;
+                }
+                app.show_workbench(ui);
+            },
+            app,
+        );
+    harness.run();
+
+    let marks = harness.ctx.data(|d| {
+        d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+            .unwrap_or_default()
+    });
+    assert!(
+        marks.iter().any(|(k, _)| k == "nav-not-found"),
+        "feedback label must be laid out in workbench"
+    );
+
+    let img_after = harness.render().expect("render after");
+    let _ = img_after.save(shot_dir.join("62-after.png"));
+}
+
