@@ -138,7 +138,7 @@ fi
 
 # 6. Run tests
 echo "Running tests..."
-if ! cargo test; then
+if ! cargo test -- --test-threads=1; then
   echo "Error: Tests failed! Reverting modified files..."
   git checkout -- Cargo.toml Cargo.lock packaging/windows/setup.iss packaging/macos/Info.plist
   exit 1

@@ -190,7 +190,7 @@ if (Test-Path "packaging/macos/Info.plist") {
 
 # 6. Run tests
 Write-Host "Running tests..."
-cargo test
+cargo test -- --test-threads=1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Tests failed! Reverting modified files..."
     git checkout -- Cargo.toml Cargo.lock packaging/windows/setup.iss packaging/macos/Info.plist
