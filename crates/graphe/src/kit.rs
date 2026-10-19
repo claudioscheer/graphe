@@ -587,4 +587,172 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
     );
 }
 
+#[test]
+fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
+    let user_profile = match std::env::var("USERPROFILE") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let bible_path = std::path::PathBuf::from(&user_profile)
+        .join(".graphe")
+        .join("modules")
+        .join("Nova Almeida Atualizada.bible.SQLite3");
+    let comm_path = std::path::PathBuf::from(&user_profile)
+        .join(".graphe")
+        .join("modules")
+        .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
+    if !bible_path.exists() || !comm_path.exists() {
+        return;
+    }
+
+    i18n::set_lang("pt");
+    let mut app = bare(Session::new());
+    app.session.sidebar_collapsed = true;
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "NAA".into(),
+        name: "NAA".into(),
+        kind: "bible".into(),
+        path: bible_path.clone(),
+        short_title: None,
+        description: None,
+    });
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "Champlin".into(),
+        name: "Champlin".into(),
+        kind: "commentary".into(),
+        path: comm_path.clone(),
+        short_title: None,
+        description: None,
+    });
+    app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+    let comm_pane = app.session.split_commentary(false);
+    if let Some(record) = app.session.panes.get_mut(&comm_pane) {
+        record.module_id = Some("Champlin".into());
+        record.synced_to_pane_id = Some("pane-1".into());
+    }
+    app.session.active_pane_id = "pane-1".into();
+    app.session.navigate(650, 10, Some(26));
+
+    let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let shot_dir = repo_root.join("temp").join("screenshots");
+    let _ = std::fs::create_dir_all(&shot_dir);
+
+    let mut fonts_ready = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .with_max_steps(16)
+        .with_accessibility_check(false)
+        .build_ui_state(
+            move |ui, app: &mut GrapheApp| {
+                if !fonts_ready {
+                    paint::install_fonts(ui.ctx());
+                    paint::apply(ui.ctx(), app.session.dark, app.session.font_size);
+                    fonts_ready = true;
+                }
+                app.show_workbench(ui);
+            },
+            app,
+        );
+
+    harness.run();
+
+    // Scroll to piece with II Cor. 6:7 inside viewport
+    let wheel_at = egui::pos2(800.0, 400.0);
+    let mut cor_found = false;
+    for _step in 0..15 {
+        let in_viewport = if let Some(window) = harness.state().reading.commentary_window(&comm_pane) {
+            if let Some(link) = window.links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7)) {
+                let cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
+                // Galley cursor relative to scroll window
+                cursor.min.y >= 0.0 && cursor.min.y <= 500.0
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if in_viewport {
+            cor_found = true;
+            break;
+        }
+        harness.event(egui::Event::PointerMoved(wheel_at));
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -150.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::default(),
+        });
+        harness.step();
+        harness.run();
+    }
+    assert!(cor_found, "II Cor. 6:7 link must become visible while scrolling");
+
+
+
+    let marks = harness.ctx.data(|d| {
+        d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+            .unwrap_or_default()
+    });
+    let text_rect = marks
+        .iter()
+        .find(|(k, _)| k == &format!("commentary-text:{comm_pane}"))
+        .map(|(_, r)| *r)
+        .expect("commentary text rect");
+
+    let (_cor_link, link_pos) = {
+        let window = harness
+            .state()
+            .reading
+            .commentary_window(&comm_pane)
+            .expect("commentary window");
+        let cor_link = window
+            .links
+            .iter()
+            .find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
+            .copied()
+            .expect("II Cor. 6:7 link must exist in commentary window");
+        let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(cor_link.start));
+        let link_pos = egui::pos2(
+            text_rect[0] + link_cursor.min.x + 5.0,
+            text_rect[1] + link_cursor.min.y + 5.0,
+        );
+        (cor_link, link_pos)
+    };
+
+    // Save screenshot showing feature working with clean forward text and correct reference links
+    let img_after = harness.render().expect("render after");
+    let _ = img_after.save(shot_dir.join("70-after.png"));
+
+    // Click link:
+    harness.event(egui::Event::PointerMoved(link_pos));
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos: link_pos,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.step();
+    harness.event(egui::Event::PointerMoved(link_pos + egui::vec2(2.0, 1.0)));
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos: link_pos + egui::vec2(2.0, 1.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run();
+
+    let bible = harness.state().session.panes.get("pane-1").unwrap();
+    assert_eq!(bible.book_number, 540);
+    assert_eq!(bible.chapter, 6);
+    assert_eq!(bible.selected_verse, Some(7));
+}
+
+
 

@@ -9,6 +9,10 @@ use std::borrow::Cow;
 /// Leave Latin, Greek, and digits alone. Reverse Hebrew and Arabic runs.
 pub fn display_text(text: &str) -> Cow<'_, str> {
     if !text.chars().any(is_rtl_letter) {
+        if text.chars().any(is_rtl_punctuation) {
+            let replaced: String = text.chars().map(normalize_rtl_punctuation).collect();
+            return Cow::Owned(replaced);
+        }
         return Cow::Borrowed(text);
     }
     let clusters = clusters(text);
@@ -40,7 +44,14 @@ pub fn display_text(text: &str) -> Cow<'_, str> {
                 out.push_str(cluster);
             }
         } else {
-            out.push_str(clusters[index]);
+            let cluster = clusters[index];
+            if cluster.chars().any(is_rtl_punctuation) {
+                for ch in cluster.chars() {
+                    out.push(normalize_rtl_punctuation(ch));
+                }
+            } else {
+                out.push_str(cluster);
+            }
             index += 1;
         }
     }
@@ -68,14 +79,39 @@ fn cluster_has(cluster: &str, test: fn(char) -> bool) -> bool {
     cluster.chars().any(test)
 }
 
+fn is_rtl_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{05BE}' | '\u{05C0}' | '\u{05C3}' | '\u{05C6}' | '\u{05F3}' | '\u{05F4}'
+    )
+}
+
+fn normalize_rtl_punctuation(ch: char) -> char {
+    match ch {
+        '\u{05BE}' => '-',
+        '\u{05C0}' => '|',
+        '\u{05C3}' => ':',
+        '\u{05F3}' => '\'',
+        '\u{05F4}' => '"',
+        _ => ch,
+    }
+}
+
 fn is_rtl_letter(ch: char) -> bool {
     matches!(
         ch,
-        '\u{0590}'..='\u{05FF}'
-            | '\u{0600}'..='\u{06FF}'
+        '\u{05D0}'..='\u{05EA}'
+            | '\u{05F0}'..='\u{05F2}'
+            | '\u{0620}'..='\u{064A}'
+            | '\u{066E}'..='\u{06D3}'
+            | '\u{06D5}'
+            | '\u{06EE}'..='\u{06EF}'
+            | '\u{06FA}'..='\u{06FC}'
+            | '\u{06FF}'
             | '\u{0750}'..='\u{077F}'
             | '\u{08A0}'..='\u{08FF}'
-            | '\u{FB1D}'..='\u{FDFF}'
+            | '\u{FB1D}'..='\u{FB4F}'
+            | '\u{FB50}'..='\u{FDFF}'
             | '\u{FE70}'..='\u{FEFF}'
     ) && !is_combining(ch)
 }
@@ -140,5 +176,21 @@ mod tests {
         let alef = shown.find('א').expect("alef");
         assert!(mem < alef);
         assert_eq!(display_text("elohim").as_ref(), "elohim");
+    }
+
+    #[test]
+    fn isolated_maqaf_in_latin_text_normalizes_to_hyphen() {
+        let text = "6:48־; 12:2529־. A seriedade da apostasia";
+        let shown = display_text(text);
+        assert_eq!(shown.as_ref(), "6:48-; 12:2529-. A seriedade da apostasia");
+    }
+
+    #[test]
+    fn hebrew_phrase_preserves_maqaf_in_rtl_run() {
+        let text = "אֵת־הַשָּׁמַיִם";
+        let shown = display_text(text);
+        assert!(shown.contains('־'), "Hebrew run preserves maqaf: {shown}");
+        // In visual order for LTR renderer, the second word appears first
+        assert!(shown.starts_with("םיִמַשָּׁהַ־"));
     }
 }

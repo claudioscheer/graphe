@@ -1244,37 +1244,7 @@ impl GrapheApp {
             );
             (galley, links)
         };
-        // Dragging the text selects it. Reuse the shaped galley so a selection
-        // or a wheel step does not wrap the chapter again.
-        let link_origin = ui.cursor().min;
-        let pointer = ui.input(|input| {
-            input
-                .pointer
-                .hover_pos()
-                .or_else(|| input.pointer.interact_pos())
-        });
-        let hovering_link = pointer
-            .and_then(|pos| link_at(&galley, link_origin, &links, pos))
-            .is_some();
-        let clicking_link = hovering_link
-            && ui.input(|input| {
-                input.pointer.primary_down()
-                    || input.pointer.primary_released()
-                    || input.pointer.primary_clicked()
-            });
-        let selecting = (label_has_selection(ui.ctx()) && !clicking_link)
-            || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
-        let response = if selecting {
-            ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
-        } else {
-            let (rect, response) = ui.allocate_exact_size(
-                egui::vec2(width, galley.rect.height().max(1.0)),
-                egui::Sense::click(),
-            );
-            ui.painter()
-                .galley(rect.min, Arc::clone(&galley), text_color);
-            response
-        };
+        let response = ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true));
         let rect = response.rect;
         #[cfg(test)]
         crate::chrome::mark_layout(ui, &format!("commentary-text:{pane_id}"), rect);
@@ -1368,35 +1338,7 @@ impl GrapheApp {
         let shown = chars_before(&paint.pieces, end) - before;
         let after = total.saturating_sub(before + shown);
         ui.add_space(estimated_text_height(before, width, font));
-        let link_origin = ui.cursor().min;
-        let pointer = ui.input(|input| {
-            input
-                .pointer
-                .hover_pos()
-                .or_else(|| input.pointer.interact_pos())
-        });
-        let hovering_link = pointer
-            .and_then(|pos| link_at(&galley, link_origin, &links, pos))
-            .is_some();
-        let clicking_link = hovering_link
-            && ui.input(|input| {
-                input.pointer.primary_down()
-                    || input.pointer.primary_released()
-                    || input.pointer.primary_clicked()
-            });
-        let selecting = (label_has_selection(ui.ctx()) && !clicking_link)
-            || (!hovering_link && ui.input(|input| input.pointer.primary_down()));
-        let response = if selecting {
-            ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true))
-        } else {
-            let (rect, response) = ui.allocate_exact_size(
-                egui::vec2(width, galley.rect.height().max(1.0)),
-                egui::Sense::click(),
-            );
-            ui.painter()
-                .galley(rect.min, Arc::clone(&galley), text_color);
-            response
-        };
+        let response = ui.add(egui::Label::new(Arc::clone(&galley)).selectable(true));
         let rect = response.rect;
         #[cfg(test)]
         crate::chrome::mark_layout(ui, &format!("commentary-text:{pane_id}"), rect);
@@ -1689,7 +1631,7 @@ struct PaneHeightState {
     seen_width: i32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum CommentaryPiece {
     Text(String),
     Rich {
@@ -2633,7 +2575,7 @@ fn row_height_from_galley(layout_height: f32, font: f32, ref_count: usize, wrap_
     text + refs + ROW_GAP
 }
 
-fn commentary_layout(
+pub(crate) fn commentary_layout(
     ui: &egui::Ui,
     pieces: &[CommentaryPiece],
     width: f32,
