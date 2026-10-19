@@ -500,6 +500,31 @@ mod tests {
         assert!(runs.iter().any(|run| matches!(run, CommentaryRun::Break)));
     }
 
+    #[test]
+    fn commentary_html_links_deut_reference_followed_by_bold_punctuation() {
+        let matcher = crate::commentary_ref::build_reference_matcher(
+            &[vec![crate::commentary_ref::BookName {
+                short: "Dt".into(),
+                long: "Deuteronômio".into(),
+            }]],
+            &[50],
+        );
+        let html = "porquanto o antigo pacto punia os ofensores deliberados com a morte (ver Deut. 17:26<strong>־</strong>);";
+        let runs = render_commentary_html(html, Some(&matcher));
+        let link = runs.iter().find(|r| matches!(r, CommentaryRun::Link { .. }));
+        assert_eq!(
+            link,
+            Some(&CommentaryRun::Link {
+                label: "Deut. 17:26".into(),
+                book: 50,
+                chapter: 17,
+                verse: Some(26),
+                italic: false,
+                bold: false,
+            })
+        );
+    }
+
     fn dump(runs: &[CommentaryRun]) -> String {
         runs.iter()
             .map(|run| match run {
