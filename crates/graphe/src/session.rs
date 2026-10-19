@@ -538,11 +538,14 @@ impl Session {
     #[cfg(test)]
     pub fn apply_quick_ref(&mut self, raw: &str, books: Vec<BookRecord>) -> bool {
         let pane_id = self.active_pane_id.clone();
-        let mut nav =
-            NavigationSession::new(|_: &str, _: i64| 1, |_: &str, _: i64, _: i64| vec![1], {
+        let mut nav = NavigationSession::new(
+            |_: &str, book: i64| crate::paint::chapter_count_fallback(book),
+            |_: &str, _: i64, _: i64| vec![1],
+            {
                 let pane_id = pane_id.clone();
                 move |pane: &str| (pane == pane_id).then(|| "module".to_string())
-            });
+            },
+        );
         nav.open_for(&pane_id, books);
         nav.input = raw.to_string();
         nav.submit_input();

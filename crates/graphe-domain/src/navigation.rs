@@ -221,7 +221,7 @@ where
             self.not_found = true;
             return false;
         };
-        let Some(_) = (self.pane_module)(&pane_id) else {
+        let Some(module_id) = (self.pane_module)(&pane_id) else {
             self.not_found = true;
             return false;
         };
@@ -248,7 +248,8 @@ where
             self.not_found = true;
             return false;
         }
-        if chapter < 1 {
+        let count = (self.chapter_count)(&module_id, book_number);
+        if chapter < 1 || (count > 0 && chapter > count) {
             self.not_found = true;
             return false;
         }
