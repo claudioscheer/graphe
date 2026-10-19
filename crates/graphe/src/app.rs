@@ -4615,6 +4615,16 @@ pub(crate) mod tests {
             let mut frame = eframe::Frame::_new_kittest();
             <GrapheApp as eframe::App>::ui(&mut app, ctx, &mut frame);
         });
+        let ramp = ctx
+            .global_style()
+            .visuals
+            .text_options
+            .color_transfer_function;
+        assert_eq!(
+            ramp,
+            egui::epaint::FontColorTransferFunction::DARK_MODE_DEFAULT
+        );
+
         // Toggle to dark theme
         app.session.dark = true;
         let _ = ctx.run_test_ui(raw.clone(), |ctx| {
@@ -4625,6 +4635,13 @@ pub(crate) mod tests {
         assert!(app.applied_dark);
         assert!(app.reading.cached_verse_text("k1").is_none());
         assert!(ctx.global_style().visuals.dark_mode);
+        assert_eq!(
+            ctx.global_style()
+                .visuals
+                .text_options
+                .color_transfer_function,
+            ramp
+        );
 
         // Repopulate and toggle back to light theme
         app.reading
@@ -4638,6 +4655,13 @@ pub(crate) mod tests {
         assert!(!app.applied_dark);
         assert!(app.reading.cached_verse_text("k2").is_none());
         assert!(!ctx.global_style().visuals.dark_mode);
+        assert_eq!(
+            ctx.global_style()
+                .visuals
+                .text_options
+                .color_transfer_function,
+            ramp
+        );
     }
 
     #[test]
