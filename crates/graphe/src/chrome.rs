@@ -1196,6 +1196,7 @@ impl GrapheApp {
         if let Some(pane) = self.session.panes.get_mut(&target) {
             push_nav_history_entry(pane);
             pane.book_number = book;
+            pane.book_short_name = i18n::book_name(book).short;
             pane.chapter = chapter;
             pane.selected_verse = Some(1);
             push_nav_history_entry(pane);
