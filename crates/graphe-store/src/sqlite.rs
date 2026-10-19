@@ -259,6 +259,7 @@ fn sqlite_string(row: &Row<'_>, index: usize) -> String {
 
 pub fn search_dictionary_topics(db: &Connection, prefix: &str, limit: i64) -> Vec<String> {
     let limit = if limit == 0 { 20 } else { limit };
+    let prefix = prefix.trim();
     let mut stmt = match db
         .prepare("SELECT topic FROM dictionary WHERE topic LIKE ?1 ORDER BY topic LIMIT ?2")
     {

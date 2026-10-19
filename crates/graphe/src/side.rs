@@ -132,7 +132,7 @@ impl GrapheApp {
                 }
 
                 // Search input with Clear button
-                let (response, cleared) = search_input_box(
+                let (response, _box_rect, cleared) = search_input_box(
                     ui,
                     &mut self.session.query,
                     &i18n::t("searchPlaceholder"),
@@ -590,37 +590,250 @@ impl GrapheApp {
                     &self.modules,
                 );
                 if let Some(id) = dropdown.show(ui, &mut self.store, palette, self.session.dark) {
-                    if let Some(topic) = self.session.dict_cache.get(&id).cloned() {
-                        self.session.dict_query = topic;
+                    if self.session.dict_module_id.as_deref() != Some(&id) {
+                        self.session.dict_module_id = Some(id.clone());
+                        self.session.dict_query.clear();
+                        self.session.dict_body.clear();
+                        self.session.dict_entry = None;
+                        self.session.dict_cognates.clear();
+                        self.session.dict_morph_code = None;
+                        self.session.dict_morph_lemma = None;
+                        self.session.dict_morph_meaning = None;
+                        self.session.dict_suggestions.clear();
+                        self.session.dict_suggestions_open = false;
+                        self.session.dict_suggestions_index = None;
+                        self.store.set_dict_panel(serde_json::json!({
+                            "selectedModuleId": self.session.dict_module_id,
+                            "moduleSearchCache": self.session.dict_cache,
+                        }));
                     }
-                    self.session.dict_module_id = Some(id);
                 }
 
+                let active_path = self.active_dictionary().map(|m| m.path.clone());
+                let last_query_id = ui.scope_id().with("dict_last_query");
+                let last_query = ui.data(|d| d.get_temp::<String>(last_query_id));
+
                 // Row 3: Topic search input with Clear button
-                let (response, cleared) = search_input_box(
+                let (response, box_rect, cleared) = search_input_box(
                     ui,
                     &mut self.session.dict_query,
                     &i18n::t("dictSearchPlaceholder"),
                     palette,
                 );
+                #[cfg(test)]
+                crate::chrome::mark_layout(ui, "dict-search-box", box_rect);
+
+                let query_changed =
+                    response.changed() || last_query.as_deref() != Some(&self.session.dict_query);
+                ui.data_mut(|d| d.insert_temp(last_query_id, self.session.dict_query.clone()));
+
                 if cleared {
                     self.session.dict_body.clear();
                     self.session.dict_entry = None;
                     self.session.dict_cognates.clear();
-                } else if response.lost_focus()
-                    && ui.input(|input| input.key_pressed(egui::Key::Enter))
-                {
-                    let topic = self.session.dict_query.clone();
-                    self.lookup_dict(&topic);
+                    self.session.dict_morph_code = None;
+                    self.session.dict_morph_lemma = None;
+                    self.session.dict_morph_meaning = None;
+                    self.session.dict_suggestions.clear();
+                    self.session.dict_suggestions_open = false;
+                    self.session.dict_suggestions_index = None;
+                } else if query_changed {
+                    let trimmed = self.session.dict_query.trim();
+                    if trimmed.is_empty() {
+                        self.session.dict_suggestions.clear();
+                        self.session.dict_suggestions_open = false;
+                        self.session.dict_suggestions_index = None;
+                    } else if let Some(path) = &active_path {
+                        self.session.dict_suggestions =
+                            sqlite::dictionary_topics_in_file(path, trimmed, 20);
+                        self.session.dict_suggestions_open =
+                            !self.session.dict_suggestions.is_empty();
+                        self.session.dict_suggestions_index = None;
+                    }
+                } else if response.clicked() && !self.session.dict_suggestions.is_empty() {
+                    self.session.dict_suggestions_open = true;
+                }
+
+                if self.session.dict_suggestions_open && !self.session.dict_suggestions.is_empty() {
+                    if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+                        self.session.dict_suggestions_index = match self.session.dict_suggestions_index {
+                            None => Some(0),
+                            Some(idx) => Some(
+                                (idx + 1).min(self.session.dict_suggestions.len().saturating_sub(1)),
+                            ),
+                        };
+                        ui.ctx().request_repaint();
+                    } else if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+                        self.session.dict_suggestions_index = match self.session.dict_suggestions_index {
+                            None | Some(0) => None,
+                            Some(idx) => Some(idx - 1),
+                        };
+                        ui.ctx().request_repaint();
+                    } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                        self.session.dict_suggestions_open = false;
+                        self.session.dict_suggestions_index = None;
+                        ui.ctx().request_repaint();
+                    }
+                }
+
+                let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter))
+                    && (response.lost_focus()
+                        || response.has_focus()
+                        || self.session.dict_suggestions_open);
+
+                if !cleared && enter_pressed {
+                    let topic = if self.session.dict_suggestions_open {
+                        if let Some(idx) = self.session.dict_suggestions_index {
+                            self.session
+                                .dict_suggestions
+                                .get(idx)
+                                .cloned()
+                                .unwrap_or_else(|| self.session.dict_query.clone())
+                        } else {
+                            self.session.dict_query.clone()
+                        }
+                    } else {
+                        self.session.dict_query.clone()
+                    };
+                    self.session.dict_suggestions_open = false;
+                    self.session.dict_suggestions_index = None;
+                    let trimmed = topic.trim();
+                    if !trimmed.is_empty() {
+                        self.session.dict_query = trimmed.to_string();
+                        self.lookup_dict(trimmed);
+                    }
+                }
+
+                let popup_id = ui.scope_id().with("dict_suggestions_popup");
+                let popup_rect_id = ui.scope_id().with("dict_suggestions_rect");
+
+                if self.session.dict_suggestions_open && !self.session.dict_suggestions.is_empty() {
+                    let mut picked = None;
+                    let popup_pos = egui::pos2(box_rect.left(), box_rect.bottom() + 2.0);
+                    let popup_width = box_rect.width();
+                    let suggestions = self.session.dict_suggestions.clone();
+                    let active_idx = self.session.dict_suggestions_index;
+
+                    let area_response = egui::Area::new(popup_id)
+                        .fixed_pos(popup_pos)
+                        .order(egui::Order::Foreground)
+                        .show(ui.ctx(), |ui| {
+                            let frame = egui::Frame::new()
+                                .fill(paint::color(palette.ui_surface_elevated))
+                                .stroke(egui::Stroke::new(
+                                    1.0_f32,
+                                    paint::color(if self.session.dark {
+                                        palette.ui_border_strong
+                                    } else {
+                                        palette.ui_border_soft
+                                    }),
+                                ))
+                                .corner_radius(egui::CornerRadius::same(
+                                    graphe_domain::theme::RADIUS_CONTROL as u8,
+                                ))
+                                .shadow(egui::Shadow {
+                                    offset: [0, 4],
+                                    blur: 16,
+                                    spread: 0,
+                                    color: egui::Color32::from_black_alpha(if self.session.dark {
+                                        120
+                                    } else {
+                                        35
+                                    }),
+                                })
+                                .inner_margin(egui::Margin::symmetric(2, 4));
+
+                            frame.show(ui, |ui| {
+                                ui.set_width(popup_width);
+                                ui.set_max_width(popup_width);
+                                egui::ScrollArea::vertical()
+                                    .max_height(200.0)
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.set_width(popup_width - 4.0);
+                                        ui.spacing_mut().item_spacing.y = 1.0;
+                                        for (idx, topic) in suggestions.iter().enumerate() {
+                                            let is_highlighted = active_idx == Some(idx);
+                                            let _row_id =
+                                                ui.scope_id().with(("dict-suggest", idx, topic));
+                                            let (row_rect, row_resp) = ui.allocate_exact_size(
+                                                egui::vec2(ui.available_width(), 26.0),
+                                                egui::Sense::click(),
+                                            );
+                                            let is_hovered = row_resp.hovered();
+                                            if is_hovered || is_highlighted {
+                                                ui.painter().rect_filled(
+                                                    row_rect,
+                                                    egui::CornerRadius::same(2),
+                                                    paint::color(palette.ui_accent_bg_soft),
+                                                );
+                                            }
+                                            let text_color = if is_hovered || is_highlighted {
+                                                paint::color(palette.ui_link)
+                                            } else {
+                                                paint::color(palette.ui_text)
+                                            };
+                                            let galley = ui.painter().layout_no_wrap(
+                                                topic.clone(),
+                                                egui::FontId::proportional(12.0),
+                                                text_color,
+                                            );
+                                            let text_pos = egui::pos2(
+                                                row_rect.left() + 8.0,
+                                                row_rect.center().y - galley.rect.height() / 2.0,
+                                            );
+                                            ui.painter().galley(text_pos, galley, text_color);
+                                            if is_hovered {
+                                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                            }
+                                            #[cfg(test)]
+                                            crate::chrome::mark_layout(
+                                                ui,
+                                                &format!("dict-suggestion:{topic}"),
+                                                row_rect,
+                                            );
+                                            if row_resp.clicked() {
+                                                picked = Some(topic.clone());
+                                            }
+                                        }
+                                    });
+                            });
+                        });
+
+                    let rendered_rect = area_response.response.rect;
+                    ui.data_mut(|d| d.insert_temp(popup_rect_id, rendered_rect));
+                    #[cfg(test)]
+                    crate::chrome::mark_layout(ui, "dict-suggestions-popup", rendered_rect);
+
+                    if let Some(topic) = picked {
+                        self.session.dict_query = topic.clone();
+                        self.session.dict_suggestions_open = false;
+                        self.session.dict_suggestions_index = None;
+                        self.lookup_dict(&topic);
+                        ui.ctx().request_repaint();
+                    }
+                } else {
+                    ui.data_mut(|d| d.insert_temp(popup_rect_id, egui::Rect::NAN));
+                }
+
+                if self.session.dict_suggestions_open {
+                    if ui.input(|i| i.pointer.any_click()) {
+                        if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                            let last_popup_rect = ui.data(|d| d.get_temp::<egui::Rect>(popup_rect_id));
+                            if !box_rect.contains(pos)
+                                && !last_popup_rect.is_some_and(|r| r.contains(pos))
+                            {
+                                self.session.dict_suggestions_open = false;
+                                self.session.dict_suggestions_index = None;
+                            }
+                        }
+                    }
                 }
             });
         separator_line(ui, palette.ui_border);
 
         // 2. Entry Content Area
-        let active_dict = self.modules.iter().find(|m| {
-            self.session.dict_module_id.as_deref() == Some(&m.id)
-                || (self.session.dict_module_id.is_none() && m.kind == "dictionary")
-        });
+        let active_dict = self.active_dictionary();
         let display_title = active_dict
             .map(|m| m.name.to_uppercase())
             .unwrap_or_else(|| "DICTIONARY".into());
@@ -942,6 +1155,11 @@ impl GrapheApp {
     }
 
     fn dict_path_for(&self, topic: &str) -> Option<PathBuf> {
+        if let Some(module) = self.active_dictionary() {
+            if sqlite::dictionary_entry_in_file(&module.path, topic).is_some() {
+                return Some(module.path.clone());
+            }
+        }
         let strong = topic.starts_with(['H', 'G', 'h', 'g'])
             && topic.chars().skip(1).all(|ch| ch.is_ascii_digit());
         if strong {
@@ -1226,7 +1444,7 @@ fn search_input_box(
     query: &mut String,
     hint: &str,
     palette: &UiPalette,
-) -> (egui::Response, bool) {
+) -> (egui::Response, egui::Rect, bool) {
     let mut cleared = false;
     let frame = egui::Frame::new()
         .fill(paint::color(palette.ui_surface))
@@ -1286,7 +1504,7 @@ fn search_input_box(
         })
         .inner
     });
-    (inner_resp.inner, cleared)
+    (inner_resp.inner, inner_resp.response.rect, cleared)
 }
 
 fn morphology_box(ui: &mut egui::Ui, code: &str, lemma: &str, meaning: &str, palette: &UiPalette) {
@@ -1652,6 +1870,180 @@ mod tests {
 
         let size_large = get_font_size_for_needle(&mut app, 24.0, "Palavra grega logos");
         assert_eq!(size_large, 20.0);
+    }
+
+    #[test]
+    fn test_switching_dictionary_clears_search() {
+        let dir = std::env::temp_dir().join(format!("graphe-dict-switch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path_a = dir.join("DictA.dictionary.SQLite3");
+        let path_b = dir.join("DictB.dictionary.SQLite3");
+        graphe_store::sqlite::init_module_sql(
+            &path_a,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Dict A');
+             INSERT INTO dictionary VALUES ('G1', 'um');",
+        )
+        .unwrap();
+        graphe_store::sqlite::init_module_sql(
+            &path_b,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Dict B');
+             INSERT INTO dictionary VALUES ('H1', 'paz');",
+        )
+        .unwrap();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 2);
+        let id_a = app.modules[0].id.clone();
+        let id_b = app.modules[1].id.clone();
+
+        app.session.dict_module_id = Some(id_a);
+        app.session.dict_query = "G1".into();
+        app.session.dict_body = "um".into();
+        app.session.dict_suggestions = vec!["G1".into()];
+        app.session.dict_suggestions_open = true;
+        app.session.dict_suggestions_index = Some(0);
+
+        if app.session.dict_module_id.as_deref() != Some(&id_b) {
+            app.session.dict_module_id = Some(id_b);
+            app.session.dict_query.clear();
+            app.session.dict_body.clear();
+            app.session.dict_entry = None;
+            app.session.dict_cognates.clear();
+            app.session.dict_morph_code = None;
+            app.session.dict_morph_lemma = None;
+            app.session.dict_morph_meaning = None;
+            app.session.dict_suggestions.clear();
+            app.session.dict_suggestions_open = false;
+            app.session.dict_suggestions_index = None;
+        }
+
+        assert!(app.session.dict_query.is_empty(), "query must be cleared on dictionary switch");
+        assert!(app.session.dict_body.is_empty(), "body must be cleared on dictionary switch");
+        assert!(app.session.dict_suggestions.is_empty(), "suggestions must be cleared on dictionary switch");
+        assert!(!app.session.dict_suggestions_open, "suggestions popup must be closed on dictionary switch");
+        assert_eq!(app.session.dict_suggestions_index, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_dictionary_search_suggestions_lifecycle() {
+        let dir = std::env::temp_dir().join(format!("graphe-dict-sugg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("StrongTest.dictionary.SQLite3");
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Strong Test');
+             INSERT INTO dictionary VALUES ('G1', 'um'), ('G10', 'dez'), ('G100', 'cem'), ('H10', 'dez hebraico');",
+        )
+        .unwrap();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 1);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+
+        assert!(app.session.dict_suggestions.is_empty());
+        assert!(!app.session.dict_suggestions_open);
+
+        app.session.dict_query = "G1".into();
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, 14.0);
+        let palette = graphe_domain::theme::palette(false);
+
+        let _ = ctx.run_test_ui(Default::default(), |ctx| {
+            app.sidebar(ctx, palette);
+        });
+
+        assert_eq!(app.session.dict_suggestions, vec!["G1", "G10", "G100"]);
+        assert!(app.session.dict_suggestions_open);
+        assert_eq!(app.session.dict_suggestions_index, None);
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::ArrowDown,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                    physical_key: None,
+                }],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_suggestions_index, Some(0));
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::ArrowDown,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                    physical_key: None,
+                }],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_suggestions_index, Some(1));
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                    physical_key: None,
+                }],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G10");
+        assert!(!app.session.dict_suggestions_open);
+        assert_eq!(app.session.dict_body, "dez");
+
+        app.session.dict_query = "G".into();
+        let _ = ctx.run_test_ui(Default::default(), |ctx| {
+            app.sidebar(ctx, palette);
+        });
+        assert!(app.session.dict_suggestions_open);
+
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                    physical_key: None,
+                }],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert!(!app.session.dict_suggestions_open);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

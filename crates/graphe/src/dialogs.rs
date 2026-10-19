@@ -251,7 +251,7 @@ impl GrapheApp {
         self.session.dialog = Dialog::DictInfo;
     }
 
-    fn active_dictionary(&self) -> Option<&InstalledModule> {
+    pub(crate) fn active_dictionary(&self) -> Option<&InstalledModule> {
         if let Some(id) = self.session.dict_module_id.as_deref() {
             if let Some(module) = self
                 .modules
