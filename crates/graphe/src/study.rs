@@ -2600,6 +2600,8 @@ pub(crate) fn commentary_layout(
     link_fmt.underline = egui::Stroke::new(1.0_f32, link_color);
     let mut heading = text_format(font * 0.85, link_color);
     heading.extra_letter_spacing = 0.2;
+    let bold_family = egui::FontFamily::Name(crate::paint::BOLD_FAMILY.into());
+    let bold_faces = crate::paint::has_bold_family(ui.ctx());
     for piece in pieces {
         match piece {
             CommentaryPiece::Break => push_chars(&mut job, &mut chars, "\n", body.clone()),
@@ -2607,9 +2609,16 @@ pub(crate) fn commentary_layout(
                 push_chars(&mut job, &mut chars, text, heading.clone())
             }
             CommentaryPiece::Text(text) => push_chars(&mut job, &mut chars, text, body.clone()),
-            CommentaryPiece::Rich { text, italic, .. } => {
+            CommentaryPiece::Rich {
+                text,
+                italic,
+                bold,
+            } => {
                 let mut format = body.clone();
                 format.italics = *italic;
+                if *bold && bold_faces {
+                    format.font_id.family = bold_family.clone();
+                }
                 push_chars(&mut job, &mut chars, text, format);
             }
             CommentaryPiece::Link {
@@ -2841,6 +2850,107 @@ mod tests {
             }
         )));
         assert_eq!(anchor_for_verse(&anchors, 1), Some(0));
+    }
+
+    #[test]
+    fn commentary_bold_tags_stay_bold_in_pieces() {
+        let matcher = graphe_domain::commentary_ref::build_reference_matcher(&[], &[]);
+        let entries = vec![graphe_domain::model::CommentaryEntry {
+            verse_from: 1,
+            verse_to: Some(1),
+            chapter_to: None,
+            text: "<b>1</b> Estatísticas: <strong>5º livro</strong> da Bíblia.".into(),
+        }];
+        let (pieces, _) = pieces_from_entries(&entries, &matcher, 1);
+        assert!(
+            pieces.iter().any(|piece| matches!(
+                piece,
+                CommentaryPiece::Rich { text, bold: true, italic: false } if text == "1"
+            )),
+            "the verse tag run keeps bold: {pieces:?}"
+        );
+        assert!(
+            pieces.iter().any(|piece| matches!(
+                piece,
+                CommentaryPiece::Rich { text, bold: true, italic: false } if text == "5º livro"
+            )),
+            "a <strong> sentence keeps bold: {pieces:?}"
+        );
+    }
+
+    #[test]
+    fn commentary_bold_pieces_lay_out_with_the_bold_family() {
+        let ctx = egui::Context::default();
+        crate::paint::install_fonts(&ctx);
+        let bold_family = egui::FontFamily::Name(crate::paint::BOLD_FAMILY.into());
+        let _ = ctx.run_test_ui(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let pieces = vec![
+                    CommentaryPiece::Text("plain ".into()),
+                    CommentaryPiece::Rich {
+                        text: "bold".into(),
+                        italic: false,
+                        bold: true,
+                    },
+                    CommentaryPiece::Rich {
+                        text: "both".into(),
+                        italic: true,
+                        bold: true,
+                    },
+                ];
+                let (galley, _) =
+                    super::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+                let job = &*galley.job;
+                let sections: Vec<_> = job
+                    .sections
+                    .iter()
+                    .map(|section| {
+                        (
+                            &job.text[section.byte_range.start.0..section.byte_range.end.0],
+                            &section.format,
+                        )
+                    })
+                    .collect();
+                let bold = sections
+                    .iter()
+                    .find(|(text, _)| *text == "bold")
+                    .expect("the bold run keeps its own section");
+                assert_eq!(bold.1.font_id.family, bold_family);
+                let both = sections
+                    .iter()
+                    .find(|(text, _)| *text == "both")
+                    .expect("the bold italic run keeps its own section");
+                assert_eq!(both.1.font_id.family, bold_family);
+                assert!(both.1.italics);
+                let plain = sections
+                    .iter()
+                    .find(|(text, _)| *text == "plain ")
+                    .expect("the plain run keeps its own section");
+                assert_eq!(plain.1.font_id.family, egui::FontFamily::Proportional);
+                assert!(!plain.1.italics);
+            });
+        });
+    }
+
+    #[test]
+    fn commentary_bold_falls_back_to_the_regular_family_without_installed_fonts() {
+        // A default context has no bold family; layout must not name it.
+        let ctx = egui::Context::default();
+        let _ = ctx.run_test_ui(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let pieces = vec![CommentaryPiece::Rich {
+                    text: "bold".into(),
+                    italic: false,
+                    bold: true,
+                }];
+                let (galley, _) =
+                    super::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+                assert_eq!(galley.job.text, "bold");
+                for section in &galley.job.sections {
+                    assert_eq!(section.format.font_id.family, egui::FontFamily::Proportional);
+                }
+            });
+        });
     }
 
     #[test]

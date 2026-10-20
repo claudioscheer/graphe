@@ -54,6 +54,23 @@ pub(crate) fn apply(ctx: &egui::Context, dark: bool, font: f32) {
     });
 }
 
+/// Named family for text modules mark up with `<b>` or `<strong>`, such as
+/// commentary emphasis. egui picks a font by family alone, so bold text needs
+/// its own family instead of a flag on the text format.
+pub(crate) const BOLD_FAMILY: &str = "graphe-bold";
+
+/// Test contexts built straight from [`egui::Context::default`] skip
+/// [`install_fonts`], so bold runs keep the regular weight rather than
+/// naming a family egui does not know.
+pub(crate) fn has_bold_family(ctx: &egui::Context) -> bool {
+    ctx.fonts(|fonts| {
+        fonts
+            .definitions()
+            .families
+            .contains_key(&egui::FontFamily::Name(BOLD_FAMILY.into()))
+    })
+}
+
 /// Ubuntu-Light has no Hebrew, so dictionary lemmas draw as empty boxes.
 /// DejaVu is always available. A system face, when present, is tried first
 /// and matches the letters the Electron window gets from the OS.
@@ -63,6 +80,12 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
         "DejaVuSans".to_owned(),
         std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
             "../../../assets/fonts/DejaVuSans.ttf"
+        ))),
+    );
+    fonts.font_data.insert(
+        "DejaVuSans-Bold".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../../../assets/fonts/DejaVuSans-Bold.ttf"
         ))),
     );
     if let Some(bytes) = system_ui_font() {
@@ -87,6 +110,31 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
         }
         *list = ordered;
     }
+    // Bold faces come first so emphasis is real; the regular faces trail as
+    // the fallback chain, so glyphs a bold face lacks (Hebrew, say) still draw.
+    let mut ordered_bold = Vec::new();
+    if let Some(bytes) = system_bold_font() {
+        fonts.font_data.insert(
+            "system-ui-bold".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        ordered_bold.push("system-ui-bold".to_owned());
+    }
+    ordered_bold.push("DejaVuSans-Bold".to_owned());
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        let Some(list) = fonts.families.get(&family) else {
+            continue;
+        };
+        for name in list.iter() {
+            if !ordered_bold.contains(name) {
+                ordered_bold.push(name.clone());
+            }
+        }
+    }
+    fonts.families.insert(
+        egui::FontFamily::Name(BOLD_FAMILY.to_owned().into()),
+        ordered_bold,
+    );
     ctx.set_fonts(fonts);
 }
 
@@ -104,6 +152,22 @@ fn system_ui_font() -> Option<Vec<u8>> {
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/Library/Fonts/Arial Unicode.ttf",
+    ]
+    .iter()
+    .find_map(|path| std::fs::read(path).ok())
+}
+
+/// Bold face matching [`system_ui_font`], so emphasized text keeps the face
+/// the rest of the window uses. DejaVu Sans Bold is the embedded fallback.
+fn system_bold_font() -> Option<Vec<u8>> {
+    [
+        r"C:\Windows\Fonts\segoeuib.ttf",
+        r"C:\Windows\Fonts\arialbd.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
     ]
     .iter()
     .find_map(|path| std::fs::read(path).ok())
