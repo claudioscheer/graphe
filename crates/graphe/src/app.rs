@@ -3286,6 +3286,18 @@ pub(crate) mod tests {
         graphe_store::sqlite::init_module_sql(path, &sql).unwrap();
     }
 
+    /// The committed fixture Bible (`tests/fixtures/bible.SQLite3`) carries
+    /// generic module names and filler verse text in the MyBible shape. It
+    /// exists so module-dependent tests run on every machine, including CI,
+    /// without reading the developer's installed modules. See its README for
+    /// the script that regenerates it.
+    fn fixture_bible() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("bible.SQLite3")
+    }
+
     #[test]
     fn wheel_past_the_end_does_not_jump_the_text() {
         let ctx = egui::Context::default();
@@ -5990,31 +6002,25 @@ pub(crate) mod tests {
 
     #[test]
     fn typing_verse_reference_scrolls_to_verse_even_when_commentary_active() {
-        let userprofile = match std::env::var("USERPROFILE") {
-            Ok(val) => std::path::PathBuf::from(val),
-            Err(_) => return,
-        };
-        let bible_path = userprofile
-            .join(".graphe")
-            .join("modules")
-            .join("Nova Almeida Atualizada.bible.SQLite3");
-        if !bible_path.exists() {
-            return;
-        }
-
+        let heb = i18n::find_book_by_abbrev("Hb").expect("Hebrews resolves");
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("NAA", "NAA", bible_path));
-        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
-        app.session.panes.get_mut("pane-1").unwrap().book_number = 650;
+        app.modules.push(bible_module("Fixt", "Fixture", fixture_bible()));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Fixt".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = heb;
         app.session.panes.get_mut("pane-1").unwrap().chapter = 10;
         app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
 
+        let userprofile = match std::env::var("USERPROFILE") {
+            Ok(val) => std::path::PathBuf::from(val),
+            Err(_) => std::path::PathBuf::new(),
+        };
         let comm_path = userprofile
             .join(".graphe")
             .join("modules")
             .join("Comentario Biblico Champlin Completo.commentary.SQLite3");
-        if comm_path.exists() {
+        let champlin_installed = comm_path.exists();
+        if champlin_installed {
             app.modules.push(graphe_store::catalog::InstalledModule {
                 id: "Champlin".into(),
                 name: "Champlin".into(),
@@ -6089,29 +6095,21 @@ pub(crate) mod tests {
         let offset = marks.iter().find(|(k, _)| k == "chapter-offset:pane-1").map(|(_, r)| *r).expect("chapter offset");
         assert!(offset[1] > 4000.0, "bible pane should scroll to verse 26, got {}", offset[1]);
 
+        if !champlin_installed {
+            return;
+        }
         let comm_offset = marks.iter().find(|(k, _)| k.starts_with("commentary-offset")).map(|(_, r)| *r).expect("commentary offset");
         assert!(comm_offset[1] > 50000.0, "commentary pane should scroll to verse 26, got {}", comm_offset[1]);
     }
 
     #[test]
     fn typing_a_chapter_without_a_verse_scrolls_to_the_top() {
-        let userprofile = match std::env::var("USERPROFILE") {
-            Ok(val) => std::path::PathBuf::from(val),
-            Err(_) => return,
-        };
-        let bible_path = userprofile
-            .join(".graphe")
-            .join("modules")
-            .join("Nova Almeida Atualizada.bible.SQLite3");
-        if !bible_path.exists() {
-            return;
-        }
-
+        let ec = i18n::find_book_by_abbrev("Ec").expect("Ecclesiastes resolves");
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("NAA", "NAA", bible_path));
-        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
-        app.session.panes.get_mut("pane-1").unwrap().book_number = 250;
+        app.modules.push(bible_module("Fixt", "Fixture", fixture_bible()));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Fixt".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = ec;
         app.session.panes.get_mut("pane-1").unwrap().chapter = 4;
         app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
 
@@ -6173,7 +6171,7 @@ pub(crate) mod tests {
         let _ = ctx.run_test_ui(raw_chapter, |ui| app.show_workbench(ui));
 
         let chapter = app.session.panes.get("pane-1").unwrap();
-        assert_eq!(chapter.book_number, 250);
+        assert_eq!(chapter.book_number, ec);
         assert_eq!(chapter.chapter, 4);
         let first = app
             .session

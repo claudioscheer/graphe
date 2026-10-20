@@ -33,6 +33,7 @@ Root `Cargo.toml` is the workspace (`resolver = "2"`).
 - `startup.rs` builds the model the binary prints and the launch test asserts.
 - `session.rs` owns study actions (navigate, split, history, copy, workspaces).
 - `app.rs`, `study.rs`, `side.rs`, `dialogs.rs` draw the workbench.
+- Reference dialog flow: `chrome.rs` clicks call `GrapheApp::open_navigation`; `drain_navigation` applies each action through `Session::navigate`; target-pane rules live in `session.rs`, input parsing in `graphe-domain/src/navigation.rs`.
 
 Do not put a second copy of a rule in the window. Call the domain or store function.
 
@@ -69,13 +70,15 @@ Tests sit next to the code they call (`#[cfg(test)]` modules). They construct th
 
 - Domain tests cover books, hrefs, panes, navigation, workspaces, picker, search parsing, morphology, commentary refs, dictionary formatting, coverage, and app state.
 - Store tests use temporary SQLite files for reads, edits, and theWord/MySword conversion, including encrypted `.ontx` rejection.
-- `graphe` tests call `Session` and `build_startup_model`.
+- `graphe` tests call `Session` and `build_startup_model`. Tests that need a Bible module point at the committed fixture (`crates/graphe/tests/fixtures/bible.SQLite3`, generic names and filler text — see its README); keep tests that read the developer's installed modules behind their existence guards.
+- Tests that need book numbers resolve them with the domain (`i18n::find_book_by_abbrev`) instead of pasting numbers from memory.
 
 ## Git
 
 - Only commit when asked. Only push when asked.
 - No AI attribution or co-author trailers.
-- Commit messages are complete sentences and say why the change exists.
+- Commit messages are complete sentences and say why the change exists. An optional `Topic: <area>` trailer names the area for the release-notes bullet.
+- Uncommitted work is invisible to `git reset --hard`: finish or stash it before any command that moves HEAD.
 
 ## Documentation & Processes
 
