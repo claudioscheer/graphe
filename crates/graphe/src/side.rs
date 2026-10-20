@@ -746,9 +746,12 @@ impl GrapheApp {
                             frame.show(ui, |ui| {
                                 ui.set_width(inner_width);
                                 ui.set_max_width(inner_width);
+                                // Shrink to the result count (width stays glued to
+                                // the search box); only cap at 200px — and show the
+                                // scrollbar — when the list is long enough.
                                 egui::ScrollArea::vertical()
                                     .max_height(200.0)
-                                    .auto_shrink([false, false])
+                                    .auto_shrink([false, true])
                                     .show(ui, |ui| {
                                         ui.spacing_mut().item_spacing.y = 1.0;
                                         for (idx, topic) in suggestions.iter().enumerate() {
@@ -2064,6 +2067,11 @@ mod tests {
         assert_eq!(
             popup_rect[2], current_box_rect[2],
             "popup width must match search box width exactly"
+        );
+        let popup_height = popup_rect[3];
+        assert!(
+            (78.0..120.0).contains(&popup_height),
+            "dropdown must shrink to its 3 rows instead of filling the 200px cap, got {popup_height:.0}px"
         );
 
         // 5. Navigate with ArrowDown
