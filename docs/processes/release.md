@@ -211,3 +211,34 @@ Or view releases:
 gh release list
 gh release view vX.Y.Z
 ```
+
+---
+
+## 6. Release Notes (Changelog)
+
+Every release ships a changelog built from the commits included in its tag (`git log vPREVIOUS..vX.Y.Z`). The workflow's auto-generated PR list is not enough, because most releases carry direct commits to `main`. After the release workflow publishes, rewrite the notes:
+
+```bash
+gh release edit vX.Y.Z --notes-file notes.md
+```
+
+One bullet per commit, oldest first, skipping the `Release version X.Y.Z.` commit itself. Each bullet has:
+
+1. A bold topic naming the area of the change.
+2. A short description taken from the commit subject.
+3. The GitHub user who authored the commit, tagged.
+4. A link to the commit.
+
+Example:
+
+```markdown
+- **Reference navigation** — The reference dialog now changes the Bible pane
+  you selected instead of the pinned one. @claudioscheer
+  ([d5e245f](https://github.com/claudioscheer/graphe/commit/d5e245f01a5cdece4940f32f5298fad65e172bdd))
+```
+
+Close the notes with the compare link:
+
+```markdown
+**Full Changelog**: https://github.com/claudioscheer/graphe/compare/vPREVIOUS...vX.Y.Z
+```
