@@ -719,12 +719,21 @@ impl GrapheApp {
                     let suggestions = self.session.dict_suggestions.clone();
                     let active_idx = self.session.dict_suggestions_index;
 
+                    // Rows are 26px with 1px between them. The area remembers last
+                    // frame's height and will not grow past it, so a shorter list
+                    // would stick after the reader deletes letters. This maximum
+                    // follows the current result count. The scroll area still caps
+                    // a long list at 200px. The extra 12px covers the frame margin
+                    // and stroke so the rows are not clipped by that remembered size.
+                    let rows = suggestions.len() as f32;
+                    let list_h = (rows * 26.0 + (rows - 1.0).max(0.0) * 1.0).min(200.0);
                     let area_response = egui::Area::new(popup_id)
                         .fixed_pos(popup_pos)
                         .order(egui::Order::Foreground)
                         .show(ui.ctx(), |ui| {
                             ui.set_width(box_width);
                             ui.set_max_width(box_width);
+                            ui.set_max_height(list_h + 12.0);
 
                             let frame =
                                 egui::Frame::new()
@@ -1608,6 +1617,8 @@ fn search_input_box(
             let (btn_rect, btn_resp) =
                 ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
             if !query.is_empty() {
+                #[cfg(test)]
+                crate::chrome::mark_layout(ui, "search-input-clear", btn_rect);
                 let icon_color = if btn_resp.hovered() {
                     paint::color(palette.ui_text_muted)
                 } else {
@@ -1631,6 +1642,9 @@ fn search_input_box(
                 if btn_resp.clicked() {
                     query.clear();
                     cleared = true;
+                    // The click lands on the button, which takes focus off the
+                    // field. Put it back so the reader can type the next query.
+                    text_edit.request_focus();
                 }
             }
             text_edit
@@ -2338,6 +2352,238 @@ mod tests {
         );
         assert!(!app.session.dict_suggestions_open);
         assert!(app.session.dict_suggestions.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A shorter result list shrinks the popup. Deleting letters must open it
+    /// back up to the taller list, up to the same 200px cap as the first time.
+    #[test]
+    fn dictionary_suggestions_grow_back_when_more_results_match() {
+        let dir =
+            std::env::temp_dir().join(format!("graphe-dict-sugg-grow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("StrongTest.dictionary.SQLite3");
+        let mut sql = String::from(
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Strong Test');",
+        );
+        for index in 0..12 {
+            sql.push_str(&format!(
+                "INSERT INTO dictionary VALUES ('LOVE{index:02}', 'amor');\n"
+            ));
+        }
+        sql.push_str("INSERT INTO dictionary VALUES ('LOVED', 'amado');\n");
+        graphe_store::sqlite::init_module_sql(&path, &sql).unwrap();
+
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, 14.0);
+        let palette = graphe_domain::theme::palette(false);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 800.0));
+
+        let paint = |app: &mut crate::app::GrapheApp, events: Vec<egui::Event>| {
+            let _ = ctx.run_test_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    app.sidebar(ctx, palette);
+                },
+            );
+        };
+        let popup_height = |ctx: &egui::Context| -> f32 {
+            ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+            })
+            .into_iter()
+            .rfind(|(key, _)| key == "dict-suggestions-popup")
+            .map(|(_, rect)| rect[3])
+            .unwrap_or(0.0)
+        };
+        let type_text = |app: &mut crate::app::GrapheApp, text: &str| {
+            for ch in text.chars() {
+                paint(app, vec![egui::Event::Text(ch.to_string())]);
+            }
+        };
+        let backspace = |app: &mut crate::app::GrapheApp| {
+            paint(
+                app,
+                vec![egui::Event::Key {
+                    key: egui::Key::Backspace,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                }],
+            );
+        };
+
+        paint(&mut app, Vec::new());
+        let marks = ctx.data(|data| {
+            data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let box_rect = marks
+            .iter()
+            .find(|(key, _)| key == "dict-search-box")
+            .map(|(_, rect)| *rect)
+            .expect("dict-search-box layout mark");
+        let click_pos = egui::pos2(box_rect[0] + 10.0, box_rect[1] + box_rect[3] * 0.5);
+        paint(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(click_pos),
+                egui::Event::PointerButton {
+                    pos: click_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: click_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+
+        type_text(&mut app, "LO");
+        paint(&mut app, Vec::new());
+        assert!(app.session.dict_suggestions.len() > 8);
+        let tall = popup_height(&ctx);
+        assert!(
+            tall > 160.0,
+            "a long result list should open the tall dropdown, got {tall:.0}px"
+        );
+
+        type_text(&mut app, "VED");
+        paint(&mut app, Vec::new());
+        assert_eq!(app.session.dict_query, "LOVED");
+        assert_eq!(app.session.dict_suggestions, vec!["LOVED".to_string()]);
+        let short = popup_height(&ctx);
+        assert!(
+            short < 80.0,
+            "one result should shrink the dropdown, got {short:.0}px"
+        );
+
+        backspace(&mut app);
+        backspace(&mut app);
+        backspace(&mut app);
+        paint(&mut app, Vec::new());
+        assert_eq!(app.session.dict_query, "LO");
+        assert!(app.session.dict_suggestions.len() > 8);
+        let grown = popup_height(&ctx);
+        assert!(
+            (grown - tall).abs() < 8.0,
+            "deleting letters should restore the dropdown to the taller list, tall {tall:.0} grown {grown:.0}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clearing the dictionary search leaves the cursor in the field.
+    #[test]
+    fn clearing_the_dictionary_search_keeps_the_field_focused() {
+        let dir =
+            std::env::temp_dir().join(format!("graphe-dict-clear-focus-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("StrongTest.dictionary.SQLite3");
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Strong Test');
+             INSERT INTO dictionary VALUES ('G1', 'um'), ('H1', 'pai');",
+        )
+        .unwrap();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, 14.0);
+        let palette = graphe_domain::theme::palette(false);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 800.0));
+        let paint = |app: &mut crate::app::GrapheApp, events: Vec<egui::Event>| {
+            let _ = ctx.run_test_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    app.sidebar(ctx, palette);
+                },
+            );
+        };
+        let mark = |key: &str| -> [f32; 4] {
+            ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+            })
+            .into_iter()
+            .rfind(|(name, _)| name == key)
+            .map(|(_, rect)| rect)
+            .unwrap_or_else(|| panic!("missing {key}"))
+        };
+        let click = |app: &mut crate::app::GrapheApp, pos: egui::Pos2| {
+            paint(
+                app,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        };
+
+        paint(&mut app, Vec::new());
+        let box_rect = mark("dict-search-box");
+        click(
+            &mut app,
+            egui::pos2(box_rect[0] + 12.0, box_rect[1] + box_rect[3] * 0.5),
+        );
+        paint(&mut app, vec![egui::Event::Text("G1".into())]);
+        assert_eq!(app.session.dict_query, "G1");
+
+        let clear = mark("search-input-clear");
+        click(
+            &mut app,
+            egui::pos2(clear[0] + clear[2] * 0.5, clear[1] + clear[3] * 0.5),
+        );
+        assert!(
+            app.session.dict_query.is_empty(),
+            "the clear button empties the dictionary search"
+        );
+
+        paint(&mut app, vec![egui::Event::Text("H".into())]);
+        assert_eq!(
+            app.session.dict_query, "H",
+            "typing after clear must land in the dictionary search field"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
