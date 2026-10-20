@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "graphe"
-version = "1.0.21"
+version = "1.0.22"
 dependencies = [
  "eframe",
  "egui",
@@ -1581,7 +1581,7 @@ dependencies = [
 
 [[package]]
 name = "graphe-domain"
-version = "1.0.21"
+version = "1.0.22"
 dependencies = [
  "indexmap",
  "regex",
@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "graphe-store"
-version = "1.0.21"
+version = "1.0.22"
 dependencies = [
  "dirs",
  "flate2",
