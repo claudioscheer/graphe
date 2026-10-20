@@ -19,6 +19,29 @@ const STRIP_HEIGHT: f32 = 35.0;
 const TAB_HEIGHT: f32 = 33.0;
 pub(crate) const TOOLBAR_HEIGHT: f32 = 44.0;
 
+/// Applies the update-banner download button style to a scoped [`egui::Style`].
+///
+/// NOTE (egui 0.37 atoms): [`egui::Button`] paints its face from
+/// `weak_bg_fill` and its text from `fg_stroke`; `bg_fill` and a [`egui::RichText`]
+/// color are ignored. Every interactive state gets the same rect
+/// (`expansion = 0`), stroke, and text color, so hovering only lifts the
+/// fill slightly and the button never changes size.
+pub(crate) fn style_update_download_button(style: &mut egui::Style) {
+    for state in [
+        &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+    ] {
+        state.expansion = 0.0;
+        state.corner_radius = egui::CornerRadius::same(2);
+        state.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(90));
+        state.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+    }
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_white_alpha(18);
+    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_white_alpha(34);
+    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_white_alpha(34);
+}
+
 impl GrapheApp {
     pub(crate) fn update_banner(&mut self, ui: &mut egui::Ui, palette: &UiPalette) {
         let version = self
@@ -35,55 +58,84 @@ impl GrapheApp {
             .frame(
                 egui::Frame::new()
                     .fill(paint::color(palette.ui_link))
-                    .inner_margin(egui::Margin::symmetric(12, 3)),
+                    .inner_margin(egui::Margin::symmetric(12, 0)),
             )
             .show(ui, |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.label(
-                        egui::RichText::new(i18n::t_fmt(
-                            "updateAvailable",
-                            &[("version", version.as_str())],
-                        ))
-                        .size(12.0)
-                        .color(egui::Color32::WHITE),
-                    );
-                    ui.add_space(8.0);
-                    let download_btn = egui::Button::new(
-                        egui::RichText::new(i18n::t("updateDownload"))
-                            .size(11.0)
-                            .strong()
-                            .color(egui::Color32::WHITE),
-                    )
-                    .fill(egui::Color32::from_white_alpha(38))
-                    .stroke(egui::Stroke::new(
-                        1.0_f32,
-                        egui::Color32::from_white_alpha(128),
-                    ))
-                    .corner_radius(egui::CornerRadius::same(2));
-                    let response = ui.add(download_btn);
-                    mark_layout(ui, "update-download", response.rect);
-                    if response.clicked() {
-                        let url = format!(
-                            "https://github.com/claudioscheer/graphe/releases/tag/v{version}"
+                let avail = ui.available_size();
+                ui.allocate_ui_with_layout(
+                    avail,
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        let galley = ui.painter().layout_no_wrap(
+                            i18n::t_fmt("updateAvailable", &[("version", version.as_str())]),
+                            egui::FontId::proportional(12.0),
+                            egui::Color32::WHITE,
                         );
-                        let _ = open::that(url);
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_btn = egui::Button::new(
-                            egui::RichText::new("×")
-                                .size(16.0)
-                                .color(egui::Color32::from_white_alpha(200)),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE);
-                        let close_resp = ui.add(close_btn);
-                        mark_layout(ui, "update-close", close_resp.rect);
-                        if close_resp.clicked() {
-                            dismiss = true;
+                        let (label_rect, _) =
+                            ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                        // Optical nudge: the em box centers geometrically, but
+                        // cap mass reads low next to the descender in
+                        // "disponível!", so paint 1px high.
+                        ui.painter().galley(
+                            egui::pos2(
+                                label_rect.min.x,
+                                label_rect.center().y - 1.0 - galley.size().y / 2.0,
+                            ),
+                            galley,
+                            egui::Color32::WHITE,
+                        );
+                        mark_layout(ui, "update-label", label_rect);
+                        ui.add_space(8.0);
+                        let response = ui.scope(|ui| {
+                            style_update_download_button(ui.style_mut());
+                            ui.add(
+                                egui::Button::new(
+                                    egui::RichText::new(i18n::t("updateDownload"))
+                                        .size(11.0)
+                                        .strong()
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .min_size(egui::vec2(0.0, 18.0))
+                                .corner_radius(egui::CornerRadius::same(2)),
+                            )
+                        });
+                        let response = response.inner;
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
-                    });
-                });
+                        mark_layout(ui, "update-download", response.rect);
+                        if response.clicked() {
+                            let url = format!(
+                                "https://github.com/claudioscheer/graphe/releases/tag/v{version}"
+                            );
+                            let _ = open::that(url);
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let (rect, close_resp) = ui
+                                .allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
+                            let ink = if close_resp.hovered() {
+                                egui::Color32::WHITE
+                            } else {
+                                egui::Color32::from_white_alpha(200)
+                            };
+                            ui.painter().text(
+                                rect.center() + egui::vec2(0.0, -1.0),
+                                egui::Align2::CENTER_CENTER,
+                                "×",
+                                egui::FontId::proportional(16.0),
+                                ink,
+                            );
+                            if close_resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
+                            mark_layout(ui, "update-close", rect);
+                            if close_resp.clicked() {
+                                dismiss = true;
+                            }
+                        });
+                    },
+                );
             });
         if dismiss {
             if let Ok(mut notice) = self.update_notice.lock() {
@@ -1406,6 +1458,33 @@ fn menu_item(
 mod tests {
     use super::toolbar_picker_width;
     use crate::RunTestUi;
+
+    #[test]
+    fn update_download_button_style_only_lifts_fill_on_hover() {
+        let mut style = egui::Style::default();
+        super::style_update_download_button(&mut style);
+        for state in [
+            &style.visuals.widgets.inactive,
+            &style.visuals.widgets.hovered,
+            &style.visuals.widgets.active,
+        ] {
+            assert_eq!(state.expansion, 0.0);
+            assert_eq!(state.corner_radius, egui::CornerRadius::same(2));
+            assert_eq!(state.fg_stroke.color, egui::Color32::WHITE);
+        }
+        assert_eq!(
+            style.visuals.widgets.inactive.weak_bg_fill,
+            egui::Color32::from_white_alpha(18)
+        );
+        assert_eq!(
+            style.visuals.widgets.hovered.weak_bg_fill,
+            egui::Color32::from_white_alpha(34)
+        );
+        assert_eq!(
+            style.visuals.widgets.active.weak_bg_fill,
+            egui::Color32::from_white_alpha(34)
+        );
+    }
 
     #[test]
     fn picker_width_follows_the_pane() {

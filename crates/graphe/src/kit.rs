@@ -13,6 +13,22 @@ use crate::paint;
 use crate::session::{Dialog, Session};
 use graphe_domain::i18n;
 
+/// Serializes GPU snapshotting across parallel tests. Each `render()` builds
+/// its own wgpu instance and device, but creating and driving those from
+/// several test threads at once crashes the process
+/// (`STATUS_ACCESS_VIOLATION`). Everything else in these tests still runs in
+/// parallel; only the GPU section takes this lock.
+static RENDER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn render_locked(
+    harness: &mut egui_kittest::Harness<'static, GrapheApp>,
+) -> Result<image::RgbaImage, String> {
+    let _guard = RENDER_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (&mut *harness).render()
+}
+
 fn workbench(width: f32, height: f32) -> egui_kittest::Harness<'static, GrapheApp> {
     let app = bare(Session::new());
     i18n::set_lang("en");
@@ -44,7 +60,7 @@ fn settings_button_opens_the_settings_dialog() {
     harness.run();
     assert_eq!(harness.state().session.dialog, Dialog::Settings);
 
-    let image = harness.render().expect("wgpu snapshot renderer");
+    let image = render_locked(&mut harness).expect("wgpu snapshot renderer");
     assert_eq!(
         (image.width(), image.height()),
         (1180, 760),
@@ -128,7 +144,7 @@ fn clicking_commentary_reference_after_selecting_text_in_workbench() {
     let shot_dir = repo_root.join("temp").join("screenshots");
     let _ = std::fs::create_dir_all(&shot_dir);
 
-    let img = harness.render().expect("render before");
+    let img = render_locked(&mut harness).expect("render before");
     let _ = img.save(shot_dir.join("60-before.png"));
 
     let marks = harness.ctx.data(|d| {
@@ -202,7 +218,7 @@ fn clicking_commentary_reference_after_selecting_text_in_workbench() {
     assert_eq!(bible.selected_verse, first_link.verse);
     assert!(!crate::app::label_has_selection(&harness.ctx));
 
-    let img_after = harness.render().expect("render after");
+    let img_after = render_locked(&mut harness).expect("render after");
     let _ = img_after.save(shot_dir.join("60-after.png"));
 }
 
@@ -348,7 +364,7 @@ fn clicking_champlin_deut_reference_in_workbench() {
         harness_before.step();
         harness_before.run();
 
-        let img_before = harness_before.render().expect("render before");
+        let img_before = render_locked(&mut harness_before).expect("render before");
         let _ = img_before.save(shot_dir.join("61-before.png"));
     }
 
@@ -451,7 +467,7 @@ fn clicking_champlin_deut_reference_in_workbench() {
     assert_eq!(bible.chapter, 17);
     assert_eq!(bible.selected_verse, Some(26));
 
-    let img_after = harness.render().expect("render after");
+    let img_after = render_locked(&mut harness).expect("render after");
     let _ = img_after.save(shot_dir.join("61-after.png"));
 }
 
@@ -492,7 +508,7 @@ fn missing_reference_gives_feedback_in_workbench() {
                 app_before,
             );
         harness_before.run();
-        let img_before = harness_before.render().expect("render before");
+        let img_before = render_locked(&mut harness_before).expect("render before");
         let _ = img_before.save(shot_dir.join("62-before.png"));
     }
 
@@ -533,7 +549,7 @@ fn missing_reference_gives_feedback_in_workbench() {
         "feedback label must be laid out in workbench"
     );
 
-    let img_after = harness.render().expect("render after");
+    let img_after = render_locked(&mut harness).expect("render after");
     let _ = img_after.save(shot_dir.join("62-after.png"));
 }
 
@@ -664,7 +680,7 @@ fn theme_switch_preserves_text_rendering_in_workbench() {
         "reading cache must have shaped galleys after switching to light theme"
     );
 
-    let img_after = harness.render().expect("render after theme switch");
+    let img_after = render_locked(&mut harness).expect("render after theme switch");
     let _ = img_after.save(shot_dir.join("9-after.png"));
 
     // Switch back to dark mode
@@ -844,7 +860,7 @@ fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
     };
 
     // Save screenshot showing feature working with clean forward text and correct reference links
-    let img_after = harness.render().expect("render after");
+    let img_after = render_locked(&mut harness).expect("render after");
     let _ = img_after.save(shot_dir.join("70-after.png"));
 
     // Click link:

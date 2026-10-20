@@ -1570,6 +1570,7 @@ dependencies = [
  "egui_kittest",
  "graphe-domain",
  "graphe-store",
+ "image",
  "indexmap",
  "open",
  "rfd",

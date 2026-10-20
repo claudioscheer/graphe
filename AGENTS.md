@@ -81,4 +81,5 @@ Tests sit next to the code they call (`#[cfg(test)]` modules). They construct th
 
 Standard process guides for agents are stored in `docs/processes/`:
 - [Release Process](docs/processes/release.md): Version bumping, manifests, tests, tags, and GitHub release automation.
+- [Update Banner & UI Test Notes](docs/processes/ui-banner-and-test-notes.md): Update plumbing, the egui 0.37 `Button` theming rule, the kittest render lock, and previewing UI changes locally.
 

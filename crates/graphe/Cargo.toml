@@ -23,6 +23,7 @@ ureq = "2"
 
 [dev-dependencies]
 egui_kittest = { version = "0.37", features = ["snapshot", "wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
