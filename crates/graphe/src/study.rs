@@ -1349,17 +1349,23 @@ impl GrapheApp {
             ui.data_mut(|data| data.remove_temp::<CommentaryPin>(pin_id));
         }
         let key = GalleyKey::new(paint.fingerprint, width_px, font, text_color, link_color);
-        // Hold the open slice only while a drag is in progress. A selection in
-        // the dictionary used to freeze the slice on the first lines of the
-        // verse, so the rest of the pane stayed blank until the next click.
-        let locked_span = if !jumping && ui.input(|input| input.pointer.primary_down()) {
-            self.reading
-                .commentary_window(pane_id)
-                .filter(|window| window.key == key)
-                .map(|window| (window.start, window.end))
-        } else {
-            None
-        };
+        // Keep this slice while its own text is selected. Rebuilding it on a
+        // scroll moves the galley by a character and the selection follows the
+        // index onto the next letters. A selection in another pane must not
+        // freeze the slice, and a verse jump still replaces it.
+        let text_selected = ui.data(|data| {
+            data.get_temp::<bool>(commentary_selection_id(pane_id))
+                .unwrap_or(false)
+        });
+        let locked_span =
+            if !jumping && (text_selected || ui.input(|input| input.pointer.primary_down())) {
+                self.reading
+                    .commentary_window(pane_id)
+                    .filter(|window| window.key == key)
+                    .map(|window| (window.start, window.end))
+            } else {
+                None
+            };
         let (start, end) =
             locked_span.unwrap_or_else(|| piece_span(&paint.pieces, char_from, char_to));
         let cached = self
@@ -1428,6 +1434,24 @@ impl GrapheApp {
                 ui.ctx().request_repaint();
             }
         }
+        let on_label = response.hovered()
+            || response.dragged()
+            || response.drag_stopped()
+            || response.clicked();
+        let press_elsewhere = ui.input(|input| input.pointer.any_pressed()) && !on_label;
+        let has_selection = crate::app::label_has_selection(ui.ctx());
+        let next_selected = if jumping || !has_selection || press_elsewhere {
+            false
+        } else if on_label
+            && (response.dragged()
+                || response.drag_stopped()
+                || ui.input(|input| input.pointer.primary_down()))
+        {
+            true
+        } else {
+            text_selected
+        };
+        ui.data_mut(|data| data.insert_temp(commentary_selection_id(pane_id), next_selected));
         ui.add_space(estimated_text_height(after, width, font));
     }
 
@@ -2305,6 +2329,10 @@ struct CommentaryPin {
 
 fn commentary_pin_id(pane_id: &str) -> egui::Id {
     egui::Id::unique(("commentary-pin", pane_id))
+}
+
+fn commentary_selection_id(pane_id: &str) -> egui::Id {
+    egui::Id::unique(("commentary-text-selected", pane_id))
 }
 
 /// A window that starts at `index`, so that character can sit at the top.
