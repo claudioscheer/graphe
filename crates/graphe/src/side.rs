@@ -1462,11 +1462,14 @@ fn search_input_box(
     let inner_resp = frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let text_w = if query.is_empty() {
-                ui.available_width()
-            } else {
-                (ui.available_width() - 20.0).max(10.0)
-            };
+            // The first keystroke is applied by the TextEdit below, after this
+            // row is measured. Giving the TextEdit the full width only when the
+            // query was empty made that first character land after the
+            // measurement: the clear button then pushed the row 20px past the
+            // panel, and the panel stored the overflow as a permanently wider
+            // sidebar. Reserving the button slot up front keeps the row at
+            // exactly one width whether the query is empty or not.
+            let text_w = (ui.available_width() - 20.0).max(10.0);
             let text_edit = ui.add(
                 egui::TextEdit::singleline(query)
                     .frame(egui::Frame::NONE)
@@ -1477,9 +1480,9 @@ fn search_input_box(
                     .text_color(paint::color(palette.ui_text))
                     .desired_width(text_w),
             );
+            let (btn_rect, btn_resp) =
+                ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
             if !query.is_empty() {
-                let (btn_rect, btn_resp) =
-                    ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
                 let icon_color = if btn_resp.hovered() {
                     paint::color(palette.ui_text_muted)
                 } else {
@@ -2191,6 +2194,149 @@ mod tests {
         );
         assert!(!app.session.dict_suggestions_open);
         assert!(app.session.dict_suggestions.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The clear button only paints when the query is non-empty, but the
+    /// TextEdit applies the first keystroke after the row was measured. Making
+    /// that button optional left the search box one row 20px wider than the
+    /// panel, which egui then stored as the sidebar's new width.
+    #[test]
+    fn first_dictionary_letter_keeps_search_box_and_sidebar_width() {
+        let dir = std::env::temp_dir()
+            .join(format!("graphe-dict-sugg-first-letter-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("StrongTest.dictionary.SQLite3");
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Strong Test');
+             INSERT INTO dictionary VALUES ('G1', 'um'), ('G10', 'dez'), ('G100', 'cem'), ('H10', 'dez hebraico');",
+        )
+        .unwrap();
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 1);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, 14.0);
+        let palette = graphe_domain::theme::palette(false);
+        let panel_id = egui::ViewportId::ROOT.root_ui_id().with("sidebar");
+        let sidebar_width =
+            |ctx: &egui::Context| -> f32 {
+                egui::containers::panel::PanelState::load(ctx, panel_id)
+                    .map(|s| s.outer_rect.width())
+                    .unwrap_or_default()
+            };
+        let search_box_width = |ctx: &egui::Context| -> f32 {
+            ctx.data(|d| {
+                d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+                    .iter()
+                    .rfind(|(k, _)| k == "dict-search-box")
+                    .map(|(_, r)| r[2])
+                    .unwrap_or_default()
+            })
+        };
+
+        // 1. Startup frame
+        let _ = ctx.run_test_ui(Default::default(), |ctx| {
+            app.sidebar(ctx, palette);
+        });
+        let empty_box_width = search_box_width(&ctx);
+        assert_eq!(empty_box_width, 275.0, "search box at default panel size");
+        assert_eq!(sidebar_width(&ctx), 300.0, "startup frame");
+
+        // 2. Click search box to focus it
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let box_rect = marks
+            .iter()
+            .find(|(k, _)| k == "dict-search-box")
+            .map(|(_, r)| *r)
+            .expect("dict-search-box layout mark");
+        let click_pos = egui::pos2(box_rect[0] + 10.0, box_rect[1] + box_rect[3] * 0.5);
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(click_pos),
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: click_pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(sidebar_width(&ctx), 300.0, "click frame");
+
+        // 3. Type 1 character - the frame that used to overflow the row
+        app.session.dict_query.clear();
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Text("G".into())],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G");
+        assert_eq!(
+            search_box_width(&ctx),
+            empty_box_width,
+            "the first letter must not widen the search box"
+        );
+        assert_eq!(sidebar_width(&ctx), 300.0, "first character frame");
+
+        // 4. Second character opens the suggestions dropdown
+        let _ = ctx.run_test_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Text("1".into())],
+                ..Default::default()
+            },
+            |ctx| {
+                app.sidebar(ctx, palette);
+            },
+        );
+        assert_eq!(app.session.dict_query, "G1");
+        assert_eq!(
+            search_box_width(&ctx),
+            empty_box_width,
+            "search box width is one constant, empty or not"
+        );
+        assert_eq!(sidebar_width(&ctx), 300.0, "second character frame");
+
+        // Idle frames with the popup open keep every width in place
+        for frame in 0..2 {
+            let _ = ctx.run_test_ui(Default::default(), |ctx| {
+                app.sidebar(ctx, palette);
+            });
+            assert_eq!(sidebar_width(&ctx), 300.0, "idle frame {frame}");
+            assert_eq!(
+                search_box_width(&ctx),
+                empty_box_width,
+                "idle frame {frame} keeps the search box width"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
