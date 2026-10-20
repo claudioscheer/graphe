@@ -83,6 +83,8 @@ pub struct Session {
     /// Commentary module opened in the coverage grid.
     pub coverage_module_id: Option<String>,
     pub dict_query: String,
+    /// Topic of the entry on screen. Typing in the search box changes `dict_query` only.
+    pub dict_topic: String,
     pub dict_body: String,
     pub dict_entry: Option<BTreeMap<String, String>>,
     pub dict_morph_code: Option<String>,
@@ -90,6 +92,8 @@ pub struct Session {
     pub dict_morph_meaning: Option<String>,
     pub dict_history: Vec<String>,
     pub dict_history_index: usize,
+    /// The open dictionary entry changed. The next paint returns its scroll to the top.
+    pub dict_scroll_top: bool,
     pub dict_cognates: Vec<String>,
     pub dict_suggestions: Vec<String>,
     pub dict_suggestions_open: bool,
@@ -149,6 +153,7 @@ impl Session {
             commentary_ref: String::new(),
             coverage_module_id: None,
             dict_query: String::new(),
+            dict_topic: String::new(),
             dict_body: String::new(),
             dict_entry: None,
             dict_morph_code: None,
@@ -156,6 +161,7 @@ impl Session {
             dict_morph_meaning: None,
             dict_history: Vec::new(),
             dict_history_index: 0,
+            dict_scroll_top: false,
             dict_cognates: Vec::new(),
             dict_suggestions: Vec::new(),
             dict_suggestions_open: false,
@@ -295,7 +301,11 @@ impl Session {
             self.note_bible_moved(&moved);
         } else if let Some(verse) = verse {
             self.queue_commentary_scroll(&moved, verse);
-            if let Some(target) = self.panes.get(&moved).and_then(|p| p.synced_to_pane_id.clone()) {
+            if let Some(target) = self
+                .panes
+                .get(&moved)
+                .and_then(|p| p.synced_to_pane_id.clone())
+            {
                 if let Some(bible_pane) = self.panes.get_mut(&target) {
                     bible_pane.book_number = book;
                     bible_pane.book_short_name = i18n::book_name(book).short;
@@ -856,6 +866,7 @@ impl Session {
 
     /// Cross-references and search hits open in the pinned bible pane.
     /// The preview modal is only for a reference clicked inside that pinned pane.
+    /// A dictionary reference is outside every pane: use [`Self::open_linked_reference`].
     pub fn follow_link(
         &mut self,
         source_pane: &str,
@@ -869,9 +880,23 @@ impl Session {
         if self.preview_pinned && clicked_pin && target_is_pin {
             return true;
         }
-        self.active_pane_id = target;
-        self.navigate(book, chapter, verse);
+        self.open_linked_reference(source_pane, book, chapter, verse);
         false
+    }
+
+    /// Open a reference in the Bible fixed to receive links, or in the active
+    /// Bible when none is fixed. This never opens the preview modal.
+    pub fn open_linked_reference(
+        &mut self,
+        source_pane: &str,
+        book: i64,
+        chapter: i64,
+        verse: Option<i64>,
+    ) {
+        let target = self.navigation_target(source_pane);
+        self.active_pane_id = target;
+        let verse = Some(graphe_domain::bible_ref::verse_to_open(verse));
+        self.navigate(book, chapter, verse);
     }
 
     pub fn close_pane(&mut self, pane_id: &str) -> bool {
@@ -1243,7 +1268,10 @@ mod tests {
         assert!(session.apply_quick_ref("Mt 5", books));
         assert_eq!(session.panes[&session.active_pane_id].book_number, 470);
         assert_eq!(session.panes[&session.active_pane_id].chapter, 5);
-        assert_eq!(session.panes[&session.active_pane_id].selected_verse, Some(1));
+        assert_eq!(
+            session.panes[&session.active_pane_id].selected_verse,
+            Some(1)
+        );
         assert!(session.back());
         assert_eq!(session.panes[&session.active_pane_id].book_number, 10);
         assert!(session.forward());
@@ -1316,6 +1344,40 @@ mod tests {
         assert_eq!(session.panes["pane-1"].book_number, 470);
         assert_eq!(session.panes["pane-1"].chapter, 5);
         assert_eq!(session.active_pane_id, "pane-1");
+    }
+
+    #[test]
+    fn a_dictionary_reference_opens_the_link_target_without_a_preview() {
+        let mut session = Session::new();
+        let other = session.split(false);
+        session.active_pane_id = "pane-1".into();
+        session.toggle_pin();
+        session.preview_pinned = true;
+        session.active_pane_id = other.clone();
+        session.panes.get_mut("pane-1").unwrap().book_number = 40;
+        session.open_linked_reference(&other, 470, 5, Some(3));
+        assert_eq!(session.dialog, Dialog::None);
+        assert_eq!(session.active_pane_id, "pane-1");
+        assert_eq!(session.panes["pane-1"].book_number, 470);
+        assert_eq!(session.panes["pane-1"].chapter, 5);
+        assert_eq!(session.panes["pane-1"].selected_verse, Some(3));
+        assert_ne!(session.panes[&other].book_number, 470);
+
+        session.link_target = None;
+        session.active_pane_id = other.clone();
+        session.open_linked_reference(&other, 10, 2, Some(4));
+        assert_eq!(session.dialog, Dialog::None);
+        assert_eq!(session.active_pane_id, other);
+        assert_eq!(session.panes[&other].book_number, 10);
+        assert_eq!(session.panes[&other].chapter, 2);
+        assert_eq!(session.panes[&other].selected_verse, Some(4));
+        assert_eq!(session.panes["pane-1"].book_number, 470);
+
+        session.link_target = Some("pane-1".into());
+        session.active_pane_id = "pane-1".into();
+        assert!(session.follow_link("pane-1", 10, 1, Some(1)));
+        assert_eq!(session.panes["pane-1"].book_number, 470);
+        assert_eq!(session.dialog, Dialog::None);
     }
 
     #[test]
@@ -1451,15 +1513,71 @@ mod tests {
         ]);
         session.select_verse(1, false, false);
         session.select_verse(2, false, false);
-        assert!(session.back(), "back should succeed after selecting another verse");
+        assert!(
+            session.back(),
+            "back should succeed after selecting another verse"
+        );
         assert_eq!(session.selected_verses, vec![1]);
 
         assert!(session.forward());
         assert_eq!(session.selected_verses, vec![2]);
 
         session.navigate(470, 5, Some(3));
-        assert!(session.back(), "back should succeed after navigating to another verse");
+        assert!(
+            session.back(),
+            "back should succeed after navigating to another verse"
+        );
         assert_eq!(session.selected_verses, vec![2]);
+    }
+
+    #[test]
+    fn a_new_place_drops_the_verses_ahead_in_history() {
+        let mut session = Session::new();
+        session.show_chapter(vec![
+            (1, "a".into()),
+            (2, "b".into()),
+            (3, "c".into()),
+            (5, "e".into()),
+        ]);
+        session.select_verse(1, false, false);
+        session.select_verse(2, false, false);
+        session.select_verse(3, false, false);
+        assert!(session.back());
+        assert!(session.back());
+        assert_eq!(session.selected_verses, vec![1]);
+
+        session.select_verse(5, false, false);
+        assert_eq!(session.selected_verses, vec![5]);
+        assert!(session.back());
+        assert_eq!(
+            session.selected_verses,
+            vec![1],
+            "back should return to the verse that was current, not the ones already left"
+        );
+        assert!(session.forward());
+        assert_eq!(session.selected_verses, vec![5]);
+        assert!(!session.forward());
+
+        session.navigate(10, 2, Some(2));
+        session.navigate(10, 3, Some(3));
+        assert!(session.back());
+        assert_eq!(session.panes["pane-1"].chapter, 2);
+        session.navigate(20, 4, Some(1));
+        assert!(session.back());
+        assert_eq!(session.panes["pane-1"].book_number, 10);
+        assert_eq!(session.panes["pane-1"].chapter, 2);
+        let chapters: Vec<i64> = session.panes["pane-1"]
+            .nav_history
+            .iter()
+            .map(|entry| entry.chapter)
+            .collect();
+        assert!(
+            !chapters.contains(&3),
+            "the chapter left with back stayed in history: {chapters:?}"
+        );
+        assert!(session.forward());
+        assert_eq!(session.panes["pane-1"].chapter, 4);
+        assert!(!session.forward());
     }
 
     #[test]

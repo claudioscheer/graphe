@@ -2505,22 +2505,26 @@ impl GrapheApp {
             });
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                let label = ui.add(
-                    egui::Label::new(egui::RichText::new(title).size(13.0).color(text))
-                        .wrap_mode(egui::TextWrapMode::Wrap)
-                        .sense(egui::Sense::click()),
-                )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if label.clicked() {
-                    toggle = true;
-                }
-                if let Some(hint) = hint {
-                    let hint_label = ui.add(
-                        egui::Label::new(egui::RichText::new(hint).size(12.0).color(hint_color))
+                let label = ui
+                    .add(
+                        egui::Label::new(egui::RichText::new(title).size(13.0).color(text))
                             .wrap_mode(egui::TextWrapMode::Wrap)
                             .sense(egui::Sense::click()),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if label.clicked() {
+                    toggle = true;
+                }
+                if let Some(hint) = hint {
+                    let hint_label = ui
+                        .add(
+                            egui::Label::new(
+                                egui::RichText::new(hint).size(12.0).color(hint_color),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Wrap)
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if hint_label.clicked() {
                         toggle = true;
                     }
@@ -3469,7 +3473,9 @@ mod tests {
                 let _ = app.check_option(ui, false, "Test Option", None);
             });
         });
-        assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::PointingHand);
+        assert_eq!(
+            output.platform_output.cursor_icon,
+            egui::CursorIcon::PointingHand
+        );
     }
 }
-

@@ -742,6 +742,24 @@ pub fn dictionary_entry_in_file(path: &Path, topic: &str) -> Option<BTreeMap<Str
     open_read(path).and_then(|db| get_dictionary_entry(&db, topic))
 }
 
+/// The topic as it is stored, when `topic` matches aside from ASCII case.
+pub fn dictionary_topic_ci(path: &Path, topic: &str) -> Option<String> {
+    let topic = topic.trim();
+    if topic.is_empty() {
+        return None;
+    }
+    let db = open_read(path)?;
+    if !table_exists(&db, "dictionary") {
+        return None;
+    }
+    db.query_row(
+        "SELECT topic FROM dictionary WHERE topic = ?1 COLLATE NOCASE LIMIT 1",
+        [topic],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
 pub fn random_dictionary_topics(db: &Connection, limit: i64) -> Vec<String> {
     let limit = if limit <= 0 { 8 } else { limit };
     let mut stmt = match db.prepare("SELECT topic FROM dictionary ORDER BY RANDOM() LIMIT ?1") {
@@ -1186,10 +1204,16 @@ mod tests {
         .unwrap();
 
         let joao_results = lexical_search(&db, "joão", None).unwrap();
-        assert_eq!(joao_results.iter().map(|h| h.verse).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(
+            joao_results.iter().map(|h| h.verse).collect::<Vec<_>>(),
+            vec![2]
+        );
 
         let jesus_results = lexical_search(&db, "jesus", None).unwrap();
-        assert_eq!(jesus_results.iter().map(|h| h.verse).collect::<Vec<_>>(), vec![5]);
+        assert_eq!(
+            jesus_results.iter().map(|h| h.verse).collect::<Vec<_>>(),
+            vec![5]
+        );
 
         // Issue 24 regression test: "amor" must not match "clamor", "Amom", or "amou"
         db.execute(
@@ -1253,6 +1277,8 @@ mod tests {
                 .map(String::as_str),
             Some("H1")
         );
+        assert_eq!(dictionary_topic_ci(&path, "h1").as_deref(), Some("H1"));
+        assert_eq!(dictionary_topic_ci(&path, "missing"), None);
         assert_eq!(random_topics_in_file(&path, 4), vec!["H1".to_string()]);
     }
 
@@ -1324,12 +1350,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.sqlite3");
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("CREATE TABLE info (name TEXT, value TEXT);").unwrap();
+        conn.execute_batch("CREATE TABLE info (name TEXT, value TEXT);")
+            .unwrap();
         drop(conn);
 
         write_info(&path, "custom_key", "custom_value").unwrap();
         let conn = Connection::open(&path).unwrap();
-        assert_eq!(info_rows(&conn), vec![("custom_key".to_string(), "custom_value".to_string())]);
+        assert_eq!(
+            info_rows(&conn),
+            vec![("custom_key".to_string(), "custom_value".to_string())]
+        );
         drop(conn);
 
         delete_info(&path, "custom_key").unwrap();

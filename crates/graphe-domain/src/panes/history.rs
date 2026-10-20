@@ -140,6 +140,27 @@ pub fn get_nav_history_entries(
     }
 }
 
+/// Newest dictionary topic is index 0. Going back raises the index.
+///
+/// A new topic drops every topic newer than the current one. Those are the
+/// words already left behind with Back, and a new visit replaces them.
+pub fn push_dict_history(history: &mut Vec<String>, index: &mut usize, topic: &str) {
+    let topic = topic.trim();
+    if topic.is_empty() {
+        return;
+    }
+    if history.get(*index).is_some_and(|item| item == topic) {
+        return;
+    }
+    let at = (*index).min(history.len());
+    if at > 0 {
+        history.drain(0..at);
+    }
+    history.insert(0, topic.to_string());
+    history.truncate(20);
+    *index = 0;
+}
+
 pub fn push_nav_history_entry(pane: &mut PaneRecord) -> bool {
     let current_index = if pane.nav_history_idx >= 0 {
         pane.nav_history_idx
@@ -344,5 +365,39 @@ mod tests {
             ]
         );
         assert_eq!(pane.nav_history_idx, 1);
+    }
+
+    #[test]
+    fn a_new_dictionary_word_drops_the_words_ahead() {
+        let mut history = vec!["third".into(), "second".into(), "first".into()];
+        let mut index = 2;
+        push_dict_history(&mut history, &mut index, "first");
+        assert_eq!(history, vec!["third", "second", "first"]);
+        assert_eq!(index, 2);
+
+        push_dict_history(&mut history, &mut index, "fresh");
+        assert_eq!(history, vec!["fresh", "first"]);
+        assert_eq!(index, 0);
+        index += 1;
+        assert_eq!(history[index], "first");
+        assert_eq!(index + 1, history.len());
+    }
+
+    #[test]
+    fn a_new_dictionary_word_from_the_middle_keeps_the_older_ones() {
+        let mut history = vec!["third".into(), "second".into(), "first".into()];
+        let mut index = 1;
+        push_dict_history(&mut history, &mut index, "fresh");
+        assert_eq!(history, vec!["fresh", "second", "first"]);
+        assert_eq!(index, 0);
+    }
+
+    #[test]
+    fn a_new_dictionary_word_at_the_newest_keeps_the_trail() {
+        let mut history = vec!["third".into(), "second".into(), "first".into()];
+        let mut index = 0;
+        push_dict_history(&mut history, &mut index, "fresh");
+        assert_eq!(history, vec!["fresh", "third", "second", "first"]);
+        assert_eq!(index, 0);
     }
 }

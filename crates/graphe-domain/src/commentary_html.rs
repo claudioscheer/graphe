@@ -1,7 +1,9 @@
-//! Commentary HTML the way the Electron pane shows it.
+//! Module HTML the way the Electron panes show it.
 //!
-//! Paragraphs, emphasis, and `<a href="B:…">` bible links become runs.
-//! Other tags are dropped. Script and style elements are dropped with their text.
+//! Commentary and dictionary bodies share this parser. Paragraphs, emphasis,
+//! and links (`<a href="B:…">`, `#b…`, `#d…`, `S:…`) become runs, `<ol>/<li>`
+//! become list items carrying their nesting depth, and other tags are
+//! dropped. Script and style elements are dropped with their text.
 
 use crate::bible_ref::{parse_bible_href, ParseBibleHrefOptions};
 use crate::commentary_ref::{ContinuationOptions, ReferenceContext, ReferenceMatcher};
@@ -13,6 +15,11 @@ pub enum CommentaryRun {
         text: String,
         italic: bool,
         bold: bool,
+        underline: bool,
+    },
+    /// Small inline label, the `dict-def-label` span of a numbered sense.
+    Label {
+        text: String,
     },
     Link {
         label: String,
@@ -22,14 +29,40 @@ pub enum CommentaryRun {
         italic: bool,
         bold: bool,
     },
+    /// A link into the dictionary: another topic (`#d…`) or a Strong's
+    /// number (`S:H…`).
+    DictLink {
+        label: String,
+        topic: String,
+    },
+    /// The start of an `<li>` at `depth` levels of `<ol>` nesting.
+    ListItem {
+        depth: u8,
+    },
+}
+
+/// Turn module HTML into runs. Plain-text references are linked when `matcher`
+/// is set. A literal newline is a paragraph break, which dictionary bodies use.
+pub fn render_entry_runs(html: &str, matcher: Option<&ReferenceMatcher>) -> Vec<CommentaryRun> {
+    finish_runs(parse_html(html, true), matcher)
 }
 
 /// Turn commentary HTML into runs. Plain-text references are linked when `matcher` is set.
+///
+/// A newline inside commentary HTML is ordinary whitespace. Paragraph breaks
+/// come from the tags (`<p>`, `<br>`, `<li>`), the same as before dictionary
+/// bodies shared this parser.
 pub fn render_commentary_html(
     html: &str,
     matcher: Option<&ReferenceMatcher>,
 ) -> Vec<CommentaryRun> {
-    let mut runs = parse_html(html);
+    finish_runs(parse_html(html, false), matcher)
+}
+
+fn finish_runs(
+    mut runs: Vec<CommentaryRun>,
+    matcher: Option<&ReferenceMatcher>,
+) -> Vec<CommentaryRun> {
     if let Some(matcher) = matcher {
         runs = link_plain_references(runs, matcher);
     }
@@ -41,9 +74,11 @@ pub fn plain_text(html: &str) -> String {
     let mut out = String::new();
     for run in render_commentary_html(html, None) {
         match run {
-            CommentaryRun::Break => out.push('\n'),
-            CommentaryRun::Text { text, .. } => out.push_str(&text),
-            CommentaryRun::Link { label, .. } => out.push_str(&label),
+            CommentaryRun::Break | CommentaryRun::ListItem { .. } => out.push('\n'),
+            CommentaryRun::Text { text, .. } | CommentaryRun::Label { text } => out.push_str(&text),
+            CommentaryRun::Link { label, .. } | CommentaryRun::DictLink { label, .. } => {
+                out.push_str(&label)
+            }
         }
     }
     out.lines()
@@ -53,17 +88,59 @@ pub fn plain_text(html: &str) -> String {
         .join("\n")
 }
 
-fn parse_html(html: &str) -> Vec<CommentaryRun> {
+/// The link target an open `<a>` tag is accumulating text for.
+enum PendingLink {
+    Bible {
+        book: i64,
+        chapter: i64,
+        verse: Option<i64>,
+    },
+    Topic(String),
+}
+
+fn parse_html(html: &str, break_on_newline: bool) -> Vec<CommentaryRun> {
     let chars: Vec<char> = html.chars().collect();
     let mut runs = Vec::new();
     let mut buf = String::new();
     let mut italic = 0i32;
     let mut bold = 0i32;
-    let mut link: Option<(i64, i64, Option<i64>)> = None;
+    let mut underline = 0i32;
+    let mut label_span = 0i32;
+    let mut list_depth = 0u8;
+    let mut link: Option<PendingLink> = None;
     let mut i = 0usize;
     while i < chars.len() {
+        if chars[i] == '\r' || chars[i] == '\n' {
+            if chars[i] == '\r' && chars.get(i + 1) == Some(&'\n') {
+                i += 1;
+            }
+            if break_on_newline {
+                flush(
+                    &mut runs,
+                    &mut buf,
+                    italic > 0,
+                    bold > 0,
+                    underline > 0,
+                    label_span > 0,
+                    link.as_ref(),
+                );
+                push_break(&mut runs);
+            } else {
+                buf.push('\n');
+            }
+            i += 1;
+            continue;
+        }
         if chars[i] == '<' && looks_like_tag(&chars, i) {
-            flush(&mut runs, &mut buf, italic > 0, bold > 0, link);
+            flush(
+                &mut runs,
+                &mut buf,
+                italic > 0,
+                bold > 0,
+                underline > 0,
+                label_span > 0,
+                link.as_ref(),
+            );
             if let Some(end) = skip_comment(&chars, i) {
                 i = end;
                 continue;
@@ -88,29 +165,43 @@ fn parse_html(html: &str) -> Vec<CommentaryRun> {
                 match name {
                     "em" | "i" => italic = (italic - 1).max(0),
                     "strong" | "b" => bold = (bold - 1).max(0),
+                    "u" => underline = (underline - 1).max(0),
+                    "span" => label_span = (label_span - 1).max(0),
                     "a" => link = None,
-                    "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-                    | "blockquote" => push_break(&mut runs),
+                    "ol" => list_depth = list_depth.saturating_sub(1),
+                    "li" => push_break(&mut runs),
+                    "p" | "div" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "blockquote" => {
+                        push_break(&mut runs)
+                    }
                     _ => {}
                 }
                 continue;
             }
             match name {
                 "br" | "hr" | "pb" => push_break(&mut runs),
-                "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-                | "blockquote" => {
+                "p" | "div" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "blockquote" => {
                     push_break(&mut runs);
                 }
                 "em" | "i" => italic += 1,
                 "strong" | "b" => bold += 1,
-                "a" => {
-                    if let Some(href) = tag.attr("href") {
-                        if let Some(parsed) =
-                            parse_bible_href(Some(&href), ParseBibleHrefOptions::default())
-                        {
-                            link = Some((parsed.book_number, parsed.chapter, parsed.verse));
-                        }
+                "u" => underline += 1,
+                "ol" => list_depth = list_depth.saturating_add(1),
+                "li" => {
+                    push_break(&mut runs);
+                    runs.push(CommentaryRun::ListItem {
+                        depth: list_depth.saturating_sub(1),
+                    });
+                }
+                "span" => {
+                    if tag
+                        .attr("class")
+                        .is_some_and(|class| class.to_ascii_lowercase().contains("dict-def-label"))
+                    {
+                        label_span += 1;
                     }
+                }
+                "a" => {
+                    link = tag.attr("href").and_then(|href| parse_link_href(&href));
                 }
                 _ => {}
             }
@@ -126,8 +217,49 @@ fn parse_html(html: &str) -> Vec<CommentaryRun> {
         buf.push(chars[i]);
         i += 1;
     }
-    flush(&mut runs, &mut buf, italic > 0, bold > 0, link);
+    flush(
+        &mut runs,
+        &mut buf,
+        italic > 0,
+        bold > 0,
+        underline > 0,
+        label_span > 0,
+        link.as_ref(),
+    );
     runs
+}
+
+/// `<a href>` values become link targets. `B:`/`#b…` bible hrefs stay bible
+/// links; `#d…` and `S:…` hrefs point at dictionary topics. Anything else
+/// (or a missing href) keeps the anchor as plain text.
+fn parse_link_href(href: &str) -> Option<PendingLink> {
+    let href = href.trim();
+    if crate::dict::is_external_href(Some(href)) {
+        return Some(PendingLink::Topic(href.to_string()));
+    }
+    let lower = href.to_ascii_lowercase();
+    if lower.starts_with("#d") {
+        let topic = href[2..].trim().to_string();
+        if !topic.is_empty() {
+            return Some(PendingLink::Topic(topic));
+        }
+        return None;
+    }
+    if lower.starts_with("s:") {
+        let topic = href[2..].trim().to_string();
+        if !topic.is_empty() {
+            return Some(PendingLink::Topic(topic));
+        }
+        return None;
+    }
+    if let Some(parsed) = parse_bible_href(Some(href), ParseBibleHrefOptions::default()) {
+        return Some(PendingLink::Bible {
+            book: parsed.book_number,
+            chapter: parsed.chapter,
+            verse: parsed.verse,
+        });
+    }
+    None
 }
 
 fn link_plain_references(
@@ -137,7 +269,13 @@ fn link_plain_references(
     let mut out = Vec::new();
     let mut context: Option<ReferenceContext> = None;
     for run in runs {
-        let CommentaryRun::Text { text, italic, bold } = run else {
+        let CommentaryRun::Text {
+            text,
+            italic,
+            bold,
+            underline,
+        } = run
+        else {
             if let CommentaryRun::Link {
                 book,
                 chapter,
@@ -167,7 +305,12 @@ fn link_plain_references(
             }
         }
         if matches.is_empty() {
-            out.push(CommentaryRun::Text { text, italic, bold });
+            out.push(CommentaryRun::Text {
+                text,
+                italic,
+                bold,
+                underline,
+            });
             continue;
         }
         let mut cursor = 0usize;
@@ -179,6 +322,7 @@ fn link_plain_references(
                         text: head,
                         italic,
                         bold,
+                        underline,
                     });
                 }
             }
@@ -211,6 +355,7 @@ fn link_plain_references(
                     text: tail,
                     italic,
                     bold,
+                    underline,
                 });
             }
         }
@@ -410,27 +555,50 @@ fn flush(
     buf: &mut String,
     italic: bool,
     bold: bool,
-    link: Option<(i64, i64, Option<i64>)>,
+    underline: bool,
+    label: bool,
+    link: Option<&PendingLink>,
 ) {
     let mut text = normalize_space(buf);
     buf.clear();
-    if matches!(runs.last(), Some(CommentaryRun::Break) | None) {
+    // A list item is a break for the text that follows it. Trimming here keeps
+    // `<li> item</li>` as `item`, which is what commentary offsets already use.
+    if matches!(
+        runs.last(),
+        Some(CommentaryRun::Break) | Some(CommentaryRun::ListItem { .. }) | None
+    ) {
         text = text.trim_start().to_string();
     }
     if text.is_empty() {
         return;
     }
-    if let Some((book, chapter, verse)) = link {
-        runs.push(CommentaryRun::Link {
-            label: text,
+    if label {
+        runs.push(CommentaryRun::Label { text });
+        return;
+    }
+    match link {
+        Some(PendingLink::Bible {
             book,
             chapter,
             verse,
+        }) => runs.push(CommentaryRun::Link {
+            label: text,
+            book: *book,
+            chapter: *chapter,
+            verse: *verse,
             italic,
             bold,
-        });
-    } else {
-        runs.push(CommentaryRun::Text { text, italic, bold });
+        }),
+        Some(PendingLink::Topic(topic)) => runs.push(CommentaryRun::DictLink {
+            label: text,
+            topic: topic.clone(),
+        }),
+        None => runs.push(CommentaryRun::Text {
+            text,
+            italic,
+            bold,
+            underline,
+        }),
     }
 }
 
@@ -501,6 +669,151 @@ mod tests {
     }
 
     #[test]
+    fn entry_runs_link_bible_dictionary_and_strong_anchors() {
+        let html = "<p>Os zuzins (<a class='bible' href='#b1.14.5'>Gn 14.5</a>). Veja <a class='dict' href='#dCORES'>Cores</a>. Ver <a href='S:H8818'>H8818</a>.</p>";
+        let runs = render_entry_runs(html, None);
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Link {
+                label,
+                book: 10,
+                chapter: 14,
+                verse: Some(5),
+                ..
+            } if label == "Gn 14.5"
+        )));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::DictLink { label, topic }
+                if label == "Cores" && topic == "CORES"
+        )));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::DictLink { label, topic }
+                if label == "H8818" && topic == "H8818"
+        )));
+    }
+
+    #[test]
+    fn entry_runs_underline_strong_text_and_break_paragraphs() {
+        let html =
+            "<p><strong>DICIONÁRIO</strong> <u>VENDA PROIBIDA</u><br/>Módulo</p><p/>Segundo.";
+        let runs = render_entry_runs(html, None);
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Text { bold: true, .. } if run_text(run) == "DICIONÁRIO"
+        )));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Text { underline: true, .. } if run_text(run) == "VENDA PROIBIDA"
+        )));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Text { text, .. } if text == "Segundo."
+        )));
+        assert!(
+            runs.iter()
+                .filter(|run| matches!(run, CommentaryRun::Break))
+                .count()
+                >= 2
+        );
+    }
+
+    #[test]
+    fn entry_runs_split_numbered_senses_into_list_items() {
+        let formatted = crate::dict::format_definition(
+            "raiz 1 primeiro sentido 1a sub sentido 1a1 fundo 2 segundo",
+        );
+        let runs = render_entry_runs(&formatted, None);
+        let depths: Vec<u8> = runs
+            .iter()
+            .filter_map(|run| match run {
+                CommentaryRun::ListItem { depth } => Some(*depth),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(depths, vec![0, 1, 2, 0]);
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Label { text } if text == "1a1"
+        )));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Text { text, .. } if text.contains("fundo")
+        )));
+    }
+
+    #[test]
+    fn entry_runs_break_on_a_literal_newline() {
+        let runs = render_entry_runs("primeiro\nsegundo", None);
+        assert!(runs.iter().any(|run| matches!(run, CommentaryRun::Break)));
+        assert!(runs
+            .iter()
+            .any(|run| matches!(run, CommentaryRun::Text { text, .. } if text == "primeiro")));
+        assert!(runs
+            .iter()
+            .any(|run| matches!(run, CommentaryRun::Text { text, .. } if text == "segundo")));
+    }
+
+    #[test]
+    fn commentary_html_keeps_a_newline_inside_the_paragraph() {
+        let runs = render_commentary_html("primeiro\r\nsegundo", None);
+        assert!(runs.iter().all(|run| !matches!(run, CommentaryRun::Break)));
+        assert!(runs.iter().any(
+            |run| matches!(run, CommentaryRun::Text { text, .. } if text == "primeiro segundo")
+        ));
+    }
+
+    #[test]
+    fn commentary_list_item_drops_the_leading_space() {
+        let runs = render_commentary_html("<li> item</li>", None);
+        assert!(runs
+            .iter()
+            .any(|run| matches!(run, CommentaryRun::Text { text, .. } if text == "item")));
+    }
+
+    #[test]
+    fn entry_runs_keep_an_external_href_colored_and_inert() {
+        let runs = render_entry_runs("<a href='https://example.test/a'>site</a>", None);
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::DictLink { label, topic }
+                if label == "site" && topic == "https://example.test/a"
+        )));
+    }
+
+    #[test]
+    fn entry_runs_link_plain_references_in_dictionary_text() {
+        let matcher = crate::commentary_ref::build_reference_matcher(
+            &[vec![crate::commentary_ref::BookName {
+                short: "Gn".into(),
+                long: "Gênesis".into(),
+            }]],
+            &[1],
+        );
+        let html =
+            "<p>Acepção especial da palavra em sua primeira ocorrência (Gn 2.24) e depois.</p>";
+        let runs = render_entry_runs(html, Some(&matcher));
+        assert!(runs.iter().any(|run| matches!(
+            run,
+            CommentaryRun::Link {
+                label,
+                book: 1,
+                chapter: 2,
+                verse: Some(24),
+                ..
+            } if label == "Gn 2.24"
+        )));
+    }
+
+    fn run_text(run: &CommentaryRun) -> &str {
+        match run {
+            CommentaryRun::Text { text, .. } => text,
+            _ => "",
+        }
+    }
+
+    #[test]
     fn commentary_html_links_deut_reference_followed_by_bold_punctuation() {
         let matcher = crate::commentary_ref::build_reference_matcher(
             &[vec![crate::commentary_ref::BookName {
@@ -511,7 +824,9 @@ mod tests {
         );
         let html = "porquanto o antigo pacto punia os ofensores deliberados com a morte (ver Deut. 17:26<strong>־</strong>);";
         let runs = render_commentary_html(html, Some(&matcher));
-        let link = runs.iter().find(|r| matches!(r, CommentaryRun::Link { .. }));
+        let link = runs
+            .iter()
+            .find(|r| matches!(r, CommentaryRun::Link { .. }));
         assert_eq!(
             link,
             Some(&CommentaryRun::Link {
@@ -528,9 +843,11 @@ mod tests {
     fn dump(runs: &[CommentaryRun]) -> String {
         runs.iter()
             .map(|run| match run {
-                CommentaryRun::Break => "\n".to_string(),
-                CommentaryRun::Text { text, .. } => text.clone(),
-                CommentaryRun::Link { label, .. } => label.clone(),
+                CommentaryRun::Break | CommentaryRun::ListItem { .. } => "\n".to_string(),
+                CommentaryRun::Text { text, .. } | CommentaryRun::Label { text } => text.clone(),
+                CommentaryRun::Link { label, .. } | CommentaryRun::DictLink { label, .. } => {
+                    label.clone()
+                }
             })
             .collect()
     }

@@ -58,6 +58,15 @@ fn try_decode(raw: &str) -> Result<String, ()> {
     String::from_utf8(out).map_err(|_| ())
 }
 
+/// The verse a reference opens on.
+///
+/// A commentary link with no verse is written as verse 0 (`B:340 2:0`, shown
+/// as "Dan. 2"). A missing verse is the same kind of reference. Both open on
+/// verse 1. A verse above 0 stays that verse.
+pub fn verse_to_open(verse: Option<i64>) -> i64 {
+    verse.filter(|verse| *verse > 0).unwrap_or(1)
+}
+
 pub fn parse_bible_href(
     raw_href: Option<&str>,
     options: ParseBibleHrefOptions,
@@ -98,6 +107,15 @@ pub fn parse_bible_href(
 #[cfg(test)]
 mod bible_href_tests {
     use super::*;
+
+    #[test]
+    fn a_chapter_only_reference_opens_on_verse_one() {
+        assert_eq!(verse_to_open(None), 1);
+        assert_eq!(verse_to_open(Some(0)), 1);
+        assert_eq!(verse_to_open(Some(-3)), 1);
+        assert_eq!(verse_to_open(Some(1)), 1);
+        assert_eq!(verse_to_open(Some(14)), 14);
+    }
 
     #[test]
     fn parses_b_refs_with_required_verse() {

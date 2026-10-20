@@ -1060,7 +1060,8 @@ mod tests {
         };
         let output = ctx.run_test_ui(raw, |ui| {
             let palette = theme::palette(false);
-            let dropdown = ModuleDropdown::from_installed("dict-test", "dictionary", Some("strong_pt"), &mods);
+            let dropdown =
+                ModuleDropdown::from_installed("dict-test", "dictionary", Some("strong_pt"), &mods);
             let _ = dropdown.show(ui, &mut store, palette, false);
         });
 
@@ -1149,7 +1150,12 @@ mod tests {
             clear_rect[0] + clear_rect[2] * 0.5,
             clear_rect[1] + clear_rect[3] * 0.5,
         );
-        let _ = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::PointerMoved(clear_pos)]);
+        let _ = dropdown_frame(
+            &ctx,
+            &mut store,
+            &mods,
+            vec![egui::Event::PointerMoved(clear_pos)],
+        );
         let _ = dropdown_frame(&ctx, &mut store, &mods, click(clear_pos));
         // Run sizing pass and render frame
         let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
@@ -1196,7 +1202,12 @@ mod tests {
         let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
 
         // 3. Type "Module 1"
-        let _ = dropdown_frame(&ctx, &mut store, &mods, vec![egui::Event::Text("Module 1".into())]);
+        let _ = dropdown_frame(
+            &ctx,
+            &mut store,
+            &mods,
+            vec![egui::Event::Text("Module 1".into())],
+        );
         let _ = dropdown_frame(&ctx, &mut store, &mods, Vec::new());
 
         // 4. Press backspace to delete '1'

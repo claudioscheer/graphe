@@ -476,7 +476,9 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         assert!(plain.contains("Jesus"));
-        assert!(spans.iter().any(|span| matches!(span, VerseSpan::Jesus(text) if text == "Jesus")));
+        assert!(spans
+            .iter()
+            .any(|span| matches!(span, VerseSpan::Jesus(text) if text == "Jesus")));
         assert!(plain.contains("Heading"));
         assert!(!plain.contains("hidden"));
         assert!(!plain.contains("foot note"));

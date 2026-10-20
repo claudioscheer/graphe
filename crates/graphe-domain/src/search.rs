@@ -442,7 +442,10 @@ pub fn matches_parsed_search(text: &str, parsed: &ParsedSearchQuery) -> bool {
         if !normalized_text.contains(&norm_term) {
             return false;
         }
-        if !normalized_text.split_whitespace().any(|tok| tok == norm_term) {
+        if !normalized_text
+            .split_whitespace()
+            .any(|tok| tok == norm_term)
+        {
             return false;
         }
     }
@@ -751,10 +754,7 @@ mod search_query_tests {
         assert!(matches_parsed_search(jesus_verse, &jesus_query));
 
         let highlighted_jesus = highlight_text("Jesuá, Jeús e Jesus Cristo", &["jesus".into()]);
-        assert_eq!(
-            highlighted_jesus,
-            "Jesuá, Jeús e <mark>Jesus</mark> Cristo"
-        );
+        assert_eq!(highlighted_jesus, "Jesuá, Jeús e <mark>Jesus</mark> Cristo");
     }
 
     #[test]

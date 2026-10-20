@@ -147,31 +147,51 @@ fn clicking_commentary_reference_after_selecting_text_in_workbench() {
     let img = render_locked(&mut harness).expect("render before");
     let _ = img.save(shot_dir.join("60-before.png"));
 
-    let marks = harness.ctx.data(|d| {
-        d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
-            .unwrap_or_default()
-    });
-    let text_rect = marks
-        .iter()
-        .find(|(k, _)| k == &format!("commentary-text:{comm_pane}"))
-        .map(|(_, r)| *r)
-        .expect("commentary text rect");
-
-    let window = harness
-        .state()
-        .reading
-        .commentary_window(&comm_pane)
-        .expect("commentary window");
-    assert!(!window.links.is_empty(), "links must exist in Hebrews 10:26");
-    let first_link = window.links[0];
-    let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(first_link.start));
-    let link_pos = egui::pos2(
-        text_rect[0] + link_cursor.min.x + 5.0,
-        text_rect[1] + link_cursor.min.y + 5.0,
-    );
-
-    let p_start = egui::pos2(text_rect[0] + 50.0, 300.0);
-    let p_end = egui::pos2(text_rect[0] + 150.0, 300.0);
+    // The note opens at the verse, so the first reference can sit below the pane.
+    let mut on_screen = None;
+    for _ in 0..24 {
+        let marks = harness.ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let text_rect = marks
+            .iter()
+            .find(|(k, _)| k == &format!("commentary-text:{comm_pane}"))
+            .map(|(_, r)| *r);
+        let view = marks
+            .iter()
+            .find(|(k, _)| k == &format!("commentary-view:{comm_pane}"))
+            .map(|(_, r)| *r);
+        if let (Some(text_rect), Some(view)) = (text_rect, view) {
+            if let Some(window) = harness.state().reading.commentary_window(&comm_pane) {
+                if let Some(hit) =
+                    crate::app::tests::link_inside_view(text_rect, view, window, 12.0)
+                {
+                    on_screen = Some((hit.0, hit.1, text_rect, view));
+                    break;
+                }
+            }
+            let wheel_at = egui::pos2(view[0] + view[2] * 0.5, view[1] + view[3] * 0.5);
+            harness.event(egui::Event::PointerMoved(wheel_at));
+            harness.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -140.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: egui::Modifiers::default(),
+            });
+            harness.step();
+            harness.run();
+        }
+    }
+    let (first_link, link_pos, text_rect, view) = on_screen.expect("a commentary link on screen");
+    let select_y = if link_pos.y > view[1] + 80.0 {
+        view[1] + 36.0
+    } else {
+        view[1] + view[3] - 36.0
+    };
+    let p_start = egui::pos2(text_rect[0] + 50.0, select_y);
+    let p_end = egui::pos2(text_rect[0] + 150.0, select_y);
     harness.event(egui::Event::PointerMoved(p_start));
     harness.event(egui::Event::PointerButton {
         pos: p_start,
@@ -280,23 +300,32 @@ fn clicking_champlin_deut_reference_in_workbench() {
     {
         let mut app_before = bare(Session::new());
         app_before.session.sidebar_collapsed = true;
-        app_before.modules.push(graphe_store::catalog::InstalledModule {
-            id: "NAA".into(),
-            name: "NAA".into(),
-            kind: "bible".into(),
-            path: bible_path.clone(),
-            short_title: None,
-            description: None,
-        });
-        app_before.modules.push(graphe_store::catalog::InstalledModule {
-            id: "Champlin".into(),
-            name: "Champlin".into(),
-            kind: "commentary".into(),
-            path: comm_path.clone(),
-            short_title: None,
-            description: None,
-        });
-        app_before.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+        app_before
+            .modules
+            .push(graphe_store::catalog::InstalledModule {
+                id: "NAA".into(),
+                name: "NAA".into(),
+                kind: "bible".into(),
+                path: bible_path.clone(),
+                short_title: None,
+                description: None,
+            });
+        app_before
+            .modules
+            .push(graphe_store::catalog::InstalledModule {
+                id: "Champlin".into(),
+                name: "Champlin".into(),
+                kind: "commentary".into(),
+                path: comm_path.clone(),
+                short_title: None,
+                description: None,
+            });
+        app_before
+            .session
+            .panes
+            .get_mut("pane-1")
+            .unwrap()
+            .module_id = Some("NAA".into());
         let comm = app_before.session.split_commentary(false);
         if let Some(r) = app_before.session.panes.get_mut(&comm) {
             r.module_id = Some("Champlin".into());
@@ -434,7 +463,9 @@ fn clicking_champlin_deut_reference_in_workbench() {
             .find(|l| l.book == 50 && l.chapter == 17 && l.verse == Some(26))
             .copied()
             .expect("Deut. 17:26 link must exist in commentary window");
-        let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(deut_link.start));
+        let link_cursor = window
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(deut_link.start));
         let link_pos = egui::pos2(
             text_rect[0] + link_cursor.min.x + 5.0,
             text_rect[1] + link_cursor.min.y + 5.0,
@@ -799,17 +830,24 @@ fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
     let wheel_at = egui::pos2(800.0, 400.0);
     let mut cor_found = false;
     for _step in 0..15 {
-        let in_viewport = if let Some(window) = harness.state().reading.commentary_window(&comm_pane) {
-            if let Some(link) = window.links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7)) {
-                let cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
-                // Galley cursor relative to scroll window
-                cursor.min.y >= 0.0 && cursor.min.y <= 500.0
+        let in_viewport =
+            if let Some(window) = harness.state().reading.commentary_window(&comm_pane) {
+                if let Some(link) = window
+                    .links
+                    .iter()
+                    .find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
+                {
+                    let cursor = window
+                        .galley
+                        .pos_from_cursor(egui::text::CCursor::new(link.start));
+                    // Galley cursor relative to scroll window
+                    cursor.min.y >= 0.0 && cursor.min.y <= 500.0
+                } else {
+                    false
+                }
             } else {
                 false
-            }
-        } else {
-            false
-        };
+            };
         if in_viewport {
             cor_found = true;
             break;
@@ -825,9 +863,10 @@ fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
         harness.step();
         harness.run();
     }
-    assert!(cor_found, "II Cor. 6:7 link must become visible while scrolling");
-
-
+    assert!(
+        cor_found,
+        "II Cor. 6:7 link must become visible while scrolling"
+    );
 
     let marks = harness.ctx.data(|d| {
         d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
@@ -851,7 +890,9 @@ fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
             .find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
             .copied()
             .expect("II Cor. 6:7 link must exist in commentary window");
-        let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(cor_link.start));
+        let link_cursor = window
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(cor_link.start));
         let link_pos = egui::pos2(
             text_rect[0] + link_cursor.min.x + 5.0,
             text_rect[1] + link_cursor.min.y + 5.0,
@@ -889,5 +930,159 @@ fn champlin_hebrews_10_26_references_render_and_navigate_correctly() {
     assert_eq!(bible.selected_verse, Some(7));
 }
 
+#[test]
+fn clicking_a_dictionary_reference_opens_the_topic_and_the_verse() {
+    let dir = std::env::temp_dir().join(format!("graphe-dict-links-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("links.dictionary.SQLite3");
+    graphe_store::sqlite::init_module_sql(
+        &path,
+        "CREATE TABLE dictionary (topic TEXT, definition TEXT);
+         INSERT INTO dictionary VALUES ('SEALTIEL', 'pai de Zorobabel');
+         INSERT INTO dictionary VALUES ('Cores', 'as cores');
+         INSERT INTO dictionary VALUES ('DEMONOLOGIA', 'estudo dos demonios');",
+    )
+    .unwrap();
 
+    let mut app = bare(Session::new());
+    app.session.sidebar = "dictionary".into();
+    app.session.sidebar_collapsed = false;
+    app.modules.push(graphe_store::catalog::InstalledModule {
+        id: "Dict".into(),
+        name: "Dict".into(),
+        kind: "dictionary".into(),
+        path: path.clone(),
+        short_title: None,
+        description: None,
+    });
+    app.session.dict_module_id = Some("Dict".into());
+    app.session.dict_query = "inicio".into();
+    app.session.dict_body = "<p>Veja <a href='#dSEALTIEL,'>Sealtiel</a>, <a href='#dCORES'>Cores</a> e <a href='B:10 1:1'>Gn 1.1</a>.</p>".into();
 
+    let mut fonts_ready = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .with_max_steps(16)
+        .with_accessibility_check(false)
+        .build_ui_state(
+            move |ui, app: &mut GrapheApp| {
+                if !fonts_ready {
+                    paint::install_fonts(ui.ctx());
+                    paint::apply(ui.ctx(), app.session.dark, app.session.font_size);
+                    fonts_ready = true;
+                }
+                // The study pane clears layout marks, so this test draws the
+                // sidebar alone and clicks the marks it leaves behind.
+                let palette = graphe_domain::theme::palette(app.session.dark);
+                app.sidebar(ui, &palette);
+            },
+            app,
+        );
+    harness.run();
+
+    click_mark(&mut harness, "dict-link:SEALTIEL,");
+    assert_eq!(harness.state().session.dict_query, "SEALTIEL");
+    assert!(
+        harness
+            .state()
+            .session
+            .dict_body
+            .contains("pai de Zorobabel"),
+        "resolved body was {}",
+        harness.state().session.dict_body
+    );
+    assert!(harness
+        .state()
+        .session
+        .dict_history
+        .iter()
+        .any(|item| item == "SEALTIEL"));
+
+    harness.state_mut().session.dict_body =
+        "<p>Veja <a href='#dCORES'>Cores</a> e <a href='B:10 1:1'>Gn 1.1</a>.</p>".into();
+    harness.run();
+    click_mark(&mut harness, "dict-link:CORES");
+    assert_eq!(harness.state().session.dict_query, "Cores");
+    assert!(harness.state().session.dict_body.contains("as cores"));
+
+    harness.state_mut().session.dict_body = "<p><a href='#dDEMONOLOGIA'>Demonologia</a></p>".into();
+    harness.run();
+    click_mark(&mut harness, "dict-link:DEMONOLOGIA");
+    assert_eq!(harness.state().session.dict_query, "DEMONOLOGIA");
+    assert!(
+        harness
+            .state()
+            .session
+            .dict_body
+            .contains("estudo dos demonios"),
+        "resolved body was {}",
+        harness.state().session.dict_body
+    );
+
+    harness.state_mut().session.dict_body = "<p><a href='B:10 1:1'>Gn 1.1</a></p>".into();
+    harness.run();
+    click_mark(&mut harness, "dict-link:10:1:1");
+    let bible = harness.state().session.panes.get("pane-1").unwrap();
+    assert_eq!(bible.book_number, 10);
+    assert_eq!(bible.chapter, 1);
+    assert_eq!(bible.selected_verse, Some(1));
+
+    // The active Bible is the pinned link target, and preview is on. A
+    // dictionary reference still navigates that Bible and leaves the modal closed.
+    {
+        let app = harness.state_mut();
+        app.session.preview_pinned = true;
+        app.session.link_target = Some("pane-1".into());
+        app.session.active_pane_id = "pane-1".into();
+        let pane = app.session.panes.get_mut("pane-1").unwrap();
+        pane.book_number = 40;
+        pane.chapter = 2;
+        pane.selected_verse = None;
+        app.session.dialog = Dialog::None;
+        app.session.dict_body = "<p><a href='B:10 1:1'>Gn 1.1</a></p>".into();
+    }
+    harness.run();
+    click_mark(&mut harness, "dict-link:10:1:1");
+    assert_eq!(harness.state().session.dialog, Dialog::None);
+    let bible = harness.state().session.panes.get("pane-1").unwrap();
+    assert_eq!(bible.book_number, 10);
+    assert_eq!(bible.chapter, 1);
+    assert_eq!(bible.selected_verse, Some(1));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn mark_center(harness: &egui_kittest::Harness<'_, GrapheApp>, key: &str) -> egui::Pos2 {
+    let marks = harness.ctx.data(|data| {
+        data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+            .unwrap_or_default()
+    });
+    let rect = marks
+        .iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, rect)| *rect)
+        .unwrap_or_else(|| panic!("missing {key} in {marks:?}"));
+    egui::pos2(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5)
+}
+
+fn click_mark(harness: &mut egui_kittest::Harness<'_, GrapheApp>, key: &str) {
+    let pos = mark_center(harness, key);
+    harness.event(egui::Event::PointerMoved(pos));
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run();
+}

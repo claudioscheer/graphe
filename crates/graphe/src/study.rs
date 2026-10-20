@@ -515,11 +515,13 @@ impl GrapheApp {
                 |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 2.0);
                     for reference in &ordered {
+                        let opened =
+                            graphe_domain::bible_ref::verse_to_open(reference.verse_to_start);
                         let label = format!(
                             "{} {}:{}",
                             i18n::book_name(reference.book_to).short,
                             reference.chapter_to,
-                            reference.verse_to_start.unwrap_or(1)
+                            opened
                         );
                         let text = egui::RichText::new(label)
                             .size(self.session.font_size * 0.55)
@@ -530,10 +532,7 @@ impl GrapheApp {
                             ui,
                             &format!(
                                 "ref:{pane_id}:{}:{}:{}:{}",
-                                reference.verse,
-                                reference.book_to,
-                                reference.chapter_to,
-                                reference.verse_to_start.unwrap_or(1)
+                                reference.verse, reference.book_to, reference.chapter_to, opened
                             ),
                             response.rect,
                         );
@@ -545,7 +544,7 @@ impl GrapheApp {
                                 pane_id,
                                 reference.book_to,
                                 reference.chapter_to,
-                                reference.verse_to_start.or(Some(1)),
+                                Some(opened),
                             );
                             ui.ctx().request_repaint();
                         }
@@ -762,15 +761,17 @@ impl GrapheApp {
         chapter: i64,
         verse: Option<i64>,
     ) {
-        if self.session.follow_link(pane_id, book, chapter, verse) {
+        // Verse 0 and a missing verse name the chapter. Open verse 1.
+        let verse = graphe_domain::bible_ref::verse_to_open(verse);
+        if self
+            .session
+            .follow_link(pane_id, book, chapter, Some(verse))
+        {
             let name = i18n::book_name(book);
-            self.session.preview_title = match verse {
-                Some(value) => format!("{} {chapter}:{value}", name.short),
-                None => format!("{} {chapter}", name.short),
-            };
+            self.session.preview_title = format!("{} {chapter}:{verse}", name.short);
             self.session.preview_book = book;
-            self.session.preview_verse = verse;
-            self.session.preview_body = self.verse_preview(pane_id, book, chapter, verse);
+            self.session.preview_verse = Some(verse);
+            self.session.preview_body = self.verse_preview(pane_id, book, chapter, Some(verse));
             self.session.dialog = Dialog::Preview;
             return;
         }
@@ -1269,8 +1270,11 @@ impl GrapheApp {
         }
         if response.clicked() {
             if let Some(hit) = link {
-                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
-                if let Some(plugin) = ui.ctx().plugin_opt::<egui::text_selection::LabelSelectionState>() {
+                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse);
+                if let Some(plugin) = ui
+                    .ctx()
+                    .plugin_opt::<egui::text_selection::LabelSelectionState>()
+                {
                     plugin.lock().clear_selection();
                 }
                 ui.ctx().request_repaint();
@@ -1292,16 +1296,63 @@ impl GrapheApp {
     ) {
         let total = piece_char_total(&paint.pieces);
         let (mut char_from, mut char_to) = visible_char_window(ui, width, font, total);
+        let jumping = self.session.commentary_scroll_verse(pane_id).is_some();
+        // Set when the reader scrolls off the pinned note. The slice is rebuilt
+        // at that character and scrolled there, so the estimate matches again.
+        let mut handoff: Option<usize> = None;
+        let pin_id = commentary_pin_id(pane_id);
+        let mut kept_pin: Option<CommentaryPin> = None;
         if let Some(verse) = self.session.commentary_scroll_verse(pane_id) {
             if let Some(index) = anchor_for_verse(&paint.anchors, verse) {
-                char_from = index.saturating_sub(32);
-                char_to = (index + 48).min(total.max(1));
+                (char_from, char_to) =
+                    verse_char_window(index, total, width, font, ui.clip_rect().height());
+                // The offset changes at the end of this frame. The next frame
+                // records where the note actually sits.
+                kept_pin = Some(CommentaryPin {
+                    char_from,
+                    anchor: index,
+                    settled: false,
+                    above: 0.0,
+                });
+            }
+        } else if let Some(pin) = ui.data(|data| data.get_temp::<CommentaryPin>(pin_id)) {
+            let above = (ui.clip_rect().min.y - ui.cursor().min.y).max(0.0);
+            let span = commentary_slice_span(width, font, ui.clip_rect().height());
+            if !pin.settled || (above - pin.above).abs() <= 4.0 {
+                char_from = pin.char_from.min(total.saturating_sub(1));
+                char_to = char_from.saturating_add(span.max(1)).min(total);
+                if char_to <= char_from {
+                    char_to = (char_from + 1).min(total);
+                }
+                kept_pin = Some(CommentaryPin {
+                    char_from,
+                    anchor: pin.anchor,
+                    settled: true,
+                    above: if pin.settled { pin.above } else { above },
+                });
+            } else if let Some(window) = self.reading.commentary_window(pane_id) {
+                let origin = chars_before(&paint.pieces, window.start);
+                let top = scroll_top_after_pin(
+                    &window.galley,
+                    origin,
+                    pin.anchor,
+                    above - pin.above,
+                    total,
+                );
+                (char_from, char_to) = slice_at(top, total, span);
+                handoff = Some(top);
             }
         }
+        if let Some(pin) = kept_pin {
+            ui.data_mut(|data| data.insert_temp(pin_id, pin));
+        } else {
+            ui.data_mut(|data| data.remove_temp::<CommentaryPin>(pin_id));
+        }
         let key = GalleyKey::new(paint.fingerprint, width_px, font, text_color, link_color);
-        let locked_span = if label_has_selection(ui.ctx())
-            || ui.input(|input| input.pointer.primary_down())
-        {
+        // Hold the open slice only while a drag is in progress. A selection in
+        // the dictionary used to freeze the slice on the first lines of the
+        // verse, so the rest of the pane stayed blank until the next click.
+        let locked_span = if !jumping && ui.input(|input| input.pointer.primary_down()) {
             self.reading
                 .commentary_window(pane_id)
                 .filter(|window| window.key == key)
@@ -1309,7 +1360,8 @@ impl GrapheApp {
         } else {
             None
         };
-        let (start, end) = locked_span.unwrap_or_else(|| piece_span(&paint.pieces, char_from, char_to));
+        let (start, end) =
+            locked_span.unwrap_or_else(|| piece_span(&paint.pieces, char_from, char_to));
         let cached = self
             .reading
             .commentary_window(pane_id)
@@ -1342,14 +1394,18 @@ impl GrapheApp {
         let rect = response.rect;
         #[cfg(test)]
         crate::chrome::mark_layout(ui, &format!("commentary-text:{pane_id}"), rect);
-        if let Some(verse) = self.session.commentary_scroll_verse(pane_id) {
-            if let Some(index) = anchor_for_verse(&paint.anchors, verse) {
-                let local = index.saturating_sub(before);
-                let cursor = galley.pos_from_cursor(egui::text::CCursor::new(local));
-                ui.scroll_to_rect(cursor.translate(rect.min.to_vec2()), Some(egui::Align::TOP));
-                ui.ctx().request_repaint();
-            }
+        let scroll_to = if let Some(verse) = self.session.commentary_scroll_verse(pane_id) {
+            let index = anchor_for_verse(&paint.anchors, verse);
             self.session.clear_commentary_scroll(pane_id);
+            index
+        } else {
+            handoff
+        };
+        if let Some(index) = scroll_to {
+            let local = index.saturating_sub(before);
+            let cursor = galley.pos_from_cursor(egui::text::CCursor::new(local));
+            ui.scroll_to_rect(cursor.translate(rect.min.to_vec2()), Some(egui::Align::TOP));
+            ui.ctx().request_repaint();
         }
         let pointer = response
             .hover_pos()
@@ -1362,8 +1418,11 @@ impl GrapheApp {
         }
         if response.clicked() {
             if let Some(hit) = link {
-                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse.or(Some(1)));
-                if let Some(plugin) = ui.ctx().plugin_opt::<egui::text_selection::LabelSelectionState>() {
+                self.follow_ref(pane_id, hit.book, hit.chapter, hit.verse);
+                if let Some(plugin) = ui
+                    .ctx()
+                    .plugin_opt::<egui::text_selection::LabelSelectionState>()
+                {
                     plugin.lock().clear_selection();
                 }
                 ui.ctx().request_repaint();
@@ -1508,11 +1567,6 @@ fn click_modifiers(ui: &egui::Ui) -> (bool, bool) {
     })
 }
 
-fn label_has_selection(ctx: &egui::Context) -> bool {
-    ctx.plugin_opt::<egui::text_selection::LabelSelectionState>()
-        .is_some_and(|plugin| plugin.lock().has_selection())
-}
-
 /// Grab strip centered on the hairline. It overlaps both panes and does not open a gap.
 const SPLIT_HIT: f32 = 6.0;
 const SPLIT_MIN_WIDTH: f32 = 168.0;
@@ -1638,6 +1692,7 @@ pub(crate) enum CommentaryPiece {
         text: String,
         italic: bool,
         bold: bool,
+        underline: bool,
     },
     Heading(String),
     Break,
@@ -2198,6 +2253,109 @@ fn visible_char_window(ui: &egui::Ui, width: f32, font: f32, total: usize) -> (u
     (char_from, char_to)
 }
 
+/// How many characters fill the commentary pane, with a little extra so a
+/// small scroll does not run off the laid-out slice.
+fn commentary_slice_span(width: f32, font: f32, view_height: f32) -> usize {
+    let chars_per_line = (width / (font * 0.48)).max(12.0);
+    let line_h = (font * 1.45).max(16.0);
+    let lines = (view_height / line_h).ceil().max(8.0);
+    ((lines * chars_per_line) * 1.4).ceil().max(chars_per_line) as usize
+}
+
+/// Character slice that fills the commentary pane, with the verse near the top.
+/// A short slice leaves the rest of the pane blank.
+fn verse_char_window(
+    index: usize,
+    total: usize,
+    width: f32,
+    font: f32,
+    view_height: f32,
+) -> (usize, usize) {
+    if total == 0 {
+        return (0, 0);
+    }
+    let span = commentary_slice_span(width, font, view_height);
+    // Start at the note. A lead of earlier characters is often a stack of short
+    // lines, taller than this estimate, and the next frame then skips the opening.
+    let mut char_from = index;
+    let mut char_to = char_from.saturating_add(span.max(1));
+    if char_to > total {
+        char_to = total;
+        char_from = char_to.saturating_sub(span);
+    }
+    let char_from = char_from.min(index).min(total.saturating_sub(1));
+    let char_to = char_to.clamp(char_from + 1, total);
+    (char_from, char_to)
+}
+
+/// Slice kept after a verse jump. The scroll offset is the real height of the
+/// text above the note. Turning that height back into a character index assumes
+/// every line is full, so a run of short lines is read as a later paragraph
+/// and the opening scrolls out of sight.
+#[derive(Clone, Copy, Debug, Default)]
+struct CommentaryPin {
+    char_from: usize,
+    /// Character the verse jump placed at the top of the view.
+    anchor: usize,
+    /// False on the jump frame, before the scroll offset has been applied.
+    settled: bool,
+    /// `clip.top - cursor.y` once the note is sitting still.
+    above: f32,
+}
+
+fn commentary_pin_id(pane_id: &str) -> egui::Id {
+    egui::Id::unique(("commentary-pin", pane_id))
+}
+
+/// A window that starts at `index`, so that character can sit at the top.
+fn slice_at(index: usize, total: usize, span: usize) -> (usize, usize) {
+    if total == 0 {
+        return (0, 0);
+    }
+    let char_from = index.min(total.saturating_sub(1));
+    let char_to = char_from
+        .saturating_add(span.max(1))
+        .clamp(char_from + 1, total);
+    (char_from, char_to)
+}
+
+/// Where the viewport top lands after the reader scrolls off a pinned note.
+/// The delta is in real pixels; the galley supplies the line height, so the
+/// next slice starts in the same coordinate system as the character estimate.
+fn scroll_top_after_pin(
+    galley: &egui::Galley,
+    origin: usize,
+    anchor: usize,
+    delta_y: f32,
+    total: usize,
+) -> usize {
+    if total == 0 {
+        return 0;
+    }
+    let galley_chars = galley.job.text.chars().count();
+    let local = anchor.saturating_sub(origin).min(galley_chars);
+    let anchor_y = galley
+        .pos_from_cursor(egui::text::CCursor::new(local))
+        .min
+        .y;
+    let height = galley.rect.height().max(1.0);
+    let (span_chars, span_h) = if delta_y >= 0.0 {
+        (
+            galley_chars.saturating_sub(local).max(1) as f32,
+            (height - anchor_y).max(1.0),
+        )
+    } else {
+        (local.max(1) as f32, anchor_y.max(1.0))
+    };
+    let shift = delta_y / span_h * span_chars;
+    let next = if shift >= 0.0 {
+        anchor.saturating_add(shift.round() as usize)
+    } else {
+        anchor.saturating_sub((-shift).round() as usize)
+    };
+    next.min(total.saturating_sub(1))
+}
+
 pub(crate) fn rows_prefix(heights: &[f32], count: usize) -> f32 {
     heights.iter().take(count).sum()
 }
@@ -2243,11 +2401,17 @@ fn pieces_fingerprint(pieces: &[CommentaryPiece]) -> u64 {
                 0u8.hash(&mut hasher);
                 text.hash(&mut hasher);
             }
-            CommentaryPiece::Rich { text, italic, bold } => {
+            CommentaryPiece::Rich {
+                text,
+                italic,
+                bold,
+                underline,
+            } => {
                 2u8.hash(&mut hasher);
                 text.hash(&mut hasher);
                 italic.hash(&mut hasher);
                 bold.hash(&mut hasher);
+                underline.hash(&mut hasher);
             }
             CommentaryPiece::Heading(text) => {
                 3u8.hash(&mut hasher);
@@ -2320,17 +2484,40 @@ fn pieces_from_entries(
                     chars += 1;
                     at_break = true;
                 }
-                graphe_domain::commentary_html::CommentaryRun::Text { text, italic, bold } => {
+                // Item separation comes from the breaks around it; the item
+                // marker itself only matters to the dictionary layout.
+                graphe_domain::commentary_html::CommentaryRun::ListItem { .. } => {}
+                graphe_domain::commentary_html::CommentaryRun::Text {
+                    text,
+                    italic,
+                    bold,
+                    underline,
+                } => {
                     if at_break {
                         note_body_anchor(&text, chars, chapter, &mut anchors);
                     }
                     at_break = false;
                     chars += text.chars().count();
-                    if italic || bold {
-                        pieces.push(CommentaryPiece::Rich { text, italic, bold });
+                    if italic || bold || underline {
+                        pieces.push(CommentaryPiece::Rich {
+                            text,
+                            italic,
+                            bold,
+                            underline,
+                        });
                     } else {
                         pieces.push(CommentaryPiece::Text(text));
                     }
+                }
+                graphe_domain::commentary_html::CommentaryRun::Label { text } => {
+                    at_break = false;
+                    chars += text.chars().count();
+                    pieces.push(CommentaryPiece::Heading(text));
+                }
+                graphe_domain::commentary_html::CommentaryRun::DictLink { label, .. } => {
+                    at_break = false;
+                    chars += label.chars().count();
+                    pieces.push(CommentaryPiece::Text(label));
                 }
                 graphe_domain::commentary_html::CommentaryRun::Link {
                     label,
@@ -2613,9 +2800,13 @@ pub(crate) fn commentary_layout(
                 text,
                 italic,
                 bold,
+                underline,
             } => {
                 let mut format = body.clone();
                 format.italics = *italic;
+                if *underline {
+                    format.underline = egui::Stroke::new(1.0_f32, format.color);
+                }
                 if *bold && bold_faces {
                     format.font_id.family = bold_family.clone();
                 }
@@ -2865,14 +3056,14 @@ mod tests {
         assert!(
             pieces.iter().any(|piece| matches!(
                 piece,
-                CommentaryPiece::Rich { text, bold: true, italic: false } if text == "1"
+                CommentaryPiece::Rich { text, bold: true, italic: false, .. } if text == "1"
             )),
             "the verse tag run keeps bold: {pieces:?}"
         );
         assert!(
             pieces.iter().any(|piece| matches!(
                 piece,
-                CommentaryPiece::Rich { text, bold: true, italic: false } if text == "5º livro"
+                CommentaryPiece::Rich { text, bold: true, italic: false, .. } if text == "5º livro"
             )),
             "a <strong> sentence keeps bold: {pieces:?}"
         );
@@ -2891,15 +3082,23 @@ mod tests {
                         text: "bold".into(),
                         italic: false,
                         bold: true,
+                        underline: false,
                     },
                     CommentaryPiece::Rich {
                         text: "both".into(),
                         italic: true,
                         bold: true,
+                        underline: false,
                     },
                 ];
-                let (galley, _) =
-                    super::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+                let (galley, _) = super::commentary_layout(
+                    ui,
+                    &pieces,
+                    330.0,
+                    16.0,
+                    egui::Color32::BLACK,
+                    egui::Color32::BLUE,
+                );
                 let job = &*galley.job;
                 let sections: Vec<_> = job
                     .sections
@@ -2942,12 +3141,22 @@ mod tests {
                     text: "bold".into(),
                     italic: false,
                     bold: true,
+                    underline: false,
                 }];
-                let (galley, _) =
-                    super::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+                let (galley, _) = super::commentary_layout(
+                    ui,
+                    &pieces,
+                    330.0,
+                    16.0,
+                    egui::Color32::BLACK,
+                    egui::Color32::BLUE,
+                );
                 assert_eq!(galley.job.text, "bold");
                 for section in &galley.job.sections {
-                    assert_eq!(section.format.font_id.family, egui::FontFamily::Proportional);
+                    assert_eq!(
+                        section.format.font_id.family,
+                        egui::FontFamily::Proportional
+                    );
                 }
             });
         });
@@ -3004,7 +3213,10 @@ mod tests {
                 let text_section = &layout_light.galley.job.sections[0];
                 let jesus_section = &layout_light.galley.job.sections[1];
                 let period_section = &layout_light.galley.job.sections[2];
-                assert_eq!(text_section.format.color, crate::paint::color(light.ui_text));
+                assert_eq!(
+                    text_section.format.color,
+                    crate::paint::color(light.ui_text)
+                );
                 assert_eq!(
                     jesus_section.format.color,
                     crate::paint::color(light.ui_jesus_words)

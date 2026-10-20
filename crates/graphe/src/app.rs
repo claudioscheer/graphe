@@ -336,7 +336,7 @@ impl GrapheApp {
             self.run_search();
         }
         if !topic.is_empty() {
-            self.lookup_dict_focused(&topic, false);
+            self.lookup_dict_focused(&topic, false, true);
         }
     }
 
@@ -2853,6 +2853,325 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn dictionary_reference_fills_the_commentary_pane() {
+        let dir =
+            std::env::temp_dir().join(format!("graphe-commentary-jump-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("jump.bible.SQLite3");
+        let comm_path = dir.join("jump.commentary.SQLite3");
+        sqlite::init_module_sql(
+            &bible_path,
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);
+             INSERT INTO verses VALUES (10, 1, 21, 'o rei para na bifurcacao');
+             INSERT INTO verses VALUES (10, 2, 1, 'outro capitulo');",
+        )
+        .unwrap();
+        let mut rest = String::new();
+        for index in 0..900 {
+            rest.push_str(&format!(
+                "<p>paragrafo {index} palavra palavra palavra palavra palavra</p>"
+            ));
+        }
+        let note = format!(
+            "<p>Esta linha inicial fica sozinha no topo da nota.</p><p>TOKEN-MEIO fica na segunda parte da nota.</p>{rest}"
+        );
+        sqlite::init_module_sql(
+            &comm_path,
+            &format!(
+                "CREATE TABLE commentaries (book_number INTEGER, chapter_number_from INTEGER, verse_number_from INTEGER, chapter_number_to INTEGER, verse_number_to INTEGER, text TEXT);
+                 INSERT INTO commentaries VALUES (10, 1, 21, 1, 21, '{note}');
+                 INSERT INTO commentaries VALUES (10, 2, 1, 2, 1, 'nota curta');"
+            ),
+        )
+        .unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(InstalledModule {
+            id: "Bible".into(),
+            name: "Bible".into(),
+            kind: "bible".into(),
+            path: bible_path,
+            short_title: None,
+            description: None,
+        });
+        app.modules.push(InstalledModule {
+            id: "Notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: comm_path,
+            short_title: None,
+            description: None,
+        });
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Bible".into());
+        let commentary = app.session.split_commentary(false);
+        app.session.panes.get_mut(&commentary).unwrap().module_id = Some("Notes".into());
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(10, 2, Some(1));
+        app.loaded_key.clear();
+
+        let mut label_rect = egui::Rect::NOTHING;
+        let paint = |ctx: &egui::Context,
+                     app: &mut GrapheApp,
+                     time: f64,
+                     events: Vec<egui::Event>,
+                     label_rect: &mut egui::Rect| {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            ));
+            raw.time = Some(time);
+            raw.events.extend(events);
+            let palette = theme::palette(false);
+            let _ = ctx.run_test_ui(raw, |ui| {
+                egui::Panel::left("jump-label")
+                    .resizable(false)
+                    .default_size(180.0)
+                    .min_size(180.0)
+                    .max_size(180.0)
+                    .show(ui, |ui| {
+                        let response = ui.add(egui::Label::new("Gn 1.21").selectable(true));
+                        *label_rect = response.rect;
+                    });
+                app.editor(ui, &palette);
+            });
+        };
+
+        paint(&ctx, &mut app, 0.0, Vec::new(), &mut label_rect);
+        paint(&ctx, &mut app, 0.1, Vec::new(), &mut label_rect);
+        assert!(
+            label_rect.width() > 8.0 && label_rect.height() > 8.0,
+            "label rect {label_rect:?}"
+        );
+        let press = label_rect.center();
+        paint(
+            &ctx,
+            &mut app,
+            0.15,
+            vec![egui::Event::PointerMoved(press)],
+            &mut label_rect,
+        );
+        paint(
+            &ctx,
+            &mut app,
+            0.2,
+            vec![
+                egui::Event::PointerMoved(press),
+                egui::Event::PointerButton {
+                    pos: press,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            &mut label_rect,
+        );
+        paint(
+            &ctx,
+            &mut app,
+            0.3,
+            vec![egui::Event::PointerMoved(press + egui::vec2(8.0, 0.0))],
+            &mut label_rect,
+        );
+        paint(
+            &ctx,
+            &mut app,
+            0.4,
+            vec![egui::Event::PointerButton {
+                pos: press,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+            &mut label_rect,
+        );
+        assert!(
+            label_has_selection(&ctx),
+            "the dictionary click leaves a text selection"
+        );
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(10, 1, Some(21));
+        app.loaded_key.clear();
+        paint(&ctx, &mut app, 0.5, Vec::new(), &mut label_rect);
+
+        let window = app
+            .reading
+            .commentary_window(&commentary)
+            .expect("a long note opens a commentary window");
+        let text = window.galley.job.text.clone();
+        assert!(
+            text.contains("TOKEN-MEIO"),
+            "the open slice should show the verse, not only its first line: {text:.120}"
+        );
+        assert!(
+            window.galley.rect.height() > 120.0,
+            "the note should fill the pane, height {}",
+            window.galley.rect.height()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A verse click should leave the commentary on the first line of that note.
+    /// Short paragraphs just above the note used to be taller than the character
+    /// estimate, and the next frame skipped ahead to the following paragraph.
+    #[test]
+    fn clicking_a_verse_shows_the_opening_of_its_commentary() {
+        i18n::set_lang("pt");
+        let daniel = i18n::find_book_by_abbrev("Dn").expect("Daniel");
+        let dir =
+            std::env::temp_dir().join(format!("graphe-commentary-open-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bible_path = dir.join("open.bible.SQLite3");
+        let comm_path = dir.join("open.commentary.SQLite3");
+        let mut bible_sql = String::from(
+            "CREATE TABLE verses (book_number INTEGER, chapter INTEGER, verse INTEGER, text TEXT);",
+        );
+        for verse in 1..=14 {
+            bible_sql.push_str(&format!(
+                "INSERT INTO verses VALUES ({daniel}, 8, {verse}, 'Verso {verse} de Daniel.');\n"
+            ));
+        }
+        sqlite::init_module_sql(&bible_path, &bible_sql).unwrap();
+        let mut filler = String::new();
+        for index in 0..700 {
+            filler.push_str(&format!(
+                "<p>paragrafo {index} palavra palavra palavra palavra palavra palavra</p>"
+            ));
+        }
+        // The characters just before verse 11 are one short line each, the same
+        // shape as the cross-reference tails at the end of a Champlin note.
+        for _ in 0..40 {
+            filler.push_str("<p>xx</p>");
+        }
+        let note = "<p>INICIO-DA-NOTA engrandeceu-se ate ao principe do exercito.</p><p>SEGUNDO-PARAGRAFO onde o visitante celestial e descrito.</p><p>terceiro paragrafo da nota para dar altura ao texto.</p>";
+        let mut after = String::new();
+        for index in 0..80 {
+            after.push_str(&format!(
+                "<p>depois {index} palavra palavra palavra palavra palavra palavra</p>"
+            ));
+        }
+        sqlite::init_module_sql(
+            &comm_path,
+            &format!(
+                "CREATE TABLE commentaries (book_number INTEGER, chapter_number_from INTEGER, verse_number_from INTEGER, chapter_number_to INTEGER, verse_number_to INTEGER, text TEXT);
+                 INSERT INTO commentaries VALUES ({daniel}, 8, 1, 8, 1, '{filler}');
+                 INSERT INTO commentaries VALUES ({daniel}, 8, 11, 8, 11, '{note}');
+                 INSERT INTO commentaries VALUES ({daniel}, 8, 12, 8, 12, '{after}');"
+            ),
+        )
+        .unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.session.sidebar_collapsed = true;
+        app.modules.push(InstalledModule {
+            id: "Bible".into(),
+            name: "Bible".into(),
+            kind: "bible".into(),
+            path: bible_path,
+            short_title: None,
+            description: None,
+        });
+        app.modules.push(InstalledModule {
+            id: "Notes".into(),
+            name: "Notes".into(),
+            kind: "commentary".into(),
+            path: comm_path,
+            short_title: None,
+            description: None,
+        });
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Bible".into());
+        let commentary = app.session.split_commentary(true);
+        app.session.panes.get_mut(&commentary).unwrap().module_id = Some("Notes".into());
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(daniel, 8, Some(1));
+        app.loaded_key.clear();
+
+        let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
+        let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
+        app.session.active_pane_id = "pane-1".into();
+        app.session.navigate(daniel, 8, Some(11));
+
+        let mut settled = None;
+        let mut trace = String::new();
+        for step in 0..4 {
+            let (output, marks) = study_frame_output(
+                &ctx,
+                &mut app,
+                0.2 + step as f64 * 0.1,
+                egui::Modifiers::default(),
+                Vec::new(),
+            );
+            let view = *mark(&marks, &format!("commentary-view:{commentary}"));
+            let offset = *mark(&marks, &format!("commentary-offset:{commentary}"));
+            let opening = text_line_y(&output, "INICIO-DA-NOTA");
+            let second = text_line_y(&output, "SEGUNDO-PARAGRAFO");
+            let preview = app
+                .reading
+                .commentary_window(&commentary)
+                .map(|window| format!("slice {}..{}", window.start, window.end))
+                .unwrap_or_else(|| "full".into());
+            trace.push_str(&format!(
+                "frame {step}: view_top {:.1} height {:.1} content {:.1} offset {:.1} opening {:?} second {:?} {preview}\n",
+                view[1], view[3], offset[0], offset[1], opening, second
+            ));
+            settled = Some((output, marks));
+        }
+        let (output, marks) = settled.expect("frames");
+        let view = *mark(&marks, &format!("commentary-view:{commentary}"));
+        let opening = text_line_y(&output, "INICIO-DA-NOTA").unwrap_or(f32::NAN);
+        let second = text_line_y(&output, "SEGUNDO-PARAGRAFO").unwrap_or(f32::NAN);
+        let preview = app
+            .reading
+            .commentary_window(&commentary)
+            .map(|window| {
+                let text = window.galley.job.text.chars().take(180).collect::<String>();
+                format!("slice {}..{} {text}", window.start, window.end)
+            })
+            .unwrap_or_else(|| "no commentary window".into());
+        assert!(
+            opening.is_finite()
+                && opening >= view[1] - 4.0
+                && opening <= view[1] + 72.0
+                && second > opening + 8.0
+                && second < view[1] + view[3],
+            "the note should open on its first paragraph\n{trace}{preview}"
+        );
+        let at = egui::pos2(view[0] + 40.0, view[1] + 40.0);
+        let _ = study_frame(
+            &ctx,
+            &mut app,
+            0.8,
+            egui::Modifiers::default(),
+            wheel_down(at),
+        );
+        let (wheeled_output, wheeled) =
+            study_frame_output(&ctx, &mut app, 0.9, egui::Modifiers::default(), Vec::new());
+        let wheeled_view = *mark(&wheeled, &format!("commentary-view:{commentary}"));
+        let opening_after = text_line_y(&wheeled_output, "INICIO-DA-NOTA");
+        let preview = app
+            .reading
+            .commentary_window(&commentary)
+            .map(|window| {
+                let text = window.galley.job.text.chars().take(120).collect::<String>();
+                format!("slice {}..{} {text}", window.start, window.end)
+            })
+            .unwrap_or_else(|| "no window".into());
+        assert!(
+            opening_after.is_none_or(|y| y < wheeled_view[1] - 8.0),
+            "wheeling down leaves the note opening above the view, opening {opening_after:?} view {wheeled_view:?}\n{preview}"
+        );
+        assert!(
+            preview.contains("depois"),
+            "wheeling down reaches the following note\n{preview}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn bible_empty_label_fills_the_pane_body() {
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
@@ -2942,6 +3261,74 @@ pub(crate) mod tests {
             .unwrap_or_else(|| panic!("missing {key} in {marks:?}"))
     }
 
+    /// A commentary link whose screen point lies inside the scroll view.
+    /// `pad` keeps the point off the edges so a click or a short drag stays in the text.
+    pub(crate) fn link_inside_view(
+        text_rect: [f32; 4],
+        view: [f32; 4],
+        window: &crate::study::CommentaryWindow,
+        pad: f32,
+    ) -> Option<(crate::study::LinkHit, egui::Pos2)> {
+        window.links.iter().copied().find_map(|link| {
+            let cursor = window
+                .galley
+                .pos_from_cursor(egui::text::CCursor::new(link.start));
+            let x = text_rect[0] + cursor.min.x;
+            let y = text_rect[1] + cursor.min.y;
+            let inside = x >= view[0] + pad
+                && x + pad <= view[0] + view[2]
+                && y >= view[1] + pad
+                && y + 18.0 + pad <= view[1] + view[3];
+            if inside {
+                Some((link, egui::pos2(x + 5.0, y + 5.0)))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Wheel the commentary until a link sits inside the pane.
+    /// A verse jump opens the note at its heading, so the first reference can
+    /// start below the fold.
+    fn reveal_commentary_link(
+        ctx: &egui::Context,
+        app: &mut GrapheApp,
+        pane_id: &str,
+        time: &mut f64,
+        pad: f32,
+    ) -> (crate::study::LinkHit, egui::Pos2, [f32; 4], [f32; 4]) {
+        for _ in 0..24 {
+            let marks = study_frame(ctx, app, *time, egui::Modifiers::default(), Vec::new());
+            *time += 0.05;
+            let text_rect = *mark(&marks, &format!("commentary-text:{pane_id}"));
+            let view = *mark(&marks, &format!("commentary-view:{pane_id}"));
+            if let Some(window) = app.reading.commentary_window(pane_id) {
+                if let Some(hit) = link_inside_view(text_rect, view, window, pad) {
+                    return (hit.0, hit.1, text_rect, view);
+                }
+            }
+            let at = egui::pos2(view[0] + view[2] * 0.5, view[1] + view[3] * 0.5);
+            let _ = study_frame(
+                ctx,
+                app,
+                *time,
+                egui::Modifiers::default(),
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, -140.0),
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+            *time += 0.05;
+        }
+        panic!("a commentary link on screen in {pane_id}");
+    }
+
     fn wheel_down(at: egui::Pos2) -> Vec<egui::Event> {
         vec![
             egui::Event::PointerMoved(at),
@@ -2970,6 +3357,27 @@ pub(crate) mod tests {
             .iter()
             .find_map(|clipped| walk(&clipped.shape, needle))
             .unwrap_or_else(|| panic!("missing text {needle}"))
+    }
+
+    /// Screen y of the line that contains `needle` inside a galley.
+    fn text_line_y(output: &egui::FullOutput, needle: &str) -> Option<f32> {
+        fn walk(shape: &egui::Shape, needle: &str) -> Option<f32> {
+            match shape {
+                egui::Shape::Text(text) => {
+                    let job = &text.galley.job.text;
+                    let byte = job.find(needle)?;
+                    let chars = job[..byte].chars().count();
+                    let local = text.galley.pos_from_cursor(egui::text::CCursor::new(chars));
+                    Some(text.pos.y + local.min.y)
+                }
+                egui::Shape::Vec(list) => list.iter().find_map(|shape| walk(shape, needle)),
+                _ => None,
+            }
+        }
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| walk(&clipped.shape, needle))
     }
 
     #[test]
@@ -4305,10 +4713,14 @@ pub(crate) mod tests {
             egui::Modifiers::default(),
             vec![egui::Event::Copy],
         );
-        let initial_copy = output.platform_output.commands.iter().find_map(|cmd| match cmd {
-            egui::OutputCommand::CopyText(text) => Some(text.clone()),
-            _ => None,
-        });
+        let initial_copy = output
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|cmd| match cmd {
+                egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                _ => None,
+            });
         assert!(
             initial_copy.as_ref().is_some_and(|text| !text.is_empty()),
             "selected text should be copied, got {initial_copy:?}"
@@ -4344,10 +4756,14 @@ pub(crate) mod tests {
             egui::Modifiers::default(),
             vec![egui::Event::Copy],
         );
-        let after_scroll_copy = output.platform_output.commands.iter().find_map(|cmd| match cmd {
-            egui::OutputCommand::CopyText(text) => Some(text.clone()),
-            _ => None,
-        });
+        let after_scroll_copy = output
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|cmd| match cmd {
+                egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                _ => None,
+            });
         assert_eq!(
             after_scroll_copy, initial_copy,
             "highlighted and selected text must stay on the same words when scrolling"
@@ -4634,7 +5050,7 @@ pub(crate) mod tests {
     #[test]
     fn test_pseudo_strong_no_entry_explanation() {
         let mut app = bare(Session::new());
-        app.lookup_dict_focused("H9000", false);
+        app.lookup_dict_focused("H9000", false, false);
         assert_eq!(
             app.session.dict_body,
             graphe_domain::i18n::t("dictPseudoStrongsNoEntry")
@@ -4809,6 +5225,50 @@ pub(crate) mod tests {
 
         // Notice should now be None (dismissed)
         assert!(app.update_notice.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn a_chapter_only_reference_opens_verse_one() {
+        let mut app = bare(Session::new());
+        app.session.navigate(10, 1, Some(8));
+
+        app.follow_ref("pane-1", 340, 2, None);
+        assert_eq!(app.session.panes["pane-1"].book_number, 340);
+        assert_eq!(app.session.panes["pane-1"].chapter, 2);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(1));
+        assert_eq!(app.session.scroll_verse, Some(1));
+
+        // Commentary modules write a chapter with no verse as verse 0: B:340 2:0.
+        app.follow_ref("pane-1", 340, 7, Some(0));
+        assert_eq!(app.session.panes["pane-1"].chapter, 7);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(1));
+
+        app.follow_ref("pane-1", 340, 3, Some(5));
+        assert_eq!(app.session.panes["pane-1"].chapter, 3);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(5));
+
+        app.session.toggle_pin();
+        app.session.preview_pinned = true;
+        app.follow_ref("pane-1", 340, 2, Some(0));
+        assert_eq!(app.session.dialog, Dialog::Preview);
+        assert_eq!(app.session.preview_verse, Some(1));
+        assert!(
+            app.session.preview_title.ends_with("2:1"),
+            "preview title was {}",
+            app.session.preview_title
+        );
+        assert_eq!(app.session.panes["pane-1"].chapter, 3);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(5));
+
+        app.session.open_linked_reference("pane-1", 340, 2, None);
+        assert_eq!(app.session.dialog, Dialog::None);
+        assert_eq!(app.session.panes["pane-1"].chapter, 2);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(1));
+        assert_eq!(app.session.scroll_verse, Some(1));
+
+        app.session.open_linked_reference("pane-1", 340, 5, Some(0));
+        assert_eq!(app.session.panes["pane-1"].chapter, 5);
+        assert_eq!(app.session.panes["pane-1"].selected_verse, Some(1));
     }
 
     #[test]
@@ -5446,12 +5906,16 @@ pub(crate) mod tests {
         let mut time = 0.0;
         let _marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         time += 0.1;
-        let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
-        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
-
-        // Select some text in the commentary
-        let p_start = egui::pos2(text_rect[0] + 50.0, 300.0);
-        let p_end = egui::pos2(text_rect[0] + 150.0, 300.0);
+        let (first_link, link_pos, text_rect, view) =
+            reveal_commentary_link(&ctx, &mut app, &commentary_pane, &mut time, 12.0);
+        let select_y = if link_pos.y > view[1] + 80.0 {
+            view[1] + 36.0
+        } else {
+            view[1] + view[3] - 36.0
+        };
+        // Select some text in the commentary, away from the reference we click.
+        let p_start = egui::pos2(text_rect[0] + 50.0, select_y);
+        let p_end = egui::pos2(text_rect[0] + 150.0, select_y);
         time += 0.1;
         let _ = study_frame(
             &ctx,
@@ -5495,31 +5959,6 @@ pub(crate) mod tests {
             "commentary must have active selection"
         );
 
-        let (first_link_book, first_link_chapter, first_link_verse, link_pos) = {
-            let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
-            for (i, link) in window.links.iter().enumerate() {
-                let slice = if link.end <= window.galley.job.text.len() {
-                    let chars: Vec<char> = window.galley.job.text.chars().collect();
-                    if link.end <= chars.len() {
-                        chars[link.start..link.end].iter().collect::<String>()
-                    } else {
-                        "OUT OF CHARS".to_string()
-                    }
-                } else {
-                    "OUT OF BOUNDS".to_string()
-                };
-                let cursor_start = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
-                let cursor_end = window.galley.pos_from_cursor(egui::text::CCursor::new(link.end));
-                println!("LINK #{i}: start={}, end={}, book={}, chapter={}, verse={:?}, text={:?}, pos_start={:?}, pos_end={:?}",
-                    link.start, link.end, link.book, link.chapter, link.verse, slice, cursor_start.min, cursor_end.min);
-            }
-            assert!(!window.links.is_empty(), "there should be links in Hebrews 10:26");
-            let first_link = &window.links[0];
-            let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(first_link.start));
-            let link_pos = egui::pos2(text_rect[0] + link_cursor.min.x + 5.0, text_rect[1] + link_cursor.min.y + 5.0);
-            (first_link.book, first_link.chapter, first_link.verse, link_pos)
-        };
-
         time += 0.1;
         let _ = study_frame(
             &ctx,
@@ -5560,10 +5999,13 @@ pub(crate) mod tests {
         time += 0.1;
         let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         let bible_pane = app.session.panes.get("pane-1").unwrap();
-        assert_eq!(bible_pane.book_number, first_link_book);
-        assert_eq!(bible_pane.chapter, first_link_chapter);
-        assert_eq!(bible_pane.selected_verse, first_link_verse);
-        assert!(!label_has_selection(&ctx), "selection should be cleared after navigating via link");
+        assert_eq!(bible_pane.book_number, first_link.book);
+        assert_eq!(bible_pane.chapter, first_link.chapter);
+        assert_eq!(bible_pane.selected_verse, first_link.verse);
+        assert!(
+            !label_has_selection(&ctx),
+            "selection should be cleared after navigating via link"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -5605,10 +6047,20 @@ pub(crate) mod tests {
         let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
         let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
 
-        let module = app.modules.iter().find(|m| m.id == "champlin").unwrap().clone();
+        let module = app
+            .modules
+            .iter()
+            .find(|m| m.id == "champlin")
+            .unwrap()
+            .clone();
         let paint = app.load_commentary(&module, 650, 10);
         let deut_piece = paint.pieces.iter().find(|p| match p {
-            crate::study::CommentaryPiece::Link { book, chapter, verse, .. } => *book == 50 && *chapter == 17 && *verse == Some(26),
+            crate::study::CommentaryPiece::Link {
+                book,
+                chapter,
+                verse,
+                ..
+            } => *book == 50 && *chapter == 17 && *verse == Some(26),
             _ => false,
         });
         assert!(
@@ -5620,23 +6072,37 @@ pub(crate) mod tests {
         let mut time = 0.2;
         for _ in 0..4 {
             time += 0.05;
-            let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), wheel_down(at));
+            let _ = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(at),
+            );
         }
         let (_deut_link, link_cursor) = {
-            let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
+            let window = app
+                .reading
+                .commentary_window(&commentary_pane)
+                .expect("window exists");
             let deut_link = window
                 .links
                 .iter()
                 .find(|l| l.book == 50 && l.chapter == 17 && l.verse == Some(26))
                 .copied()
                 .expect("Deut. 17:26 must appear in window.links after scrolling to it");
-            let link_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(deut_link.start));
+            let link_cursor = window
+                .galley
+                .pos_from_cursor(egui::text::CCursor::new(deut_link.start));
             (deut_link, link_cursor)
         };
 
         let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
-        let link_pos = egui::pos2(text_rect[0] + link_cursor.min.x + 5.0, text_rect[1] + link_cursor.min.y + 5.0);
+        let link_pos = egui::pos2(
+            text_rect[0] + link_cursor.min.x + 5.0,
+            text_rect[1] + link_cursor.min.y + 5.0,
+        );
 
         time += 0.1;
         let _ = study_frame(
@@ -5686,36 +6152,92 @@ pub(crate) mod tests {
         let mut pieces = Vec::new();
         for run in runs {
             match run {
-                graphe_domain::commentary_html::CommentaryRun::Break => pieces.push(crate::study::CommentaryPiece::Break),
-                graphe_domain::commentary_html::CommentaryRun::Text { text, italic, bold } => {
-                    if italic || bold {
-                        pieces.push(crate::study::CommentaryPiece::Rich { text, italic, bold });
+                graphe_domain::commentary_html::CommentaryRun::Break => {
+                    pieces.push(crate::study::CommentaryPiece::Break)
+                }
+                graphe_domain::commentary_html::CommentaryRun::Text {
+                    text,
+                    italic,
+                    bold,
+                    underline,
+                } => {
+                    if italic || bold || underline {
+                        pieces.push(crate::study::CommentaryPiece::Rich {
+                            text,
+                            italic,
+                            bold,
+                            underline,
+                        });
                     } else {
                         pieces.push(crate::study::CommentaryPiece::Text(text));
                     }
                 }
-                graphe_domain::commentary_html::CommentaryRun::Link { label, book, chapter, verse, .. } => {
-                    pieces.push(crate::study::CommentaryPiece::Link { label, book, chapter, verse });
+                graphe_domain::commentary_html::CommentaryRun::Label { text } => {
+                    pieces.push(crate::study::CommentaryPiece::Heading(text));
+                }
+                graphe_domain::commentary_html::CommentaryRun::ListItem { .. } => {}
+                graphe_domain::commentary_html::CommentaryRun::DictLink { label, .. } => {
+                    pieces.push(crate::study::CommentaryPiece::Text(label));
+                }
+                graphe_domain::commentary_html::CommentaryRun::Link {
+                    label,
+                    book,
+                    chapter,
+                    verse,
+                    ..
+                } => {
+                    pieces.push(crate::study::CommentaryPiece::Link {
+                        label,
+                        book,
+                        chapter,
+                        verse,
+                    });
                 }
             }
         }
         let ctx = egui::Context::default();
         ctx.run_test_ui(Default::default(), |ui: &mut egui::Ui| {
-            let (galley, links) = crate::study::commentary_layout(ui, &pieces, 330.0, 16.0, egui::Color32::BLACK, egui::Color32::BLUE);
+            let (galley, links) = crate::study::commentary_layout(
+                ui,
+                &pieces,
+                330.0,
+                16.0,
+                egui::Color32::BLACK,
+                egui::Color32::BLUE,
+            );
             // Verify no row has reversed words
             for row in &galley.rows {
                 let row_text: String = row.glyphs.iter().map(|g| g.chr).collect();
-                assert!(!row_text.contains("odacep"), "row text should not be reversed: {row_text}");
-                assert!(!row_text.contains("aisatsopa"), "row text should not be reversed: {row_text}");
+                assert!(
+                    !row_text.contains("odacep"),
+                    "row text should not be reversed: {row_text}"
+                );
+                assert!(
+                    !row_text.contains("aisatsopa"),
+                    "row text should not be reversed: {row_text}"
+                );
             }
             // Verify II Cor. 6:7 is present and its coordinates resolve correctly
-            let cor_link = links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
+            let cor_link = links
+                .iter()
+                .find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
                 .expect("II Cor. 6:7 link must exist");
             let start_cursor = galley.pos_from_cursor(egui::text::CCursor::new(cor_link.start));
             let end_cursor = galley.pos_from_cursor(egui::text::CCursor::new(cor_link.end));
-            assert!(end_cursor.min.x > start_cursor.min.x || end_cursor.min.y > start_cursor.min.y, "link must have non-zero width");
-            let hit = crate::study::link_at(&galley, egui::Pos2::ZERO, &links, start_cursor.min + egui::vec2(2.0, 2.0));
-            assert_eq!(hit.map(|h| (h.book, h.chapter, h.verse)), Some((540, 6, Some(7))));
+            assert!(
+                end_cursor.min.x > start_cursor.min.x || end_cursor.min.y > start_cursor.min.y,
+                "link must have non-zero width"
+            );
+            let hit = crate::study::link_at(
+                &galley,
+                egui::Pos2::ZERO,
+                &links,
+                start_cursor.min + egui::vec2(2.0, 2.0),
+            );
+            assert_eq!(
+                hit.map(|h| (h.book, h.chapter, h.verse)),
+                Some((540, 6, Some(7)))
+            );
         });
     }
 
@@ -5762,20 +6284,38 @@ pub(crate) mod tests {
         let mut cor_cursor = egui::Rect::ZERO;
         for _ in 0..12 {
             time += 0.05;
-            let _ = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), wheel_down(at));
+            let _ = study_frame(
+                &ctx,
+                &mut app,
+                time,
+                egui::Modifiers::default(),
+                wheel_down(at),
+            );
             if let Some(window) = app.reading.commentary_window(&commentary_pane) {
-                if let Some(link) = window.links.iter().find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7)) {
+                if let Some(link) = window
+                    .links
+                    .iter()
+                    .find(|l| l.book == 540 && l.chapter == 6 && l.verse == Some(7))
+                {
                     cor_found = true;
-                    cor_cursor = window.galley.pos_from_cursor(egui::text::CCursor::new(link.start));
+                    cor_cursor = window
+                        .galley
+                        .pos_from_cursor(egui::text::CCursor::new(link.start));
                     break;
                 }
             }
         }
-        assert!(cor_found, "II Cor. 6:7 link should be visible in commentary window");
+        assert!(
+            cor_found,
+            "II Cor. 6:7 link should be visible in commentary window"
+        );
 
         let marks = study_frame(&ctx, &mut app, time, egui::Modifiers::default(), Vec::new());
         let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
-        let link_pos = egui::pos2(text_rect[0] + cor_cursor.min.x + 5.0, text_rect[1] + cor_cursor.min.y + 5.0);
+        let link_pos = egui::pos2(
+            text_rect[0] + cor_cursor.min.x + 5.0,
+            text_rect[1] + cor_cursor.min.y + 5.0,
+        );
 
         time += 0.1;
         let _ = study_frame(
@@ -5814,7 +6354,10 @@ pub(crate) mod tests {
 
         let bible = app.session.panes.get("pane-1").unwrap();
         // Crucial: Must navigate to II Cor. 6:7 (540, 6, 7), NOT João 14:6 (500, 14, 6)
-        assert_eq!(bible.book_number, 540, "Must navigate to II Corinthians (540), not Jo 14:6");
+        assert_eq!(
+            bible.book_number, 540,
+            "Must navigate to II Corinthians (540), not Jo 14:6"
+        );
         assert_eq!(bible.chapter, 6);
         assert_eq!(bible.selected_verse, Some(7));
     }
@@ -5856,20 +6399,30 @@ pub(crate) mod tests {
         let _ = study_frame(&ctx, &mut app, 0.0, egui::Modifiers::default(), Vec::new());
         let _ = study_frame(&ctx, &mut app, 0.1, egui::Modifiers::default(), Vec::new());
 
-        let marks = study_frame(&ctx, &mut app, 0.15, egui::Modifiers::default(), Vec::new());
-        let text_rect = *mark(&marks, &format!("commentary-text:{commentary_pane}"));
-
-        let window = app.reading.commentary_window(&commentary_pane).expect("window exists");
-        assert!(!window.links.is_empty(), "commentary window should have reference links");
-        let ref_link = &window.links[0];
-        let ref_start = window.galley.pos_from_cursor(egui::text::CCursor::new(ref_link.start));
-        let ref_end = window.galley.pos_from_cursor(egui::text::CCursor::new(ref_link.end));
+        // The note opens at the verse, so the first reference can sit below the pane.
+        let mut time = 0.15;
+        let (ref_link, _, text_rect, view) =
+            reveal_commentary_link(&ctx, &mut app, &commentary_pane, &mut time, 36.0);
+        let window = app
+            .reading
+            .commentary_window(&commentary_pane)
+            .expect("window exists");
+        let ref_start = window
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(ref_link.start));
+        let ref_end = window
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(ref_link.end));
 
         // Start drag 30px before the reference link and drag past the reference link
-        let drag_start = egui::pos2((text_rect[0] + ref_start.min.x - 30.0).max(text_rect[0] + 5.0), text_rect[1] + ref_start.min.y + 5.0);
-        let drag_end = egui::pos2(text_rect[0] + ref_end.min.x + 30.0, text_rect[1] + ref_end.min.y + 5.0);
-
-        let mut time = 0.2;
+        let drag_start = egui::pos2(
+            (text_rect[0] + ref_start.min.x - 30.0).max(view[0] + 4.0),
+            text_rect[1] + ref_start.min.y + 5.0,
+        );
+        let drag_end = egui::pos2(
+            (text_rect[0] + ref_end.min.x + 30.0).min(view[0] + view[2] - 4.0),
+            text_rect[1] + ref_end.min.y + 5.0,
+        );
         let _ = study_frame(
             &ctx,
             &mut app,
@@ -5943,7 +6496,9 @@ pub(crate) mod tests {
         app.session.active_pane_id = "pane-1".into();
         app.open_navigation();
         assert_eq!(
-            app.nav.as_ref().and_then(|nav| nav.active_pane_id.as_deref()),
+            app.nav
+                .as_ref()
+                .and_then(|nav| nav.active_pane_id.as_deref()),
             Some("pane-1")
         );
     }
@@ -6005,7 +6560,8 @@ pub(crate) mod tests {
         let heb = i18n::find_book_by_abbrev("Hb").expect("Hebrews resolves");
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("Fixt", "Fixture", fixture_bible()));
+        app.modules
+            .push(bible_module("Fixt", "Fixture", fixture_bible()));
         app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Fixt".into());
         app.session.panes.get_mut("pane-1").unwrap().book_number = heb;
         app.session.panes.get_mut("pane-1").unwrap().chapter = 10;
@@ -6091,15 +6647,34 @@ pub(crate) mod tests {
             let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
         }
 
-        let marks = ctx.data(|d| d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks")).unwrap_or_default());
-        let offset = marks.iter().find(|(k, _)| k == "chapter-offset:pane-1").map(|(_, r)| *r).expect("chapter offset");
-        assert!(offset[1] > 4000.0, "bible pane should scroll to verse 26, got {}", offset[1]);
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let offset = marks
+            .iter()
+            .find(|(k, _)| k == "chapter-offset:pane-1")
+            .map(|(_, r)| *r)
+            .expect("chapter offset");
+        assert!(
+            offset[1] > 4000.0,
+            "bible pane should scroll to verse 26, got {}",
+            offset[1]
+        );
 
         if !champlin_installed {
             return;
         }
-        let comm_offset = marks.iter().find(|(k, _)| k.starts_with("commentary-offset")).map(|(_, r)| *r).expect("commentary offset");
-        assert!(comm_offset[1] > 50000.0, "commentary pane should scroll to verse 26, got {}", comm_offset[1]);
+        let comm_offset = marks
+            .iter()
+            .find(|(k, _)| k.starts_with("commentary-offset"))
+            .map(|(_, r)| *r)
+            .expect("commentary offset");
+        assert!(
+            comm_offset[1] > 50000.0,
+            "commentary pane should scroll to verse 26, got {}",
+            comm_offset[1]
+        );
     }
 
     #[test]
@@ -6107,7 +6682,8 @@ pub(crate) mod tests {
         let ec = i18n::find_book_by_abbrev("Ec").expect("Ecclesiastes resolves");
         let ctx = egui::Context::default();
         let mut app = bare(Session::new());
-        app.modules.push(bible_module("Fixt", "Fixture", fixture_bible()));
+        app.modules
+            .push(bible_module("Fixt", "Fixture", fixture_bible()));
         app.session.panes.get_mut("pane-1").unwrap().module_id = Some("Fixt".into());
         app.session.panes.get_mut("pane-1").unwrap().book_number = ec;
         app.session.panes.get_mut("pane-1").unwrap().chapter = 4;
@@ -6173,19 +6749,22 @@ pub(crate) mod tests {
         let chapter = app.session.panes.get("pane-1").unwrap();
         assert_eq!(chapter.book_number, ec);
         assert_eq!(chapter.chapter, 4);
-        let first = app
-            .session
-            .chapter_text
-            .first()
-            .map(|(verse, _)| *verse);
+        let first = app.session.chapter_text.first().map(|(verse, _)| *verse);
         assert_eq!(chapter.selected_verse, first);
         assert_eq!(chapter.selected_verse, Some(1));
 
         for _ in 1..=5 {
             let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
         }
-        let marks = ctx.data(|d| d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks")).unwrap_or_default());
-        let offset = marks.iter().find(|(k, _)| k == "chapter-offset:pane-1").map(|(_, r)| *r).expect("chapter offset");
+        let marks = ctx.data(|d| {
+            d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                .unwrap_or_default()
+        });
+        let offset = marks
+            .iter()
+            .find(|(k, _)| k == "chapter-offset:pane-1")
+            .map(|(_, r)| *r)
+            .expect("chapter offset");
         assert!(
             offset[1] < 100.0,
             "chapter-only navigation should end at the top, got {}",

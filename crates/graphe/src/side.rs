@@ -4,7 +4,7 @@ use crate::app::{label_for, GrapheApp};
 use crate::dropdown::ModuleDropdown;
 use crate::paint;
 use crate::session::Dialog;
-use graphe_domain::dict::normalize_topic_candidate;
+use graphe_domain::dict::{is_external_href, normalize_topic_candidate, topic_candidates};
 use graphe_domain::i18n;
 use graphe_domain::search::{extract_search_terms, parse_search_query, search_result_verse};
 use graphe_domain::theme::UiPalette;
@@ -344,9 +344,13 @@ impl GrapheApp {
                     egui::pos2(ui.max_rect().left() + 8.0, top + offsets[index]),
                     egui::vec2(card_width, offsets[index + 1] - offsets[index] - SEARCH_GAP),
                 );
-                let hit_id =
-                    ui.scope_id()
-                        .with(("search-hit", hit.book_number, hit.chapter, hit.verse, index));
+                let hit_id = ui.scope_id().with((
+                    "search-hit",
+                    hit.book_number,
+                    hit.chapter,
+                    hit.verse,
+                    index,
+                ));
                 let mut row_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .id_salt(hit_id)
@@ -543,7 +547,7 @@ impl GrapheApp {
                                 .get(self.session.dict_history_index)
                                 .cloned()
                             {
-                                self.lookup_dict(&topic);
+                                self.recall_dict(&topic);
                             }
                         }
 
@@ -576,7 +580,7 @@ impl GrapheApp {
                                 .get(self.session.dict_history_index)
                                 .cloned()
                             {
-                                self.lookup_dict(&topic);
+                                self.recall_dict(&topic);
                             }
                         }
                     });
@@ -593,6 +597,7 @@ impl GrapheApp {
                     if self.session.dict_module_id.as_deref() != Some(&id) {
                         self.session.dict_module_id = Some(id.clone());
                         self.session.dict_query.clear();
+                        self.session.dict_topic.clear();
                         self.session.dict_body.clear();
                         self.session.dict_entry = None;
                         self.session.dict_cognates.clear();
@@ -622,6 +627,7 @@ impl GrapheApp {
                 crate::chrome::mark_layout(ui, "dict-search-box", box_rect);
 
                 if cleared {
+                    self.session.dict_topic.clear();
                     self.session.dict_body.clear();
                     self.session.dict_entry = None;
                     self.session.dict_cognates.clear();
@@ -648,18 +654,21 @@ impl GrapheApp {
 
                 if self.session.dict_suggestions_open && !self.session.dict_suggestions.is_empty() {
                     if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
-                        self.session.dict_suggestions_index = match self.session.dict_suggestions_index {
-                            None => Some(0),
-                            Some(idx) => Some(
-                                (idx + 1).min(self.session.dict_suggestions.len().saturating_sub(1)),
-                            ),
-                        };
+                        self.session.dict_suggestions_index =
+                            match self.session.dict_suggestions_index {
+                                None => Some(0),
+                                Some(idx) => Some(
+                                    (idx + 1)
+                                        .min(self.session.dict_suggestions.len().saturating_sub(1)),
+                                ),
+                            };
                         ui.ctx().request_repaint();
                     } else if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
-                        self.session.dict_suggestions_index = match self.session.dict_suggestions_index {
-                            None | Some(0) => None,
-                            Some(idx) => Some(idx - 1),
-                        };
+                        self.session.dict_suggestions_index =
+                            match self.session.dict_suggestions_index {
+                                None | Some(0) => None,
+                                Some(idx) => Some(idx - 1),
+                            };
                         ui.ctx().request_repaint();
                     } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                         self.session.dict_suggestions.clear();
@@ -693,7 +702,6 @@ impl GrapheApp {
                     self.session.dict_suggestions_index = None;
                     let trimmed = topic.trim();
                     if !trimmed.is_empty() {
-                        self.session.dict_query = trimmed.to_string();
                         self.lookup_dict(trimmed);
                     }
                 }
@@ -718,30 +726,29 @@ impl GrapheApp {
                             ui.set_width(box_width);
                             ui.set_max_width(box_width);
 
-                            let frame = egui::Frame::new()
-                                .fill(paint::color(palette.ui_surface_elevated))
-                                .stroke(egui::Stroke::new(
-                                    frame_stroke,
-                                    paint::color(if self.session.dark {
-                                        palette.ui_border_strong
-                                    } else {
-                                        palette.ui_border_soft
-                                    }),
-                                ))
-                                .corner_radius(egui::CornerRadius::same(
-                                    graphe_domain::theme::RADIUS_CONTROL as u8,
-                                ))
-                                .shadow(egui::Shadow {
-                                    offset: [0, 4],
-                                    blur: 16,
-                                    spread: 0,
-                                    color: egui::Color32::from_black_alpha(if self.session.dark {
-                                        120
-                                    } else {
-                                        35
-                                    }),
-                                })
-                                .inner_margin(egui::Margin::symmetric(frame_margin_x as i8, 4));
+                            let frame =
+                                egui::Frame::new()
+                                    .fill(paint::color(palette.ui_surface_elevated))
+                                    .stroke(egui::Stroke::new(
+                                        frame_stroke,
+                                        paint::color(if self.session.dark {
+                                            palette.ui_border_strong
+                                        } else {
+                                            palette.ui_border_soft
+                                        }),
+                                    ))
+                                    .corner_radius(egui::CornerRadius::same(
+                                        graphe_domain::theme::RADIUS_CONTROL as u8,
+                                    ))
+                                    .shadow(egui::Shadow {
+                                        offset: [0, 4],
+                                        blur: 16,
+                                        spread: 0,
+                                        color: egui::Color32::from_black_alpha(
+                                            if self.session.dark { 120 } else { 35 },
+                                        ),
+                                    })
+                                    .inner_margin(egui::Margin::symmetric(frame_margin_x as i8, 4));
 
                             frame.show(ui, |ui| {
                                 ui.set_width(inner_width);
@@ -787,7 +794,9 @@ impl GrapheApp {
                                             );
                                             ui.painter().galley(text_pos, galley, text_color);
                                             if is_hovered {
-                                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                                ui.ctx().set_cursor_icon(
+                                                    egui::CursorIcon::PointingHand,
+                                                );
                                             }
                                             #[cfg(test)]
                                             crate::chrome::mark_layout(
@@ -809,7 +818,6 @@ impl GrapheApp {
                     crate::chrome::mark_layout(ui, "dict-suggestions-popup", rendered_rect);
 
                     if let Some(topic) = picked {
-                        self.session.dict_query = topic.clone();
                         self.session.dict_suggestions.clear();
                         self.session.dict_suggestions_open = false;
                         self.session.dict_suggestions_index = None;
@@ -823,7 +831,8 @@ impl GrapheApp {
                 if self.session.dict_suggestions_open {
                     if ui.input(|i| i.pointer.any_click()) {
                         if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                            let last_popup_rect = ui.data(|d| d.get_temp::<egui::Rect>(popup_rect_id));
+                            let last_popup_rect =
+                                ui.data(|d| d.get_temp::<egui::Rect>(popup_rect_id));
                             if !box_rect.contains(pos)
                                 && !last_popup_rect.is_some_and(|r| r.contains(pos))
                             {
@@ -853,7 +862,7 @@ impl GrapheApp {
             .unwrap_or_default();
 
         let entry = self.session.dict_entry.clone();
-        let topic = self.session.dict_query.clone();
+        let topic = self.session.dict_topic.clone();
         let dict_font = graphe_domain::dict::dict_font_size(self.session.font_size);
         let meta_font = (dict_font - 1.0).max(13.0);
         let lexeme_font = (self.session.font_size * 1.25).max(22.0);
@@ -861,195 +870,305 @@ impl GrapheApp {
         // A wide entry must scroll inside the panel. Growing the scroll area
         // pushes the study pane and leaves an unpainted gap, and the resize
         // handle then snaps back to that content width.
-        egui::ScrollArea::vertical()
+        //
+        // A related word is chosen inside this area, after the offset for the
+        // frame is already fixed. The flag is applied on the next paint.
+        // Clearing the stored state also drops leftover drag velocity, which
+        // would otherwise pull the new entry down again.
+        let reset_scroll = std::mem::take(&mut self.session.dict_scroll_top);
+        let mut entry_scroll = egui::ScrollArea::vertical()
+            .id_salt("dict-entry")
             .auto_shrink([false, false])
             .hscroll(true)
-            .max_height(ui.available_height())
-            .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(12, 10))
-                    .show(ui, |ui| {
-                        if !topic.is_empty()
-                            && (entry.is_some() || !self.session.dict_body.is_empty())
-                        {
-                            // Module Header
+            .max_height(ui.available_height());
+        if reset_scroll {
+            egui::containers::scroll_area::State::default()
+                .store(ui.ctx(), paint::scroll_id(ui, "dict-entry"));
+            ui.input_mut(|input| input.smooth_scroll_delta = egui::Vec2::ZERO);
+            entry_scroll = entry_scroll.animated(false).scroll_offset(egui::Vec2::ZERO);
+        }
+        let entry_scroll = entry_scroll.show(ui, |ui| {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 10))
+                .show(ui, |ui| {
+                    if entry.is_some() || !self.session.dict_body.is_empty() {
+                        // Module Header
+                        ui.label(
+                            egui::RichText::new(&display_title)
+                                .size(10.0)
+                                .strong()
+                                .color(paint::color(palette.ui_text_subtle)),
+                        );
+                        if !desc_tag.is_empty() {
                             ui.label(
-                                egui::RichText::new(&display_title)
-                                    .size(10.0)
-                                    .strong()
+                                egui::RichText::new(&desc_tag)
+                                    .size(11.0)
                                     .color(paint::color(palette.ui_text_subtle)),
                             );
-                            if !desc_tag.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(&desc_tag)
-                                        .size(11.0)
-                                        .color(paint::color(palette.ui_text_subtle)),
-                                );
-                            }
-                            ui.label(
+                        }
+                        if !topic.is_empty() {
+                            let topic_label = ui.label(
                                 egui::RichText::new(&topic)
                                     .size(11.0)
                                     .strong()
                                     .color(paint::color(palette.ui_link)),
                             );
-                            ui.add_space(4.0);
+                            #[cfg(test)]
+                            crate::chrome::mark_layout(ui, "dict-open-topic", topic_label.rect);
+                            let _ = topic_label;
+                        }
+                        ui.add_space(4.0);
 
-                            // Large lexeme title
-                            if let Some(lexeme) = entry
-                                .as_ref()
-                                .and_then(|e| e.get("lexeme"))
-                                .filter(|l| !l.is_empty())
-                            {
-                                let lexeme = graphe_domain::bidi::display_text(lexeme);
-                                ui.label(
-                                    egui::RichText::new(lexeme.as_ref())
-                                        .size(lexeme_font)
-                                        .color(paint::color(palette.ui_text)),
-                                );
-                                ui.add_space(2.0);
-                            }
-
-                            // Transliteration / pronunciation meta
-                            let translit = entry
-                                .as_ref()
-                                .and_then(|e| e.get("transliteration"))
-                                .cloned()
-                                .unwrap_or_default();
-                            let pron = entry
-                                .as_ref()
-                                .and_then(|e| e.get("pronunciation"))
-                                .cloned()
-                                .unwrap_or_default();
-                            let meta = match (!translit.is_empty(), !pron.is_empty()) {
-                                (true, true) => format!("{translit} — {pron}"),
-                                (true, false) => translit,
-                                (false, true) => pron,
-                                _ => String::new(),
-                            };
-                            if !meta.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(&meta)
-                                        .size(meta_font)
-                                        .italics()
-                                        .color(paint::color(palette.ui_text_muted)),
-                                );
-                                ui.add_space(6.0);
-                            }
-
-                            // Short definition (if present)
-                            if let Some(short_def) = entry
-                                .as_ref()
-                                .and_then(|e| e.get("short_definition"))
-                                .filter(|s| !s.is_empty())
-                            {
-                                let short_def = graphe_domain::bidi::display_text(short_def);
-                                ui.label(
-                                    egui::RichText::new(short_def.as_ref())
-                                        .size(dict_font)
-                                        .strong()
-                                        .color(paint::color(palette.ui_text)),
-                                );
-                                ui.add_space(6.0);
-                            }
-
-                            // Morphology Section Box (if morphology context is present)
-                            if let Some(code) = self.session.dict_morph_code.clone() {
-                                let lemma =
-                                    self.session.dict_morph_lemma.clone().unwrap_or_default();
-                                let meaning = self
-                                    .session
-                                    .dict_morph_meaning
-                                    .clone()
-                                    .unwrap_or_else(|| code.clone());
-                                morphology_box(ui, &code, &lemma, &meaning, palette);
-                                ui.add_space(6.0);
-                            }
-
-                            // Body definition
-                            if self.session.dict_body == i18n::t("dictNoDictsConfigured") {
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(i18n::t("dictNoDictsConfigured"))
-                                            .size(dict_font)
-                                            .color(paint::color(palette.ui_text_subtle)),
-                                    );
-                                    if ui
-                                        .link(
-                                            egui::RichText::new(i18n::t("settings"))
-                                                 .size(dict_font)
-                                                 .color(paint::color(palette.ui_link)),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.session.dialog = Dialog::Settings;
-                                    }
-                                });
-                            } else if !self.session.dict_body.is_empty() {
-                                paint::show_html(
-                                    ui,
-                                    &self.session.dict_body,
-                                    dict_font,
-                                    paint::color(palette.ui_text),
-                                    paint::color(if self.session.dark {
-                                        palette.ui_text_subtle
-                                    } else {
-                                        palette.ui_text_muted
-                                    }),
-                                    paint::color(palette.ui_link),
-                                );
-                            }
-
-                            // Cognates
-                            if !self.session.dict_cognates.is_empty() {
-                                ui.add_space(10.0);
-                                separator_line(ui, palette.ui_border);
-                                ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new(i18n::t("dictCognates").to_uppercase())
-                                        .size(10.0)
-                                        .strong()
-                                        .color(paint::color(if self.session.dark {
-                                            palette.ui_text_muted
-                                        } else {
-                                            palette.ui_text_subtle
-                                        })),
-                                );
-                                ui.add_space(6.0);
-                                let cognates = self.session.dict_cognates.clone();
-                                let text_hex = if self.session.dark {
-                                    palette.ui_link_softest
-                                } else {
-                                    palette.ui_link
-                                };
-                                let fill_hex = if self.session.dark {
-                                    palette.ui_link_soft
-                                } else {
-                                    palette.ui_link
-                                };
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
-                                    for cognate in cognates {
-                                        if paint::cognate_chip(ui, &cognate, text_hex, fill_hex)
-                                            .clicked()
-                                        {
-                                            self.lookup_dict(&cognate);
-                                        }
-                                    }
-                                });
-                            }
-                        } else {
+                        // Large lexeme title
+                        if let Some(lexeme) = entry
+                            .as_ref()
+                            .and_then(|e| e.get("lexeme"))
+                            .filter(|l| !l.is_empty())
+                        {
+                            let lexeme = graphe_domain::bidi::display_text(lexeme);
                             ui.label(
-                                egui::RichText::new(i18n::t("dictSelectTopic"))
-                                    .size(12.0)
+                                egui::RichText::new(lexeme.as_ref())
+                                    .size(lexeme_font)
+                                    .color(paint::color(palette.ui_text)),
+                            );
+                            ui.add_space(2.0);
+                        }
+
+                        // Transliteration / pronunciation meta
+                        let translit = entry
+                            .as_ref()
+                            .and_then(|e| e.get("transliteration"))
+                            .cloned()
+                            .unwrap_or_default();
+                        let pron = entry
+                            .as_ref()
+                            .and_then(|e| e.get("pronunciation"))
+                            .cloned()
+                            .unwrap_or_default();
+                        let meta = match (!translit.is_empty(), !pron.is_empty()) {
+                            (true, true) => format!("{translit} — {pron}"),
+                            (true, false) => translit,
+                            (false, true) => pron,
+                            _ => String::new(),
+                        };
+                        if !meta.is_empty() {
+                            ui.label(
+                                egui::RichText::new(&meta)
+                                    .size(meta_font)
+                                    .italics()
                                     .color(paint::color(palette.ui_text_muted)),
                             );
+                            ui.add_space(6.0);
                         }
-                    });
-            });
+
+                        // Short definition (if present)
+                        if let Some(short_def) = entry
+                            .as_ref()
+                            .and_then(|e| e.get("short_definition"))
+                            .filter(|s| !s.is_empty())
+                        {
+                            let short_def = graphe_domain::bidi::display_text(short_def);
+                            ui.label(
+                                egui::RichText::new(short_def.as_ref())
+                                    .size(dict_font)
+                                    .strong()
+                                    .color(paint::color(palette.ui_text)),
+                            );
+                            ui.add_space(6.0);
+                        }
+
+                        // Morphology Section Box (if morphology context is present)
+                        if let Some(code) = self.session.dict_morph_code.clone() {
+                            let lemma = self.session.dict_morph_lemma.clone().unwrap_or_default();
+                            let meaning = self
+                                .session
+                                .dict_morph_meaning
+                                .clone()
+                                .unwrap_or_else(|| code.clone());
+                            morphology_box(ui, &code, &lemma, &meaning, palette);
+                            ui.add_space(6.0);
+                        }
+
+                        // Body definition
+                        if self.session.dict_body == i18n::t("dictNoDictsConfigured") {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(
+                                    egui::RichText::new(i18n::t("dictNoDictsConfigured"))
+                                        .size(dict_font)
+                                        .color(paint::color(palette.ui_text_subtle)),
+                                );
+                                if ui
+                                    .link(
+                                        egui::RichText::new(i18n::t("settings"))
+                                            .size(dict_font)
+                                            .color(paint::color(palette.ui_link)),
+                                    )
+                                    .clicked()
+                                {
+                                    self.session.dialog = Dialog::Settings;
+                                }
+                            });
+                        } else if !self.session.dict_body.is_empty() {
+                            let body = self.session.dict_body.clone();
+                            let action = paint::show_html(
+                                ui,
+                                &body,
+                                dict_font,
+                                paint::color(palette.ui_text),
+                                paint::color(if self.session.dark {
+                                    palette.ui_text_subtle
+                                } else {
+                                    palette.ui_text_muted
+                                }),
+                                paint::color(palette.ui_link),
+                                Some(self.matcher()),
+                            );
+                            if let Some(action) = action {
+                                self.follow_dict_action(action);
+                            }
+                        }
+
+                        // Cognates
+                        if !self.session.dict_cognates.is_empty() {
+                            ui.add_space(10.0);
+                            separator_line(ui, palette.ui_border);
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(i18n::t("dictCognates").to_uppercase())
+                                    .size(10.0)
+                                    .strong()
+                                    .color(paint::color(if self.session.dark {
+                                        palette.ui_text_muted
+                                    } else {
+                                        palette.ui_text_subtle
+                                    })),
+                            );
+                            ui.add_space(6.0);
+                            let cognates = self.session.dict_cognates.clone();
+                            let text_hex = if self.session.dark {
+                                palette.ui_link_softest
+                            } else {
+                                palette.ui_link
+                            };
+                            let fill_hex = if self.session.dark {
+                                palette.ui_link_soft
+                            } else {
+                                palette.ui_link
+                            };
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                                for cognate in cognates {
+                                    if paint::cognate_chip(ui, &cognate, text_hex, fill_hex)
+                                        .clicked()
+                                    {
+                                        self.lookup_dict(&cognate);
+                                    }
+                                }
+                            });
+                        }
+                    } else {
+                        ui.label(
+                            egui::RichText::new(i18n::t("dictSelectTopic"))
+                                .size(12.0)
+                                .color(paint::color(palette.ui_text_muted)),
+                        );
+                    }
+                });
+        });
+        #[cfg(test)]
+        {
+            crate::chrome::mark_layout(ui, "dict-scroll", entry_scroll.inner_rect);
+            crate::chrome::mark_layout(
+                ui,
+                "dict-offset",
+                egui::Rect::from_min_size(
+                    egui::pos2(
+                        entry_scroll.state.unclamped_offset().x,
+                        entry_scroll.state.unclamped_offset().y,
+                    ),
+                    entry_scroll.content_size,
+                ),
+            );
+        }
+        let _ = entry_scroll;
     }
 
     pub(crate) fn lookup_dict(&mut self, topic: &str) {
-        self.lookup_dict_focused(topic, true);
+        self.lookup_dict_focused(topic, true, true);
+    }
+
+    /// Back and forward move the history cursor. They must not record a visit,
+    /// or the word ahead of that cursor would be wiped or appended again.
+    fn recall_dict(&mut self, topic: &str) {
+        self.lookup_dict_focused(topic, true, false);
+    }
+
+    fn follow_dict_action(&mut self, action: paint::DictAction) {
+        match action {
+            paint::DictAction::Verse {
+                book,
+                chapter,
+                verse,
+            } => {
+                // The preview modal is only for a click inside the Bible that
+                // receives links. A dictionary reference navigates that Bible,
+                // or the active Bible when none is fixed.
+                let source = self.session.active_pane_id.clone();
+                self.session
+                    .open_linked_reference(&source, book, chapter, verse);
+                self.loaded_key.clear();
+                self.sync_active_chapter();
+            }
+            paint::DictAction::Topic(topic) => self.open_linked_topic(&topic),
+        }
+    }
+
+    /// Follow a dictionary cross-reference. The topic is tried as written, then
+    /// without trailing punctuation, then by ASCII case.
+    fn open_linked_topic(&mut self, raw: &str) {
+        if is_external_href(Some(raw)) {
+            return;
+        }
+        let candidates = topic_candidates(raw);
+        if let Some(topic) = self.matching_dictionary_topic(&candidates) {
+            self.lookup_dict(&topic);
+            return;
+        }
+        if let Some(topic) = candidates.first() {
+            self.lookup_dict(topic);
+        }
+    }
+
+    fn matching_dictionary_topic(&self, candidates: &[String]) -> Option<String> {
+        let paths = self.dictionary_paths();
+        for candidate in candidates {
+            for path in &paths {
+                if sqlite::dictionary_entry_in_file(path, candidate).is_some() {
+                    return Some(candidate.clone());
+                }
+            }
+        }
+        for candidate in candidates {
+            for path in &paths {
+                if let Some(found) = sqlite::dictionary_topic_ci(path, candidate) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    fn dictionary_paths(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        if let Some(module) = self.active_dictionary() {
+            paths.push(module.path.clone());
+        }
+        for module in &self.modules {
+            if module.kind == "dictionary" && !paths.contains(&module.path) {
+                paths.push(module.path.clone());
+            }
+        }
+        paths
     }
 
     pub(crate) fn lookup_dict_with_context(
@@ -1060,7 +1179,11 @@ impl GrapheApp {
         bible_path: Option<&Path>,
     ) {
         if self.session.strongs_dicts.is_empty() {
+            if self.session.dict_topic != topic {
+                self.session.dict_scroll_top = true;
+            }
             self.session.dict_query = topic.to_string();
+            self.session.dict_topic = topic.to_string();
             self.session.dict_body = i18n::t("dictNoDictsConfigured");
             self.session.dict_entry = None;
             self.session.dict_cognates.clear();
@@ -1079,20 +1202,25 @@ impl GrapheApp {
             }
             code.to_string()
         });
-        self.lookup_dict_focused(topic, true);
+        self.lookup_dict_focused(topic, true, true);
     }
 
     /// `focus` is for a user click. Restoring `dictPanel` must not switch the saved sidebar.
-    pub(crate) fn lookup_dict_focused(&mut self, topic: &str, focus: bool) {
+    /// `record` adds the topic to history. Back and forward pass false.
+    pub(crate) fn lookup_dict_focused(&mut self, topic: &str, focus: bool, record: bool) {
         let topic = normalize_topic_candidate(Some(topic));
         if topic.is_empty() {
             return;
         }
-        if self.session.dict_query != topic && self.session.dict_morph_code.is_none() {
-            self.session.dict_morph_lemma = None;
-            self.session.dict_morph_meaning = None;
+        if self.session.dict_topic != topic {
+            self.session.dict_scroll_top = true;
+            if self.session.dict_morph_code.is_none() {
+                self.session.dict_morph_lemma = None;
+                self.session.dict_morph_meaning = None;
+            }
         }
         self.session.dict_query = topic.clone();
+        self.session.dict_topic = topic.clone();
         if focus {
             self.session.focus_sidebar("dictionary");
             self.session.dialog = Dialog::None;
@@ -1126,16 +1254,13 @@ impl GrapheApp {
                     }
                 }
                 self.session.dict_entry = Some(entry);
-                if !self.session.dict_history.iter().any(|item| item == &topic) {
-                    self.session.dict_history.insert(0, topic.clone());
-                    self.session.dict_history.truncate(20);
+                if record {
+                    graphe_domain::panes::push_dict_history(
+                        &mut self.session.dict_history,
+                        &mut self.session.dict_history_index,
+                        &topic,
+                    );
                 }
-                self.session.dict_history_index = self
-                    .session
-                    .dict_history
-                    .iter()
-                    .position(|item| item == &topic)
-                    .unwrap_or(0);
                 if let Some(found) = self.modules.iter().find(|module| module.path == path) {
                     self.session.dict_module_id = Some(found.id.clone());
                     self.session
@@ -1836,7 +1961,10 @@ mod tests {
         }
 
         let size = galley_font_size(&output, hint).expect("placeholder painted");
-        assert_eq!(size, 11.0, "placeholder font size must be 11.0, not the large reader body font");
+        assert_eq!(
+            size, 11.0,
+            "placeholder font size must be 11.0, not the large reader body font"
+        );
     }
 
     #[test]
@@ -1846,7 +1974,11 @@ mod tests {
         app.session.dict_query = "G3056".to_string();
         app.session.dict_body = "<p>Palavra grega logos</p>".to_string();
 
-        fn get_font_size_for_needle(app: &mut crate::app::GrapheApp, font_size: f32, needle: &str) -> f32 {
+        fn get_font_size_for_needle(
+            app: &mut crate::app::GrapheApp,
+            font_size: f32,
+            needle: &str,
+        ) -> f32 {
             app.session.font_size = font_size;
             let ctx = egui::Context::default();
             crate::paint::apply(&ctx, app.session.dark, app.session.font_size);
@@ -1930,10 +2062,22 @@ mod tests {
             app.session.dict_suggestions_index = None;
         }
 
-        assert!(app.session.dict_query.is_empty(), "query must be cleared on dictionary switch");
-        assert!(app.session.dict_body.is_empty(), "body must be cleared on dictionary switch");
-        assert!(app.session.dict_suggestions.is_empty(), "suggestions must be cleared on dictionary switch");
-        assert!(!app.session.dict_suggestions_open, "suggestions popup must be closed on dictionary switch");
+        assert!(
+            app.session.dict_query.is_empty(),
+            "query must be cleared on dictionary switch"
+        );
+        assert!(
+            app.session.dict_body.is_empty(),
+            "body must be cleared on dictionary switch"
+        );
+        assert!(
+            app.session.dict_suggestions.is_empty(),
+            "suggestions must be cleared on dictionary switch"
+        );
+        assert!(
+            !app.session.dict_suggestions_open,
+            "suggestions popup must be closed on dictionary switch"
+        );
         assert_eq!(app.session.dict_suggestions_index, None);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2204,8 +2348,10 @@ mod tests {
     /// panel, which egui then stored as the sidebar's new width.
     #[test]
     fn first_dictionary_letter_keeps_search_box_and_sidebar_width() {
-        let dir = std::env::temp_dir()
-            .join(format!("graphe-dict-sugg-first-letter-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "graphe-dict-sugg-first-letter-{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("StrongTest.dictionary.SQLite3");
@@ -2227,12 +2373,11 @@ mod tests {
         crate::paint::apply(&ctx, false, 14.0);
         let palette = graphe_domain::theme::palette(false);
         let panel_id = egui::ViewportId::ROOT.root_ui_id().with("sidebar");
-        let sidebar_width =
-            |ctx: &egui::Context| -> f32 {
-                egui::containers::panel::PanelState::load(ctx, panel_id)
-                    .map(|s| s.outer_rect.width())
-                    .unwrap_or_default()
-            };
+        let sidebar_width = |ctx: &egui::Context| -> f32 {
+            egui::containers::panel::PanelState::load(ctx, panel_id)
+                .map(|s| s.outer_rect.width())
+                .unwrap_or_default()
+        };
         let search_box_width = |ctx: &egui::Context| -> f32 {
             ctx.data(|d| {
                 d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
@@ -2340,5 +2485,353 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
-}
 
+    /// A related word opens that entry at the top. The scroll the reader had
+    /// on the previous word does not carry over, and opening the same word
+    /// again leaves the scroll where it is.
+    #[test]
+    fn a_related_dictionary_word_scrolls_the_entry_to_the_top() {
+        let dir = std::env::temp_dir().join(format!("graphe-dict-scroll-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Scroll.dictionary.SQLite3");
+        let mut alpha = String::new();
+        for n in 0..5 {
+            alpha.push_str(&format!(
+                "<p>Paragrafo {n} da entrada ALPHA com texto longo o bastante para a largura.</p>"
+            ));
+        }
+        alpha.push_str("<p>Veja <a href=\"#dBETA\">BETA</a> no dicionario.</p>");
+        for n in 5..70 {
+            alpha.push_str(&format!(
+                "<p>Paragrafo {n} continua ALPHA para passar da altura da vista do dicionario.</p>"
+            ));
+        }
+        let mut beta = String::new();
+        for n in 0..70 {
+            beta.push_str(&format!(
+                "<p>Paragrafo {n} da entrada BETA continua alem da altura da vista.</p>"
+            ));
+        }
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            &format!(
+                "CREATE TABLE info (name TEXT, value TEXT);
+                 CREATE TABLE dictionary (topic TEXT, definition TEXT);
+                 INSERT INTO info VALUES ('short.title', 'Scroll');
+                 INSERT INTO dictionary VALUES ('ALPHA', '{alpha}'), ('BETA', '{beta}');"
+            ),
+        )
+        .unwrap();
+
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 1);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+        app.lookup_dict("ALPHA");
+
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, app.session.font_size);
+        let palette = graphe_domain::theme::palette(false);
+        let mut time = 0.2_f64;
+
+        let paint = |app: &mut crate::app::GrapheApp,
+                     time: f64,
+                     events: Vec<egui::Event>|
+         -> Vec<(String, [f32; 4])> {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1100.0, 700.0),
+            ));
+            raw.time = Some(time);
+            raw.events.extend(events);
+            let _ = ctx.run_test_ui(raw, |ui| {
+                app.sidebar(ui, &palette);
+            });
+            ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+            })
+        };
+        let last = |marks: &[(String, [f32; 4])], key: &str| -> [f32; 4] {
+            marks
+                .iter()
+                .rev()
+                .find(|(name, _)| name == key)
+                .map(|(_, rect)| *rect)
+                .unwrap_or_else(|| panic!("missing layout mark {key}"))
+        };
+        let link_inside = |link: [f32; 4], scroll: [f32; 4]| -> bool {
+            let center = egui::pos2(link[0] + link[2] * 0.5, link[1] + link[3] * 0.5);
+            center.x >= scroll[0]
+                && center.x <= scroll[0] + scroll[2]
+                && center.y >= scroll[1] + 2.0
+                && center.y <= scroll[1] + scroll[3] - 2.0
+        };
+
+        let marks = paint(&mut app, time, Vec::new());
+        time += 0.05;
+        let opened = last(&marks, "dict-offset");
+        let view = last(&marks, "dict-scroll");
+        assert!(
+            opened[1] < 1.0,
+            "a new entry opens at the top, offset {}",
+            opened[1]
+        );
+        assert!(
+            opened[3] > view[3] + 40.0,
+            "ALPHA is taller than the view, content {} view {}",
+            opened[3],
+            view[3]
+        );
+
+        let pointer = egui::pos2(view[0] + view[2] * 0.35, view[1] + view[3] * 0.55);
+        let _ = paint(&mut app, time, vec![egui::Event::PointerMoved(pointer)]);
+        time += 0.05;
+        let _ = paint(
+            &mut app,
+            time,
+            vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -160.0),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        time += 0.05;
+
+        let mut scrolled = 0.0;
+        let mut previous = -1.0;
+        let mut link = [0.0; 4];
+        let mut scroll = view;
+        for _ in 0..24 {
+            let marks = paint(&mut app, time, vec![egui::Event::PointerMoved(pointer)]);
+            time += 0.05;
+            scrolled = last(&marks, "dict-offset")[1];
+            link = last(&marks, "dict-link:BETA");
+            scroll = last(&marks, "dict-scroll");
+            if (scrolled - previous).abs() < 0.5 && scrolled > 40.0 {
+                break;
+            }
+            previous = scrolled;
+        }
+        assert!(
+            scrolled > 40.0,
+            "wheel should leave the entry scrolled, offset {scrolled}"
+        );
+        assert!(
+            link_inside(link, scroll),
+            "related word stays on screen, link {link:?} scroll {scroll:?} offset {scrolled}"
+        );
+
+        app.lookup_dict("ALPHA");
+        let marks = paint(&mut app, time, Vec::new());
+        time += 0.05;
+        let same = last(&marks, "dict-offset")[1];
+        assert!(
+            same > 40.0,
+            "the same word keeps the scroll, offset {same} was {scrolled}"
+        );
+        link = last(&marks, "dict-link:BETA");
+        scroll = last(&marks, "dict-scroll");
+        let link_pos = egui::pos2(link[0] + link[2] * 0.5, link[1] + link[3] * 0.5);
+        assert!(
+            link_inside(link, scroll),
+            "related word still on screen after the same-word lookup"
+        );
+
+        let _ = paint(&mut app, time, vec![egui::Event::PointerMoved(link_pos)]);
+        time += 0.05;
+        let _ = paint(
+            &mut app,
+            time,
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        time += 0.05;
+        let during = paint(
+            &mut app,
+            time,
+            vec![egui::Event::PointerButton {
+                pos: link_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        time += 0.05;
+        assert_eq!(app.session.dict_query, "BETA");
+        assert!(
+            last(&during, "dict-offset")[1] > 40.0,
+            "the click frame is already laid out, so the old scroll stays until the next paint"
+        );
+
+        let marks = paint(&mut app, time, Vec::new());
+        let reset = last(&marks, "dict-offset");
+        let view = last(&marks, "dict-scroll");
+        assert!(
+            reset[1] < 1.0,
+            "a related word returns the dictionary scroll to the top, offset {}",
+            reset[1]
+        );
+        assert!(
+            reset[3] > view[3] + 40.0,
+            "BETA is still taller than the view, content {} view {}",
+            reset[3],
+            view[3]
+        );
+        assert!(
+            app.session.dict_body.contains("entrada BETA"),
+            "opened body was {}",
+            &app.session.dict_body[..app.session.dict_body.len().min(80)]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The search box is a draft. The entry heading stays on the word that is open.
+    #[test]
+    fn typing_in_the_dictionary_search_keeps_the_open_word() {
+        let dir = std::env::temp_dir().join(format!("graphe-dict-draft-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Draft.dictionary.SQLite3");
+        graphe_store::sqlite::init_module_sql(
+            &path,
+            "CREATE TABLE info (name TEXT, value TEXT);
+             CREATE TABLE dictionary (topic TEXT, definition TEXT);
+             INSERT INTO info VALUES ('short.title', 'Vine');
+             INSERT INTO dictionary VALUES ('CONTINUAMENTE', '<p>sentido continuo da palavra</p>');",
+        )
+        .unwrap();
+
+        let mut app = crate::app::tests::bare(crate::session::Session::new());
+        app.modules = graphe_store::catalog::scan_modules(&dir);
+        assert_eq!(app.modules.len(), 1);
+        app.session.dict_module_id = Some(app.modules[0].id.clone());
+        app.session.sidebar = "dictionary".into();
+        app.lookup_dict("CONTINUAMENTE");
+        assert_eq!(app.session.dict_topic, "CONTINUAMENTE");
+
+        let ctx = egui::Context::default();
+        crate::paint::apply(&ctx, false, app.session.font_size);
+        let palette = graphe_domain::theme::palette(false);
+
+        let paint = |app: &mut crate::app::GrapheApp,
+                     events: Vec<egui::Event>|
+         -> (egui::FullOutput, Vec<(String, [f32; 4])>) {
+            let mut raw = egui::RawInput::default();
+            raw.screen_rect = Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1100.0, 700.0),
+            ));
+            raw.events.extend(events);
+            let output = ctx.run_test_ui(raw, |ui| {
+                app.sidebar(ui, &palette);
+            });
+            let marks = ctx.data(|data| {
+                data.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks"))
+                    .unwrap_or_default()
+            });
+            (output, marks)
+        };
+        let open_topic = |marks: &[(String, [f32; 4])]| -> [f32; 4] {
+            marks
+                .iter()
+                .rev()
+                .find(|(name, _)| name == "dict-open-topic")
+                .map(|(_, rect)| *rect)
+                .expect("open topic label")
+        };
+        fn text_at(output: &egui::FullOutput, mark: [f32; 4]) -> String {
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(mark[0], mark[1]),
+                egui::vec2(mark[2], mark[3]),
+            );
+            let mut found = String::new();
+            fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut String) {
+                match shape {
+                    egui::Shape::Text(text) => {
+                        let painted = text.galley.rect.translate(text.pos.to_vec2());
+                        if painted.intersects(rect) {
+                            if !found.is_empty() {
+                                found.push('\n');
+                            }
+                            found.push_str(&text.galley.job.text);
+                        }
+                    }
+                    egui::Shape::Vec(list) => {
+                        for shape in list {
+                            walk(shape, rect, found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for clipped in &output.shapes {
+                walk(&clipped.shape, rect, &mut found);
+            }
+            found
+        }
+
+        let (output, marks) = paint(&mut app, Vec::new());
+        let heading = text_at(&output, open_topic(&marks));
+        assert!(
+            heading.contains("CONTINUAMENTE"),
+            "open entry heading was {heading:?}"
+        );
+        assert!(app.session.dict_body.contains("sentido continuo"));
+
+        app.session.dict_query.clear();
+        let (_, marks) = paint(&mut app, Vec::new());
+        let box_rect = marks
+            .iter()
+            .rev()
+            .find(|(name, _)| name == "dict-search-box")
+            .map(|(_, rect)| *rect)
+            .expect("search box");
+        let click = egui::pos2(box_rect[0] + 12.0, box_rect[1] + box_rect[3] * 0.5);
+        let _ = paint(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(click),
+                egui::Event::PointerButton {
+                    pos: click,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: click,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        let (output, marks) = paint(&mut app, vec![egui::Event::Text("conti".into())]);
+        assert_eq!(app.session.dict_query, "conti");
+        assert_eq!(app.session.dict_topic, "CONTINUAMENTE");
+        let heading = text_at(&output, open_topic(&marks));
+        assert_eq!(
+            heading, "CONTINUAMENTE",
+            "typing must leave the open word in the entry heading"
+        );
+        assert!(
+            app.session.dict_body.contains("sentido continuo"),
+            "the open definition changed while typing"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

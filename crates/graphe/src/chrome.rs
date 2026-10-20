@@ -216,7 +216,11 @@ impl GrapheApp {
             .clamp(120.0, 520.0)
             .min((rect.width() - 220.0).max(80.0));
         let search = egui::Rect::from_center_size(rect.center(), egui::vec2(search_w, 24.0));
-        let response = ui.interact(search, ui.scope_id().with("nav-search"), egui::Sense::click());
+        let response = ui.interact(
+            search,
+            ui.scope_id().with("nav-search"),
+            egui::Sense::click(),
+        );
         let fill = if self.session.dark {
             paint::color("#2b2b2b")
         } else {
@@ -1001,7 +1005,11 @@ impl GrapheApp {
         chapter: i64,
         palette: &UiPalette,
     ) -> bool {
-        let response = ui.interact(rect, ui.scope_id().with("nav-current"), egui::Sense::click());
+        let response = ui.interact(
+            rect,
+            ui.scope_id().with("nav-current"),
+            egui::Sense::click(),
+        );
         let ink = paint::color(palette.ui_text);
         let galley = egui::WidgetText::from(
             egui::RichText::new(place_text(book, chapter))
