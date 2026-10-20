@@ -482,7 +482,9 @@ impl GrapheApp {
     pub(crate) fn open_navigation(&mut self) {
         let modules = self.modules.clone();
         let modules_verses = modules.clone();
-        let pane = self.session.navigation_target(&self.session.active_pane_id);
+        let pane = self
+            .session
+            .navigation_dialog_target(&self.session.active_pane_id);
         let books = self.nav_books();
         let chapter_count_fn: Box<dyn FnMut(&str, i64) -> i64> =
             Box::new(move |_module: &str, book: i64| chapter_count(&modules, book));
@@ -5922,6 +5924,71 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn open_navigation_targets_the_selected_pane_even_when_another_is_pinned() {
+        let mut app = bare(Session::new());
+        app.session.split(false);
+        app.session.link_target = Some("pane-2".into());
+        app.session.active_pane_id = "pane-1".into();
+        app.open_navigation();
+        assert_eq!(
+            app.nav.as_ref().and_then(|nav| nav.active_pane_id.as_deref()),
+            Some("pane-1")
+        );
+    }
+
+    #[test]
+    fn typing_a_reference_navigates_the_selected_pane_not_the_pinned_one() {
+        let mut app = bare(Session::new());
+        app.session.split(false);
+        app.session.link_target = Some("pane-2".into());
+        if let Some(pane) = app.session.panes.get_mut("pane-2") {
+            pane.book_number = 470;
+            pane.chapter = 3;
+        }
+        app.session.active_pane_id = "pane-1".into();
+        app.open_navigation();
+
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        let raw2 = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![
+                egui::Event::Text("Ex 12:5".into()),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: Some(egui::Key::Enter),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw2, |ui| app.show_workbench(ui));
+
+        assert_eq!(app.session.dialog, Dialog::None);
+        assert_eq!(app.session.active_pane_id, "pane-1");
+        let target = app.session.panes.get("pane-1").unwrap();
+        assert_eq!(target.book_number, 20);
+        assert_eq!(target.chapter, 12);
+        assert_eq!(target.selected_verse, Some(5));
+        let pinned = app.session.panes.get("pane-2").unwrap();
+        assert_eq!(pinned.book_number, 470);
+        assert_eq!(pinned.chapter, 3);
+    }
+
+    #[test]
     fn typing_verse_reference_scrolls_to_verse_even_when_commentary_active() {
         let userprofile = match std::env::var("USERPROFILE") {
             Ok(val) => std::path::PathBuf::from(val),
@@ -6024,6 +6091,108 @@ pub(crate) mod tests {
 
         let comm_offset = marks.iter().find(|(k, _)| k.starts_with("commentary-offset")).map(|(_, r)| *r).expect("commentary offset");
         assert!(comm_offset[1] > 50000.0, "commentary pane should scroll to verse 26, got {}", comm_offset[1]);
+    }
+
+    #[test]
+    fn typing_a_chapter_without_a_verse_scrolls_to_the_top() {
+        let userprofile = match std::env::var("USERPROFILE") {
+            Ok(val) => std::path::PathBuf::from(val),
+            Err(_) => return,
+        };
+        let bible_path = userprofile
+            .join(".graphe")
+            .join("modules")
+            .join("Nova Almeida Atualizada.bible.SQLite3");
+        if !bible_path.exists() {
+            return;
+        }
+
+        let ctx = egui::Context::default();
+        let mut app = bare(Session::new());
+        app.modules.push(bible_module("NAA", "NAA", bible_path));
+        app.session.panes.get_mut("pane-1").unwrap().module_id = Some("NAA".into());
+        app.session.panes.get_mut("pane-1").unwrap().book_number = 250;
+        app.session.panes.get_mut("pane-1").unwrap().chapter = 4;
+        app.session.panes.get_mut("pane-1").unwrap().selected_verse = None;
+
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+
+        // First go deep into the chapter with an explicit verse.
+        app.open_navigation();
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        let raw_verse = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![
+                egui::Event::Text("EC 4:14".into()),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: Some(egui::Key::Enter),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw_verse, |ui| app.show_workbench(ui));
+        for _ in 1..=5 {
+            let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        }
+        app.session.scroll_verse = None;
+
+        // Then type only the chapter: the view must return to the chapter top.
+        app.open_navigation();
+        let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        let raw_chapter = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: vec![
+                egui::Event::Text("EC 4".into()),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: Some(egui::Key::Enter),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_test_ui(raw_chapter, |ui| app.show_workbench(ui));
+
+        let chapter = app.session.panes.get("pane-1").unwrap();
+        assert_eq!(chapter.book_number, 250);
+        assert_eq!(chapter.chapter, 4);
+        let first = app
+            .session
+            .chapter_text
+            .first()
+            .map(|(verse, _)| *verse);
+        assert_eq!(chapter.selected_verse, first);
+        assert_eq!(chapter.selected_verse, Some(1));
+
+        for _ in 1..=5 {
+            let _ = ctx.run_test_ui(raw.clone(), |ui| app.show_workbench(ui));
+        }
+        let marks = ctx.data(|d| d.get_temp::<Vec<(String, [f32; 4])>>(egui::Id::unique("pane-layout-marks")).unwrap_or_default());
+        let offset = marks.iter().find(|(k, _)| k == "chapter-offset:pane-1").map(|(_, r)| *r).expect("chapter offset");
+        assert!(
+            offset[1] < 100.0,
+            "chapter-only navigation should end at the top, got {}",
+            offset[1]
+        );
     }
 
     #[test]

@@ -235,7 +235,7 @@ where
         };
         let abbrev = caps[1].trim().to_lowercase();
         let chapter: i64 = caps[2].parse().unwrap_or(0);
-        let verse = caps.get(3).and_then(|m| m.as_str().parse().ok());
+        let typed_verse = caps.get(3).and_then(|m| m.as_str().parse().ok());
         let Some(book_number) = i18n::find_book_by_abbrev(&abbrev) else {
             self.not_found = true;
             return false;
@@ -254,6 +254,14 @@ where
             return false;
         }
         self.not_found = false;
+        // A chapter typed without a verse opens on the chapter's first verse,
+        // which puts the chapter view at its top. None only when the chapter
+        // has no verses.
+        let verse = typed_verse.or_else(|| {
+            (self.chapter_verses)(&module_id, book_number, chapter)
+                .into_iter()
+                .next()
+        });
         self.navigations.push(NavAction {
             pane_id,
             book_number,
@@ -391,6 +399,35 @@ mod navigation_tests {
         nav.open_for("pane-1", books());
         nav.close();
         assert!(!nav.open);
+        i18n::reset_lang();
+    }
+
+    #[test]
+    fn submit_input_without_a_verse_selects_the_chapter_first_verse() {
+        i18n::set_lang("en");
+        let mut nav = NavigationSession::new(
+            |_, _| 2,
+            |_, book, chapter| {
+                if (book, chapter) == (10, 2) {
+                    vec![5, 6, 7]
+                } else {
+                    vec![1, 2]
+                }
+            },
+            |_| Some("kjv".into()),
+        );
+        nav.open_for("pane-1", books());
+        nav.input = "Gen 2".into();
+        assert!(nav.submit_input());
+        assert_eq!(
+            nav.navigations.last(),
+            Some(&NavAction {
+                pane_id: "pane-1".into(),
+                book_number: 10,
+                chapter: 2,
+                verse: Some(5),
+            })
+        );
         i18n::reset_lang();
     }
 

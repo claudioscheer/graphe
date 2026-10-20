@@ -832,6 +832,13 @@ impl Session {
                 return id.clone();
             }
         }
+        self.navigation_dialog_target(source_pane)
+    }
+
+    /// The reference dialog (F3 or a pane's chapter label) edits the pane the
+    /// user selected, never the pinned one. A commentary still follows the
+    /// Bible it is synced to; with no Bible selected, the first Bible pane answers.
+    pub fn navigation_dialog_target(&self, source_pane: &str) -> String {
         let bible = self.bible_target(source_pane);
         if self
             .panes
@@ -1236,7 +1243,7 @@ mod tests {
         assert!(session.apply_quick_ref("Mt 5", books));
         assert_eq!(session.panes[&session.active_pane_id].book_number, 470);
         assert_eq!(session.panes[&session.active_pane_id].chapter, 5);
-        assert_eq!(session.panes[&session.active_pane_id].selected_verse, None);
+        assert_eq!(session.panes[&session.active_pane_id].selected_verse, Some(1));
         assert!(session.back());
         assert_eq!(session.panes[&session.active_pane_id].book_number, 10);
         assert!(session.forward());
